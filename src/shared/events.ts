@@ -20,7 +20,14 @@ export type Visibility =
  */
 export const SELF_VISIBILITY_PREFIX = 'self:';
 
-export interface EventEnvelope<T extends string = string, P = unknown> {
+/**
+ * 事件信封。
+ *
+ * 默认类型参数刻意收紧：`type` 只能是 `GameEventMap` 的成员（DATA-2），`payload` 仍是
+ * `unknown`（具体形状由 `GameEvent` 绑定）。这样连「只知道是事件」的位置也写不出假类型——
+ * 评审的 M11 探针正是从 `EventEnvelope` 的 `type: string` 默认值溜过去的。
+ */
+export interface EventEnvelope<T extends GameEventType = GameEventType, P = unknown> {
   gameId: string;
   /** 单局内从 1 严格递增（不是会话级）。SSE 的 `id` 直接用它（API-2）。 */
   seq: number;
@@ -89,3 +96,42 @@ export interface GameEventMap {
 }
 
 export type GameEventType = keyof GameEventMap;
+
+/**
+ * 事件类型的**运行时可枚举**集合。
+ *
+ * `GameEventMap` 是接口，类型擦除后拿不到键；而 Zod 校验与出站事件校验需要一份运行时清单。
+ * 这里显式列一次，`satisfies` 拦住写错的成员，并由
+ * `tests/shared/contracts.test.ts` 用 `expectTypeOf` 断言它与 `keyof GameEventMap`
+ * **完全相等**——多了少了都会编译失败。
+ */
+export const GAME_EVENT_TYPES = [
+  'GAME_STARTED',
+  'REJECTED',
+  'WOLF_KILL_CHOSEN',
+  'SEER_CHECKED',
+  'WITCH_POTION_USED',
+  'PLAYER_DIED',
+  'HUNTER_SHOOT',
+  'DAY_STARTED',
+  'SPEECH',
+  'SPEECH_SKIPPED',
+  'VOTE_CAST',
+  'VOTE_REVEALED',
+  'WOLF_CHAT_POSTED',
+  'SELF_EXPOSE',
+  'AI_THOUGHT',
+  'GAME_ENDED',
+  'DEGRADED',
+] as const satisfies readonly GameEventType[];
+
+/**
+ * 事件的完整类型：`type` 与 `payload` 由 `GameEventMap` 静态绑定。
+ *
+ * `EventEnvelope` 的默认类型参数（`type: string` / `payload: unknown`）只用于「只能确定
+ * 是一条事件」的位置，例如可见性判定的入参。**任何真正构造事件的地方都必须用
+ * `GameEvent`**，否则 DATA-2「事件类型必须是联合类型的枚举成员」就只是一句注释。
+ */
+export type GameEvent = {
+  [K in GameEventType]: EventEnvelope<K, GameEventMap[K]>;
+}[GameEventType];
