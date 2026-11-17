@@ -1,0 +1,229 @@
+# Howl · RFC 索引（RFCS）
+
+> 版本 v2.0 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 · 生成日期 2026-11-17
+> **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
+> 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
+
+---
+
+## 1. 拆分思路
+
+7 个层次，16 个 RFC，按**依赖**而非「功能重要性」排序：
+
+1. **骨架与契约**（001）—— 目录、命令、以及**全部跨层类型的唯一归属** `src/shared/`。
+2. **内核**（002）—— 纯函数 `step` / `reduce` / `replay`、事件流、种子、效果管道。全项目唯一不可替换的地基。
+3. **一局能跑完**（003–005）—— 发牌与夜晚、白天与胜负、狼人自曝与夜聊。004 结束时引擎可在无 AI、无界面下跑完整局，**第一个真里程碑**。
+4. **AI 可信**（006–007）—— LLM 客户端与结构化决策、上下文投影与注入隔离。**投影是卖点的技术兑现**。
+5. **服务化**（008）—— 会话、多局、刷新恢复、状态释放。
+6. **玩家体验与收尾**（009–016）—— 人格与打法、流式、通道与输入、界面、面板与观战、复盘、headless、浏览器与首屏。
+
+**关键路径**：`001 → 002 → 003 → 004 → 006 → 007 → 008 → 009 → 014`。
+
+### 1.1 v1.0 → v2.0 的结构修正
+
+初版把「会话与存储」排在 006、「LLM」排 007、「投影」排 008，导致 **006 需要返回投影、而投影在 008**——依赖倒挂。所有 RFC 当时都还是 `Not started`，因此按 `generate-rfcs` 的规则重排：
+
+| 原编号 | 新编号 | 内容 |
+|---|---|---|
+| RFC-006（会话） | **RFC-008** | 会话、存储与刷新恢复 |
+| RFC-007（LLM） | **RFC-006** | LLM 接入与结构化决策 |
+| RFC-008（投影） | **RFC-007** | 上下文投影与注入隔离 |
+
+功能归属、标题与验收标准随文件一并迁移，没有内容丢失。
+
+---
+
+## 2. 状态总表
+
+| RFC | 标题 | 功能 | 复杂度 | Status |
+|---|---|---|---|---|
+| [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Not started |
+| [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Not started |
+| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Not started |
+| [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Not started |
+| [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
+| [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Not started |
+| [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Not started |
+| [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Not started |
+| [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Not started |
+| [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Not started |
+| [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
+| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
+| [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
+| [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
+| [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
+| [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Not started |
+
+**复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
+
+---
+
+## 3. 依赖表
+
+| RFC | 直接前置 | 直接后继 |
+|---|---|---|
+| RFC-001 | 无 | 002 |
+| RFC-002 | 001 | 003 |
+| RFC-003 | 002 | 004 |
+| RFC-004 | 003 | 005, 006 |
+| RFC-005 | 004 | 007, 011 |
+| RFC-006 | 004 | 007, 010 |
+| RFC-007 | 005, 006 | 008, 009, 011, 014, 015 |
+| RFC-008 | 004, 007 | 014, 015 |
+| RFC-009 | 007 | 014, 015 |
+| RFC-010 | 006 | — |
+| RFC-011 | 005, 007 | 012, 013, 015 |
+| RFC-012 | 011 | 016 |
+| RFC-013 | 011 | 014 |
+| RFC-014 | 007, 008, 009, 013 | — |
+| RFC-015 | 006, 007, 008, 009, 011 | — |
+| RFC-016 | 012 | — |
+
+**可并行分支**（顺序实现时无意义，多人协作有用）：
+
+- 004 之后：`003→004→005` 与 `004→006` 两条线可同时推进
+- 007 之后：`008`（会话）、`009`（人格）、`011`（玩家体验）三条线可并行
+- 011 之后：`012`（界面）与 `013`（面板观战）可并行
+
+---
+
+## 4. 路线图
+
+| 阶段 | RFC | 完成标志 |
+|---|---|---|
+| M1 地基 | 001, 002 | 状态可纯函数推进、事件流可重放、种子可复现 |
+| M2 一局跑完 | 003, 004 | 无 AI、无界面能跑完整局（**第一个里程碑**） |
+| M3 AI 可信 | 005, 006, 007 | AI 只看得见自己该看的（**卖点兑现**） |
+| M4 服务化 | 008 | 经 HTTP 可多局、可刷新恢复 |
+| M5 AI 好看 | 009, 010 | 有人格、会悍跳、说话不卡 |
+| M6 能玩 | 011, 012, 013 | 桌面与手机都能完整玩一局 |
+| M7 能展示 | 014 | 复盘可看，能当面向朋友演示（**v1 成功标准**，PRD D10） |
+| M8 收尾 | 015, 016 | 可批量验证、四个浏览器可用 |
+
+**建议实测节点**：M5 结束时实测「全部思考模式」下的单局墙钟时长与单轮延迟，据此更新 PRD 的 SM-5 与 OQ-9。此前 20 分钟只是假设。
+
+---
+
+## 5. 功能覆盖
+
+| 范围 | 数量 | 落点 |
+|---|---|---|
+| Must 功能 | 31 | 全部分配到 16 个 RFC（脚本校验：无遗漏、无跨 RFC 拆分） |
+| Should 功能 | 11 | 全部已分配 |
+| Could 功能 | 3 | F29 → RFC-013、F32 → RFC-014；**F45 延后** |
+| Won't 功能 | 12 | 不进入任何 RFC（见 §7） |
+
+### 5.1 延后的功能
+
+| 功能 | 内容 | 理由 | 重新考虑的触发条件 |
+|---|---|---|---|
+| F45 | 多套板子配置 | 优先级为 Could；是 RFC-003 的结构扩张而非新能力。v1 的 9 人板子已满足两条成功标准 | 出现「想换板子玩」的真实需求；或 RFC-003 实现时发现配置化几乎零成本 |
+
+---
+
+## 6. 与 PRD-REVIEW 的对照
+
+10 项 High-impact 发现的落点：
+
+| 发现 | 落点 |
+|---|---|
+| F-01 玩家发言无边界 | RFC-011（AC-4 ~ AC-7） |
+| F-02 prompt injection | RFC-007（AC-12 ~ AC-16） |
+| F-03 FR-9 不可验证 | RFC-007（AC-1、AC-10、AC-17） |
+| F-04 FR-16 不可验证 | RFC-009（AC-6 ~ AC-10） |
+| F-05 推理来源未定 | RFC-006（§2.2 `reason`）、RFC-007（§2.5 `AI_THOUGHT`）、RFC-014（AC-3、AC-4） |
+| F-06 模型名与模式 | RFC-006（AC-4、AC-13） |
+| F-07 无 headless | RFC-015 |
+| F-17 玩家发言进上下文 | RFC-007（AC-12 ~ AC-14）、RFC-011（AC-8） |
+| F-18 狼人交流 | RFC-005 |
+| F-21 思考模式冲突 | RFC-010（AC-1、AC-3）；未决部分见 §8.2 `OQ-9` |
+
+Medium / Low 发现中，属工程约束的落在 `RULES.md` 与 RFC-008 / RFC-010 / RFC-012；属项目管理范畴的（F-10 时间线、F-19 复查时点）已在 PRD 的 Timeline 注明，无功能承接。
+
+---
+
+## 7. 不在计划内（Won't）
+
+F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警徽流、账号与存档与排行、分享回放、自选身份、原生 App、多语言、中途存档、内容安全过滤、Roguelike 元层。
+
+其中语音的架构入口由 RFC-011 的通道抽象预留；元层入口由 RFC-008（多局与存储）、RFC-002（效果管道与种子）预留。**预留的是缝，不是功能**——实现任一 Won't 项都需要新 RFC 与 `/manage-changes`。
+
+---
+
+## 8. Open conflicts
+
+> 按 `AGENTS.md` 硬规则 7：冲突不许静默裁决。`/implement-rfc` 在写代码前必须把 §8.2 逐条摆到用户面前。
+
+### 8.1 已解决或已登记的冲突
+
+| # | 冲突 | 处理 | 痕迹 |
+|---|---|---|---|
+| C-1 | RFC-011 初稿把编排层放客户端，违反 `ARCH-9`（服务端持有状态） | 按 RULES 走：编排层在 `src/server/orchestrator.ts`，浏览器只渲染与提交 | RFC-011 §2.3、AC-10 |
+| C-2 | RFC-008 的 `GET /api/games/:id` 曾计划在投影未完成前返回完整状态，违反 `SEC-5` | 通过重排让投影（RFC-007）成为会话（RFC-008）的**前置**，临时实现不再需要 | RFC-008 Depends on、§2.2 |
+| C-3 | `NFR-1` 在 PRD v0.3 改了数字，而 `FR-20/FR-21` 仍写旧值 | PRD v0.4 已改为引用 NFR-1；RFC-010 只实现一套口径 | PRD 变更记录 v0.4 |
+| C-4 | `F10` 的验收要求「好人 AI 的上下文不含夜聊」，但投影在 RFC-007 | 可见性判定放 `src/shared/visibility.ts`（RFC-001），`isVisibleTo` 行为在 RFC-005 验收，投影集成在 RFC-007 AC-9 验收 | RFC-001 §2.3、RFC-005、RFC-007 |
+| C-5 | RFC-001 的 `pnpm selfplay` 占位以退出码 1 结束，**违反 `OPS-3`** | 接受为**临时偏离**：脚本名先立住，行为由 RFC-015 补齐。RFC-015 完成时该偏离消除 | RFC-001 §4、AC-16 |
+| C-6 | RFC-004 §2.7 裁定「两阵营同时达成 → 平局」，**`RULES.md` §6 未覆盖此情形** | 暂由 RFC-004 裁定并显式登记；实现该分支前必须把这条写进 `RULES.md` §6（走 `/manage-changes`） | RFC-004 §2.7、Q-004-4 |
+| C-7 | `RULES ARCH-8` 把投影签名写作 `project(state, observerId)`，但 `GameState` 按 `ARCH-3` 不含事件流，投影必须读事件 | **按 RFC 实现**（对象签名 `{ state, events, observer, pending, excludeSeq }`），`ARCH-8` 的签名描述待 `/manage-changes` 修正。理由：把事件塞进 `GameState` 会让状态与事件流形成两份权威，与 `DATA-3` 冲突 | RFC-007 §2.1 |
+| C-8 | 复盘需要 AI 的 `reason`，但它对投影不可见（`self:`），单靠 `project()` 拿不到 | `AI_THOUGHT` 事件进事件流；**复盘（RFC-014）直接读事件流，不经过投影**——它发生在对局结束、身份揭示之后（SEC-6 / F28 的时间边界） | RFC-007 §2.5、RFC-014 |
+
+### 8.2 依赖中的开放问题（**阻塞实现，必须由用户确认**）
+
+| # | 问题 | 阻塞哪些 RFC | 当前假设 | 不确认的后果 |
+|---|---|---|---|---|
+| **OQ-C6** | 两阵营同时达成胜利条件（如猎人开枪带走最后一狼、而猎人自己是最后一个神）判谁赢 | RFC-004 | 判**平局**（同归于尽） | 引擎必须对该分支抛错（ARCH-11），对局会卡住；或需先补 RULES.md §6 |
+| OQ-9（PRD） | 全思考模式下若单局超过 20 分钟，是否允许白天发言降级为非思考模式 | RFC-010、RFC-014 | 先按思考模式实测 | NFR-1 与 SM-5 可能无法同时满足，验收口径会反复 |
+| OQ-10（PRD） | AI 失败/超时时玩家可见的降级行为 | RFC-010 | 重试 1 次 → 极短发言替代 → 复盘标注 | AC 判定标准会变 |
+| OQ-11（PRD） | 玩家为狼时狼人私有频道的 UI 形态 | RFC-005、RFC-011 | 复用白天输入框，夜间仅狼可见 | 界面返工 |
+| OQ-12（PRD） | 倒计时与字数上限的具体数值 | RFC-011、RFC-012 | 60 秒 / 300 字 | 手感与 AI 上下文体积变化 |
+| OQ-5（PRD） | AI 上下文策略（全量 / 摘要 / 检索） | RFC-007 | 全量喂入 + 按轮次摘要 | 延迟与成本结构变化 |
+| OQ-6（PRD） | DeepSeek 具体模型与版本 | RFC-006 | `deepseek-flash` | 延迟与质量基线变化 |
+| OQ-R5（RULES） | `RUL-1` ~ `RUL-10` 由 RULES.md 裁决，用户未逐条确认 | RFC-003、RFC-004 | 按 RULES §6 执行 | 任一条被推翻都要改引擎分支与验收标准 |
+| FE-AS-1 | 对局结束后释放 `GameState`，保留最近 3 局事件流 | RFC-008、RFC-014 | 立即释放 + 快照保留 | 内存策略与「历史对局可看范围」变化 |
+| FE-AS-2 | 「再来一局」后上一局复盘仍可查看 | RFC-014 | 可查看（直到被释放） | 若要求永久保留，与 NFR-17 冲突 |
+| D37 | 内容完全放开，不做安全过滤 | RFC-006、RFC-009 | 不过滤 | 公网部署需重新评估（PRD OQ-13） |
+
+---
+
+## 9. 冷读记录
+
+按 `generate-rfcs` 的要求，16 个 RFC 全部做过一次冷读（每个 RFC 一个独立上下文的读者，只读 PRD / FEATURES / RULES / 该 RFC 及其传递前置）。
+
+| 轮次 | 日期 | 结果 |
+|---|---|---|
+| 第 1 轮（全部 16 个） | 2026-11-17 | **16/16 NEEDS-FIX**。共性根因三条：共享契约无单一归属、依赖声明漏引、验收标准超出本 RFC 范围 |
+| 修复 | 2026-11-17 | 重排 006/007/008 修依赖倒挂；把全部跨层类型收进 RFC-001 的 `src/shared/`；`project()` 改为接收事件流；RFC-003/004 的私有信息改为事件驱动；拒绝语义统一为 `Rejected` 事件；补齐 action/event/effect 契约 |
+| 第 2 轮（001 / 002 / 007） | 2026-11-17 | 见 §9.1 |
+
+### 9.1 第 2 轮冷读
+
+三个「契约型」RFC 重新送冷读：RFC-001（类型归属）、RFC-002（状态机与重放）、RFC-007（投影与注入）。
+
+**结论**：
+
+| RFC | 第 2 轮结论 | 处理 |
+|---|---|---|
+| RFC-007 | NEEDS-FIX | 已修：签名偏差登记为 `C-7`；分区改为按序折叠 `applyEvent` 后逐条判定；补 `excludeSeq` 与 `legalTargets` 的 `'abstain'`；`canShoot` 改为仅开枪阶段为真；样本量对齐 1000；注入声明句收归 `src/shared/injection.ts` 单一来源；`AI_THOUGHT` 的复盘读取路径写入 `C-8` |
+| RFC-001 | NEEDS-FIX | 已修：`order` 分区重排为「抵消 → 死亡 → 死亡触发技能 → 扩展」，使升序应用满足 RUL-8；`Phase` 数量对齐 14；`START` 补 `seed`/`mode`/`playerSeat`；`Seat` 补 `diedSeq`；新增 `FACTION_OF`、`GameEventMap` 与 `src/shared/schemas.ts` 的 Zod 归属；新增 `'server'` 可见性与 `rngAfter` 信封字段；修正 tsconfig 产物路径 |
+| RFC-002 | NEEDS-FIX | 已修：`replay` 通过事件上的 `rngAfter` 精确重建生成器；`GAME_STARTED` 标 `server` 可见性并确立「事件即权威」的发牌语义；`step` 增加 `modifiers` 入口且要求 modifier 由状态决定；拒绝/抛错改为机械判据；明确本 RFC 的验收边界 |
+
+其余 13 个 RFC 的第 1 轮发现按「影响外部接口的修、纯实现细节留给实现者」的原则处理，**未做第二轮冷读**——这一限制在此显式记录，不假装已覆盖。
+
+---
+
+## 10. 交付给实现阶段的约束
+
+- **测试计划先行**：`TEST-STRATEGY.md` 尚未生成。按 `AGENTS.md` 硬规则 3，**任何 RFC 的测试小节必须先在 `TEST-STRATEGY.md` 里存在**才允许开工。下一步是 `/test-strategy`。
+- **一条 RFC 一个分支**：`rfc/<id>-<slug>`，评审通过后才合并（`WORKFLOW.md` §7）。
+- **状态由命令维护**，不要手工改 Status 列。
+- **偏离必须记录**：写入该 RFC 的 `## Implementation Notes`（`RULES DOC-1`）。
+
+---
+
+## 变更历史
+
+| 日期 | 版本 | 变更 |
+|---|---|---|
+| 2026-11-17 | v1.0 | 初次拆分：16 个 RFC，覆盖 31 个 Must 功能；F45 延后 |
+| 2026-11-17 | v2.0 | 第 1 轮冷读（16/16 NEEDS-FIX）后的修订：重排 006/007/008 修依赖倒挂；补齐共享契约、拒绝语义、事件驱动的私有信息、`project()` 签名；新增 C-5 / C-6 / OQ-C6；记录冷读轮次与未覆盖范围 |
+| 2026-11-17 | v2.1 | 第 2 轮冷读（001 / 002 / 007）后的修订：修 `order` 分区违反 RUL-8 的 bug；补 `rngAfter` 使重放精确；`GAME_STARTED` 改为 `server` 可见性；补 `GameEventMap` / Zod 归属 / `diedSeq` / `FACTION_OF`；新增 C-7（`ARCH-8` 签名偏差）与 C-8（复盘直读事件流）；合并超限的验收标准 |
