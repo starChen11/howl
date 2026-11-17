@@ -396,6 +396,10 @@ ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or packag
 | T-1 | `RULES TEST-6` 要求「每条 Must 级**用户可见**功能至少一条 Playwright 冒烟」，但 RFC-001/002/003/004/005 没有任何用户可见功能 | 按 RULES 的本意解释：TEST-6 从 RFC-012（首个用户可见功能）起生效。已在 RFC-001 的 §4 与本文件 §2 注明 |
 | T-2 | `FEATURES F2` 的 AC 曾要求「10000 步内必达终局」，而 RUL-10 已移除平局兜底 | 已由 `CHANGE-REQUEST-002` 解决：终止性由「解药唯一 + 死亡单调累积」保证；测试改为断言 `replay` 一致与随机输入不挂起，不设固定步数上限 |
 | T-3 | `RFC-013` 的 F29/F32 是 Could，但计划里仍给了测试 | 保留：Could 功能一旦实现就必须有验收，若被砍则不执行这些测试行 |
+| T-4 | RFC-001 第 1 行要求「依次执行 5 条 `pnpm` 命令」含 `pnpm test` 自己——**在本测试里跑完整 `pnpm test` 会无限递归** | 内层改为 `pnpm exec vitest run --project unit`（`tests/meta/commands.test.ts`）。完整套件的结果由实现会话在 RFC 的 `## Implementation Notes` 里贴原始输出 |
+| T-5 | RFC-001 第 12 行要求「用 Playwright 请求 `localhost:5173/api/health` 断言代理生效」，但同一 RFC §4 又要求 `test:e2e` 在无用例时退出 0——两条互斥，且为一条代理规则装浏览器内核不划算 | 代理验证改为 `tests/meta/dev-proxy.test.ts`：起真实 `pnpm dev`，用 HTTP 请求打 `:3000` 与 `:5173`。本阶段不引入 Playwright 浏览器依赖；`test:e2e` 由 `scripts/test-e2e.mjs` 保证零用例时打印 `skipped` 并退出 0 |
+| T-6 | `tests/dependency-direction.test.ts` 的路径：RFC-001 §3 写 `tests/`，本文件写 `tests/meta/` | 按 RFC 走（权威顺序 `RULES > RFC > 计划`）：放 `tests/dependency-direction.test.ts`，它属于快的 `unit` project；其余 5 个新增门禁测试按本文件放 `tests/meta/` |
+| T-7 | `TS-1` 假设「构建类测试进 `pnpm test` 但跳过较慢的 `pnpm build`」 | 实测 `pnpm build` 在本项目只要约 0.5s（客户端产物 220 kB），**不跳过**：`pnpm test` 全量 57 个用例约 14s，可以接受。若后续变慢再引入跳过条件 |
 
 ---
 
@@ -404,3 +408,4 @@ ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or packag
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-17 | v1.0 | 初次生成：16 个 RFC 小节、222 条验收标准的逐条落表、126 条计划测试、6 项人工检查 |
+| 2026-11-17 | v1.1 | RFC-001 实现后按实际落地的测试回填：新增 T-4（自递归）、T-5（代理改用 HTTP）、T-6（路径按 RFC）、T-7（构建测试不跳过）；RFC-001 小节的实际用例数以 `RFCs/RFC-001-*.md` §8.5 为准 |

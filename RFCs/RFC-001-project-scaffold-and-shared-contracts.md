@@ -273,3 +273,117 @@ export const ROLE_LABELS = { wolf: '狼人', ... } as const;
 | Q-001-1 | 环境变量名 | **(assumption)** `PORT` / `VITE_PORT`，已写入 §2.5 与 AC-12 |
 | Q-001-2 | `shared` 是否允许 `visibility.ts` 带逻辑 | **(assumption)** 允许，且仅此一个文件；理由是客户端与服务端必须共用同一判定 |
 | Q-001-3 | `RngState` 是否要暴露字段 | **(assumption)** 不暴露，标为不透明，算法在 RFC-002 决定 |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。评审在**新会话**里只凭仓库文件判断，所以这里写清：改了什么、为什么、用户是否批准。分支 `rfc/001-project-scaffold-and-shared-contracts`。
+
+### 8.1 批准记录
+
+实现前先把「三处按字面无法实现」与「四处文档对不齐」摆出来，逐项取得用户确认：
+
+| 项 | 结论 |
+|---|---|
+| 整体计划（含 F-4 ~ F-7 的默认处理） | 批准 |
+| 服务端构建方式（F-2） | 选**方案 B：Vite SSR 打包** |
+| `schemas.ts` 范围（F-3） | 选**信封 + `ActionSchema`** |
+
+### 8.2 偏离与裁定（同时登记在 `RFCS.md` §8.1）
+
+| # | 偏离 / 裁定 | 为什么 | 批准 |
+|---|---|---|---|
+| **C-9** | 服务端不用 `tsc` 直出，改用 `vite build --ssr`（`vite.server.config.ts`）；产物仍是 `dist/server/index.js` | `tsc` **不重写** `paths`。别名 + `tsc` 产物 + `node dist/server/index.js` 三者不可共存：编译产物里会留着 `@shared/*`，Node 直接 `ERR_MODULE_NOT_FOUND`。Vite 打包零新增依赖、别名保持单一来源、`fastify` 等保持 external。实证：`grep -c '@shared/' dist/server/index.js` → `0` | 用户批准 |
+| **C-10** | `schemas.ts` 只做信封 + `ActionSchema`；事件 payload 的 schema 由拥有该 payload 的 RFC 追加 | `GameStartedPayload`（RFC-002）与 `DayStartedPayload`（RFC-004）此刻还不存在，§2.3 的「为每个 payload 导出 schema」今天写不出来 | 用户批准 |
+| **C-11** | AC-4 的「五个开关任一项被关闭时 `pnpm typecheck` 会报错」改为**两向夹具** | 该断言方向是反的：严格开关关闭只会**减少**错误。实测 TypeScript 6.0.3——`strict: true` 且另外四个全关 → 退出码 0；五个全关 → 退出码 0。改后的做法是：每个开关配一份「只在开启时违规」的夹具，开启必编译失败、关闭必通过。比原文更强，也真的能证明开关有约束力 | 用户批准（计划中的 F-1） |
+| **C-12** | `EFFECT_ORDER` 导出**四个**分区起点 `0/100/200/900` | §2.3 的表是四个区间，而 AC-6 只点了三个（0/100/900）。漏掉的 `200–299` 正是承载 RUL-1 的死亡触发技能区，少了它猎人结算就没有落点。四个全导出，AC-6 点的三个是其子集 | 用户批准（F-4） |
+
+### 8.3 补充决定（未改任何验收标准）
+
+- **`GameStartedPayload` / `DayStartedPayload` 定义在 `src/shared/events.ts`**。§2.3 的 `GameEventMap` 引用了这两个名字却没定义，不定义就编译不过；字段按 RFC-002 §2 与 RFC-004 §2 原样搬入。跨层类型只能有一个归属。
+- **`SeatId` / `Phase` / `WITCH_POTIONS` 由 `as const` 数组派生**。AC-5 要在**运行时**数出「`Phase` 恰好 14 个取值」，纯类型擦除后数不出来。
+- **`FACTION_OF` / `ROLE_LABELS` 用 `as const satisfies Record<Role, …>`**：保留字面量类型的同时，漏掉一个身份会直接编译失败。
+- **三份 tsconfig 分层**：`tsconfig.server.json` 的 `lib` 不含 DOM、`tsconfig.client.json` 的 `types` 为空。「引擎不碰 DOM、前端不碰 Node」由编译器守着，而不是靠人看。`pnpm typecheck` 三条都跑。
+- **`allowImportingTsExtensions`**：Vite 的配置加载器要求显式扩展名，三个 config 用 `./configs/alias.ts`；源码里仍是 extensionless（`import { buildApp } from './app'`）。
+- **`configs/alias.ts` 是路径别名的单一来源**，三个 Vite 配置共用，避免三处各写一份。
+- **不加 `@eslint/js`**：未定义变量由 TypeScript 负责，而 `RULES §2` 的依赖表里没有这个包；为一个 preset 新增依赖不值得（DOC-2）。
+- **`.dsh/**` 与文档层不参与 lint / format**：`.dsh/` 是只读技能资产（AGENTS.md），Markdown 由人工维护排版，让 Prettier 碰它们只会产生零语义的巨大 diff。
+- **`scripts/verify-skills.mjs` 被 Prettier 重排**（73 行纯格式差异），并删掉一个未使用的 `statSync` 导入。原因：`lint` / `format:check` 是本次新引入的门禁，仓库已有的 JS 必须过门禁。重排后 `node scripts/verify-skills.mjs` 仍输出「OK：21 个固化技能与 lock 一致」。
+- **`test:e2e` = `node scripts/test-e2e.mjs`**：Playwright 1.65 的 `--pass-with-no-tests` 在零用例时**静默**退出 0，事后分不清「跑过了」与「一个用例都没有」。包装脚本在无用例时打印 `skipped` 并退出 0，有用例时转交 Playwright。两条路径都实证过（临时 spec 跑通后已删除）。
+- **`pnpm.onlyBuiltDependencies: ["esbuild"]`**：pnpm 10 默认拦 esbuild 的 postinstall，`pnpm install` 会打印 "Ignored build scripts"，看起来像装坏了。登记进 `package.json`，让新机器安装结果一致。
+- **依赖只装本 RFC 用得到的**：`openai`（RFC-006）、`@fastify/cookie`（RFC-008）、`jsdom` + `@testing-library/react`（RFC-012）、`@vitest/coverage-v8`（RFC-002）留到各自的 RFC 按 DOC-2 登记。
+- **命名：`STYLE-2` 与 §2.3 点名的标识符冲突时按 RFC 走**。`TERMS` / `ROLE_LABELS` / `ActionSchema` / `EventSchema` 是 §2.3 指定的名字，后 15 个 RFC 的正文都在引用它们；`STYLE-2` 的「常量 SCREAMING_SNAKE_CASE」按纯量常量执行（`SEAT_IDS` / `PHASES` / `EFFECT_ORDER`）。
+- **`ActionSchema` 不做「输出类型 = `Action`」的静态桥接**。zod 的 `.optional()` 推出 `target?: SeatId | undefined`，而 `exactOptionalPropertyTypes` 下 `Action` 的 `target?: SeatId` 不接受显式 `undefined`；用 `as` 架桥会把不兼容藏起来。改为在 `tests/shared/contracts.test.ts` 用 `@ts-expect-error` 夹具证明 `Action` 的严格性。
+
+### 8.4 文件清单（FILES CHANGED）
+
+全部在分支 `rfc/001-project-scaffold-and-shared-contracts` 上。
+
+| 类别 | 文件 |
+|---|---|
+| 工程配置 | `package.json`、`pnpm-lock.yaml`、`tsconfig.json`、`tsconfig.server.json`、`tsconfig.client.json`、`vite.config.ts`、`vite.server.config.ts`、`vitest.config.ts`、`playwright.config.ts`、`eslint.config.js`、`.prettierrc`、`.prettierignore`、`index.html`、`configs/alias.ts` |
+| 改动既有文件 | `.gitignore`（+ 依赖/产物/测试产物/`.env` 忽略项）、`scripts/verify-skills.mjs`（格式化 + 删未用导入） |
+| 共享契约 | `src/shared/domain.ts`、`src/shared/actions.ts`、`src/shared/events.ts`、`src/shared/effects.ts`、`src/shared/visibility.ts`、`src/shared/terms.ts`、`src/shared/schemas.ts` |
+| 服务端 | `src/server/app.ts`、`src/server/index.ts` |
+| 前端 | `src/client/main.tsx`、`tests/e2e/.gitkeep` |
+| 脚本 | `scripts/selfplay.ts`、`scripts/test-e2e.mjs` |
+| 测试 | `tests/shared/contracts.test.ts`、`tests/shared/effects.test.ts`、`tests/shared/terms.test.ts`、`tests/dependency-direction.test.ts`、`tests/security/no-hardcoded-terms.test.ts`、`tests/server/health.test.ts`、`tests/meta/commands.test.ts`、`tests/meta/tsconfig.test.ts`、`tests/meta/build.test.ts`、`tests/meta/lint.test.ts`、`tests/meta/dev-proxy.test.ts`、`tests/meta/selfplay-placeholder.test.ts`、`tests/meta/helpers/run.ts`、`tests/meta/fixtures/{strict,no-unchecked-indexed-access,exact-optional-property-types,no-implicit-override,verbatim-module-syntax,dep}.ts` |
+| 文档 | 本文件 §8、`RFCS.md`（状态 + C-9~C-12）、`TEST-STRATEGY.md` §7（T-4~T-7）、`README.md` |
+
+§3 的交付物表没列、但实际必须存在的 8 个文件：`index.html`（Vite 入口）、`vite.server.config.ts`（C-9）、`vitest.config.ts`、`playwright.config.ts`、`.prettierignore`、`configs/alias.ts`、`scripts/selfplay.ts`、`scripts/test-e2e.mjs`。
+
+### 8.5 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `tests/meta/commands.test.ts`（5 条命令各一条用例，`start` 用 3999 端口起真实进程探活后关掉） | PASS |
+| 2 | `tests/meta/tsconfig.test.ts` · `package.json` 的 `packageManager` / `engines.node` / `type` | PASS |
+| 3 | `tests/meta/tsconfig.test.ts` · 三份配置存在、`moduleResolution: bundler`、`target: ES2022`、子配置只覆盖 `include`/`lib`/`types` | PASS |
+| 4 | `tests/meta/tsconfig.test.ts` · 五个开关全开 + **五份两向夹具**（开启必失败、关闭必通过）。见 C-11 | PASS |
+| 5 | `tests/shared/contracts.test.ts` · `PHASES` 恰 14 项且逐项等于 RFC 列表；`WITCH_POTIONS` 恰 3 项；`NIGHT_MOON` 用 `@ts-expect-error` 证明联合封闭 | PASS |
+| 6 | `tests/shared/effects.test.ts` · 省略 `target` 的夹具编译失败、`target: null` 合法、四个分区边界 + 升序等价于 RUL-8/RUL-1 | PASS |
+| 7 | `tests/shared/contracts.test.ts` · 三个字段各有一份缺失夹具（`@ts-expect-error`） | PASS |
+| 8 | `tests/shared/terms.test.ts` · 13 条键与标签逐项等于 PRD 术语表；`TERMS[key]` 的类型索引本身就是穷举断言；`ROLE_LABELS` 5 项且顺序等于 `ROLES` | PASS |
+| 9 | `tests/security/no-hardcoded-terms.test.ts` · 扫 `src/**/*.{ts,tsx}`（排除 `terms.ts`），身份名集合从 `ROLE_LABELS` 反查，测试里不抄第二份 | PASS |
+| 10 | `tests/dependency-direction.test.ts` · `shared` 无跨层 import；外部依赖白名单只含 `zod`（且不允许 `node:*`） | PASS |
+| 11 | `tests/dependency-direction.test.ts` · 跨层只走别名且方向在白名单内、相对路径不得跨层逃逸、`node:*` 只给服务端 | PASS（`src/engine/` 尚不存在，相关断言当前恒真，见 §8.6） |
+| 12 | `tests/server/health.test.ts`（`inject` 打 `/api/health`）+ `tests/meta/dev-proxy.test.ts`（`pnpm dev` 起真实进程，`localhost:3000` 直连与 `localhost:5173` 代理都要 200 且 `{"ok":true}`） | PASS |
+| 13 | `tests/meta/build.test.ts` · `dist/client/index.html` 与 `dist/server/index.js` 存在；递归扫 `dist/client` 无 `DEEPSEEK_API_KEY`；另加一条「无服务端模块」扫描（`@fastify/static`） | PASS |
+| 14 | `tests/meta/lint.test.ts` · 用 ESLint API 问 `.ts` 文件的**生效**等级（不是解析配置文本），两条规则均为 error；`pnpm lint` 退出 0 | PASS |
+| 15 | `tests/meta/lint.test.ts` · `pnpm format:check` 与 `pnpm test:e2e` 均退出 0；后者在零用例时打印 `skipped`（见 §8.3） | PASS |
+| 16 | `tests/meta/selfplay-placeholder.test.ts` · `pnpm selfplay` 退出码 1 且 stderr 含 `RFC-015` | PASS |
+
+**全量输出**（实现会话实跑，非转述）：
+
+```
+$ pnpm typecheck   → exit 0
+$ pnpm lint        → exit 0
+$ pnpm format:check → "All matched files use Prettier code style!"      exit 0
+$ pnpm build       → dist/client/index.html + assets + dist/server/index.js   exit 0
+$ pnpm test        → Test Files 12 passed (12) · Tests 57 passed (57)   exit 0
+$ pnpm test:e2e    → "skipped：tests/e2e/ 下没有用例"                    exit 0
+$ pnpm selfplay    → "pnpm selfplay 未实现（RFC-015）"                   exit 1
+```
+
+**构建产物上的端到端验证**（AC-1 要求 `start` 能响应健康检查，且产物必须真能跑）：
+
+```
+$ node dist/server/index.js   (PORT=3998)
+  Server listening at http://127.0.0.1:3998
+$ curl -s http://127.0.0.1:3998/api/health   → {"ok":true}  HTTP 200
+$ curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3998/  → 200   (index.html 由 @fastify/static 托管)
+$ grep -c '@shared/' dist/server/index.js    → 0        (C-9：别名已在构建期解析)
+$ grep -rl DEEPSEEK_API_KEY dist/client | wc -l → 0
+```
+
+### 8.6 已知缺口（交给后续 RFC，不隐藏）
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| 别名一致性无自动化断言 | `tsconfig.json` 的 `paths` 与 `configs/alias.ts` 必须一致（§2.2 要求），目前靠人工核对 | 建议 `TEST-STRATEGY` 补一行 |
+| `src/engine/` 尚不存在 | AC-11 里关于 `engine` 只 import `shared` 的断言当前恒真。目录由 RFC-002 建，届时自动生效 | RFC-002 |
+| `isVisibleTo` 的行为矩阵 | 本 RFC 只定义与实现，**行为验收在 RFC-005**（§6 已声明） | RFC-005 |
+| `TEST-6` 的 Playwright 覆盖 | 从 RFC-012（首个用户可见功能）起生效（`TEST-STRATEGY` T-1） | RFC-012 |
+| `SEC-2` 的完整产物扫描 | 本 RFC 只扫了密钥字符串与 `@fastify/static`；完整的服务端模块泄漏检查 | RFC-016 |
+| zod 输出与 `Action` 的类型桥接 | `.optional()` 与 `exactOptionalPropertyTypes` 的兼容方式，等真正写路由校验时定（RFC-011） | RFC-011 |

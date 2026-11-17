@@ -37,7 +37,7 @@
 
 | RFC | 标题 | 功能 | 复杂度 | Status |
 |---|---|---|---|---|
-| [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Not started |
+| [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Implemented |
 | [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Not started |
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Not started |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Not started |
@@ -166,6 +166,10 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 | C-6 | ~~RFC-004 §2.7 裁定「两阵营同时达成 → 平局」，`RULES.md` §6 未覆盖此情形~~ | **已关闭**：用户裁定「胜负先于死亡触发技能」，狼胜条件成立时对局已结束、猎人无开枪机会，**同时达成不可能发生**。RUL-1 已反转，`draw` 分支与 RUL-10 均已移除 | `changes/CHANGE-REQUEST-002.md` |
 | C-7 | `RULES ARCH-8` 把投影签名写作 `project(state, observerId)`，但 `GameState` 按 `ARCH-3` 不含事件流，投影必须读事件 | **按 RFC 实现**（对象签名 `{ state, events, observer, pending, excludeSeq }`），`ARCH-8` 的签名描述待 `/manage-changes` 修正。理由：把事件塞进 `GameState` 会让状态与事件流形成两份权威，与 `DATA-3` 冲突 | RFC-007 §2.1 |
 | C-8 | 复盘需要 AI 的 `reason`，但它对投影不可见（`self:`），单靠 `project()` 拿不到 | `AI_THOUGHT` 事件进事件流；**复盘（RFC-014）直接读事件流，不经过投影**——它发生在对局结束、身份揭示之后（SEC-6 / F28 的时间边界） | RFC-007 §2.5、RFC-014 |
+| C-9 | RFC-001 §2.2 同时要求「路径别名全覆盖」+「`tsc` 编译到 `dist/server/index.js`」+「`pnpm start` 能起来」，三者**不可共存**：`tsc` 不重写 `paths`，产物里留着 `@shared/*` 说明符，Node 直接 `ERR_MODULE_NOT_FOUND` | **服务端改用 `vite build --ssr`**（`vite.server.config.ts`），产物仍是 `dist/server/index.js`（单文件，依赖保持 external）。零新增依赖、别名保持单一来源。实证 `grep -c '@shared/' dist/server/index.js` → `0` | RFC-001 §8.2、§8.5 |
+| C-10 | RFC-001 §2.3 要求 `schemas.ts` 为**每个** payload 导出 Zod schema，但 §3 交付物表没列该文件、16 条 AC 无一条覆盖它，而 `GameStartedPayload`（RFC-002）/ `DayStartedPayload`（RFC-004）此刻不存在 | **本 RFC 只做信封 + `ActionSchema`**（十个 action 已在本 RFC 完整定义）；事件 payload 的 schema 由拥有该 payload 的 RFC 追加。补测了 `ActionSchema` / `EventSchema`，不让校验器变成未测表面 | RFC-001 §8.2、§8.5 |
+| C-11 | RFC-001 AC-4 要求「五个严格开关**任一项**被关闭时 `pnpm typecheck` 会报错」 | **该断言方向是反的**：严格开关关闭只会减少错误。实测 TS 6.0.3：`strict: true` + 另四个全关 → 退出 0；五个全关 → 退出 0。改为**两向夹具**：每个开关一份「只在开启时违规」的夹具，开启必失败、关闭必通过。比原文更强 | RFC-001 §8.2、§8.5 |
+| C-12 | RFC-001 §2.3 的效果 `order` 是**四个**区间（0/100/200/900），AC-6 只点了**三个**（0/100/900），漏掉的 200–299 正是承载 RUL-1 的死亡触发技能区 | `EFFECT_ORDER` 导出四个起点，测试断言四个；AC-6 点的三个是其子集 | RFC-001 §8.2、§8.5 |
 
 ### 8.2 依赖中的开放问题（**阻塞实现，必须由用户确认**）
 
@@ -213,10 +217,10 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 ## 10. 交付给实现阶段的约束
 
-- **测试计划先行**：`TEST-STRATEGY.md` 尚未生成。按 `AGENTS.md` 硬规则 3，**任何 RFC 的测试小节必须先在 `TEST-STRATEGY.md` 里存在**才允许开工。下一步是 `/test-strategy`。
+- **测试计划先行**：`TEST-STRATEGY.md` 已就绪，每个 RFC 都有测试小节（`AGENTS.md` 硬规则 3 的前置条件已满足）。
 - **一条 RFC 一个分支**：`rfc/<id>-<slug>`，评审通过后才合并（`WORKFLOW.md` §7）。
 - **状态由命令维护**，不要手工改 Status 列。
-- **偏离必须记录**：写入该 RFC 的 `## Implementation Notes`（`RULES DOC-1`）。
+- **偏离必须记录**：写入该 RFC 的 `## Implementation Notes`（`RULES DOC-1`）。RFC-001 的 §8 是第一个范例。
 
 ---
 
@@ -228,3 +232,4 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 | 2026-11-17 | v2.0 | 第 1 轮冷读（16/16 NEEDS-FIX）后的修订：重排 006/007/008 修依赖倒挂；补齐共享契约、拒绝语义、事件驱动的私有信息、`project()` 签名；新增 C-5 / C-6 / OQ-C6；记录冷读轮次与未覆盖范围 |
 | 2026-11-17 | v2.2 | 按 `CHANGE-REQUEST-002` 修订规则裁决：RUL-1 反转为「胜负先于死亡触发技能」（关闭 C-6 / OQ-C6）；RUL-2 收窄为重投仅可投并列者；RUL-10 移除。同步改 RULES、FEATURES F6、RFC-001~004 |
 | 2026-11-17 | v2.1 | 第 2 轮冷读（001 / 002 / 007）后的修订：修 `order` 分区违反 RUL-8 的 bug；补 `rngAfter` 使重放精确；`GAME_STARTED` 改为 `server` 可见性；补 `GameEventMap` / Zod 归属 / `diedSeq` / `FACTION_OF`；新增 C-7（`ARCH-8` 签名偏差）与 C-8（复盘直读事件流）；合并超限的验收标准 |
+| 2026-11-17 | v2.3 | RFC-001 实现完成（Status → Implemented）。新增 C-9（服务端构建改 Vite SSR）、C-10（`schemas.ts` 范围收窄）、C-11（AC-4 改为两向夹具）、C-12（`order` 四区间）；§10 的前置条件已满足 |
