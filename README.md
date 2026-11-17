@@ -8,7 +8,7 @@ Howl 是狼在夜里的长嚎，也是玩家在白天的"喊话"——两个词�
 
 ## 状态
 
-v0.3 · 产品需求已谈定并通过校验：[`PRD.md`](PRD.md) 53 条需求（36 FR + 17 NFR），[`PRD-REVIEW.md`](PRD-REVIEW.md) 记录 21 项评审发现。规则与架构方案仍在制定中，尚未有代码。
+v0.4 · 产品需求已谈定并通过校验：[`PRD.md`](PRD.md) 58 条需求（40 FR + 18 NFR），[`PRD-REVIEW.md`](PRD-REVIEW.md) 21 项评审发现，[`changes/CHANGE-REQUEST-001.md`](changes/CHANGE-REQUEST-001.md) 为将来的 Roguelike 元层预留了扩展点。规则与架构方案仍在制定中，尚未有代码。
 
 开发流程与 agent 协作方式已先行固化，见下节。
 
