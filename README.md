@@ -8,7 +8,7 @@ Howl 是狼在夜里的长嚎，也是玩家在白天的"喊话"——两个词�
 
 ## 状态
 
-v0.4 · 产品需求已谈定并通过校验：[`PRD.md`](PRD.md) 58 条需求（40 FR + 18 NFR），[`PRD-REVIEW.md`](PRD-REVIEW.md) 21 项评审发现，[`changes/CHANGE-REQUEST-001.md`](changes/CHANGE-REQUEST-001.md) 为将来的 Roguelike 元层预留了扩展点。规则与架构方案仍在制定中，尚未有代码。
+v0.5 · 功能清单已生成：[`FEATURES.md`](FEATURES.md) 57 个功能（Must 31 / Should 11 / Could 3 / Won't 12）。需求侧 [`PRD.md`](PRD.md) 58 条需求已通过校验（[`PRD-REVIEW.md`](PRD-REVIEW.md) 21 项发现），[`changes/CHANGE-REQUEST-001.md`](changes/CHANGE-REQUEST-001.md) 为将来的 Roguelike 元层预留了扩展点。规则与架构方案仍在制定中，尚未有代码。
 
 开发流程与 agent 协作方式已先行固化，见下节。
 
@@ -27,7 +27,7 @@ v0.4 · 产品需求已谈定并通过校验：[`PRD.md`](PRD.md) 58 条需求�
 当前进度：
 
 ```
-/extract-features   ← 下一步：把 PRD 拆成带优先级与验收标准的 FEATURES.md
+/generate-rules     ← 下一步：写 RULES.md，锁定依赖版本与工程规则
 ```
 
 随时查看全局进度：`/workflow-status`。
