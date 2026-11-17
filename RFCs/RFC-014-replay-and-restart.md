@@ -23,7 +23,7 @@
 ```ts
 interface ReplaySnapshot {
   gameId: string; seed: number;
-  finishedAt: number; result: 'wolf' | 'good' | 'draw';
+  finishedAt: number; result: 'wolf' | 'good';
   winCondition: string;              // 达成瞬间的描述
   timeline: TimelineEntry[];        // 按 seq
   seats: { seat: SeatId; role: Role; persona: Persona; alive: boolean }[];

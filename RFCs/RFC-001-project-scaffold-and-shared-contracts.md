@@ -81,8 +81,8 @@ export interface GameState {
   phase: Phase;
   day: number;            // 从 1 开始
   seats: Seat[];          // 恒 9 项，按 seat 升序
-  stalemateDays: number;  // RUL-10
   seq: number;            // 已产生事件的最大 seq
+  // 注：无 stalemateDays。RUL-10 已移除平局兜底（见 RULES.md §6）
 }
 ```
 
@@ -146,7 +146,7 @@ export interface GameEventMap {
   WOLF_CHAT_POSTED: { seat: SeatId; text: string; round: 'night-chat' };
   SELF_EXPOSE: { seat: SeatId };
   AI_THOUGHT: { reason: string; claim?: unknown; decisionSeq: number };
-  GAME_ENDED: { result: 'wolf' | 'good' | 'draw'; condition: string };
+  GAME_ENDED: { result: 'wolf' | 'good'; condition: string };
   DEGRADED: { seat: SeatId };
 }
 export type GameEventType = keyof GameEventMap;

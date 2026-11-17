@@ -49,8 +49,12 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 2. 若女巫本夜用了 `heal` 且 `healTarget === killTarget` → 该目标存活，当夜无狼刀死亡。
 3. 否则 `killTarget` 出局。
 4. 若女巫本夜用了 `poison`，其目标出局。
-5. **猎人**：若出局方式是「被狼刀」则进入 `NIGHT_HUNTER_SHOOT`；若是「被毒杀」则**不进入**（FR-17）。
-6. 全部出局结算完毕后，产出事件并进入 `DAY_ANNOUNCE`。
+5. 全部出局者应用完毕后，**先调用 `checkWin`（RFC-002 §2.7）判一次胜负**（RUL-1）。
+   - 已分出胜负 → 对局结束，**不进入开枪阶段**。
+   - 未分出胜负 → 继续下一步。
+6. **猎人**：若出局方式是「被狼刀」则进入 `NIGHT_HUNTER_SHOOT`；若是「被毒杀」则**不进入**（FR-17）。
+7. 开枪结算完成后**再调用一次 `checkWin`**。
+8. 未结束则进入 `DAY_ANNOUNCE`。
 
 整个 §2.3 产出的是 `Effect[]`（`source: 'role'`），按 RFC-001 §2.3 的 `order` 分区落位：解药在 0–99、狼刀与毒药在 100–199、猎人开枪在 200–299——**升序应用即可满足 RUL-8「解药先于击杀」与 RUL-1「开枪先于胜负判定」**。
 
@@ -99,18 +103,18 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 2. 同一 `seed` 两次发牌结果完全一致；`roles` 出现在 `GAME_STARTED` 事件的 payload 中
 3. 50 个固定种子的样本里，玩家席位分别拿到过狼、神、民三类各至少 1 次
 4. `WOLF_KILL` 提交后产出 `WOLF_KILL_CHOSEN` 事件，其 `visibleTo === 'wolves'`
-5. `WOLF_KILL` 指向已出局席位时，产出 `Rejected` 事件且 `code === 'TARGET_NOT_ALIVE'`，状态除 `seq` 外不变
-6. 同一轮内狼人指定狼人为目标时，产出 `Rejected` 事件且 `code === 'WOLF_KILL_WOLF'`
-7. `SEER_CHECK` 后产出 `SEER_CHECKED` 事件，`visibleTo === 'seer'`，`result` 只取 `'wolf'` 或 `'not-wolf'` 且与目标真实阵营一致
-8. `WITCH_ACT` 指定 `heal` 且 `target` 为女巫自己时，产出 `Rejected` 事件且 `code === 'WITCH_SELF_SAVE'`
-9. 同一夜第二次提交 `WITCH_ACT`（无论哪种药）时，产出 `Rejected` 事件且 `code === 'NOT_YOUR_TURN'`（该阶段已结束）
-10. 女巫用过的药在后续夜晚再次使用时，产出 `Rejected` 事件且 `code === 'POTION_ALREADY_USED'`（药水位由事件流推导）
-11. `heal` 目标与狼刀目标相同时：当夜无人出局，事件流中不含任何 `PLAYER_DIED` 事件
-12. `heal` 目标与狼刀目标不同时：狼刀目标出局、被救目标存活，两者各有一条 `PLAYER_DIED` 事件（仅出局者）
-13. 刀杀的猎人出局后进入 `NIGHT_HUNTER_SHOOT`，提交 `HUNTER_SHOOT` 后产出带 `source: 'role'` 的效果
-14. 毒杀的猎人出局后**不**进入 `NIGHT_HUNTER_SHOOT`：事件流中不含任何 `HUNTER_SHOOT` 事件
-15. 夜晚结算产出的每条 `Effect` 的 `source` 均为 `'role'`；解药的 `order` 小于狼刀与毒药的 `order`，猎人开枪的 `order` 大于二者的 `order`（可据此断言 RUL-8 与 RUL-1 的时序）
-16. 夜晚结束后 `phase === 'DAY_ANNOUNCE'`；此时对本 phase 提交任何 action 均抛 `UnhandledTransitionError`（RFC-004 尚未实现该阶段）
+5. `WOLF_KILL` 指向已出局席位时产出 `Rejected`（`code === 'TARGET_NOT_ALIVE'`）；同一轮内狼人指定狼人为目标时产出 `Rejected`（`code === 'WOLF_KILL_WOLF'`）；两种情况状态除 `seq` 外不变
+6. `SEER_CHECK` 后产出 `SEER_CHECKED` 事件，`visibleTo === 'seer'`，`result` 只取 `'wolf'` 或 `'not-wolf'` 且与目标真实阵营一致
+7. `WITCH_ACT` 指定 `heal` 且 `target` 为女巫自己时，产出 `Rejected` 事件且 `code === 'WITCH_SELF_SAVE'`
+8. 同一夜第二次提交 `WITCH_ACT`（无论哪种药）时，产出 `Rejected` 事件且 `code === 'NOT_YOUR_TURN'`（该阶段已结束）
+9. 女巫用过的药在后续夜晚再次使用时，产出 `Rejected` 事件且 `code === 'POTION_ALREADY_USED'`（药水位由事件流推导）
+10. `heal` 目标与狼刀目标相同时：当夜无人出局，事件流中不含任何 `PLAYER_DIED` 事件
+11. `heal` 目标与狼刀目标不同时：狼刀目标出局、被救目标存活，两者各有一条 `PLAYER_DIED` 事件（仅出局者）
+12. 刀杀的猎人在「未分出胜负」时进入 `NIGHT_HUNTER_SHOOT`，提交 `HUNTER_SHOOT` 后产出带 `source: 'role'` 的效果，并触发第二次 `checkWin`
+13. 毒杀的猎人出局后**不**进入 `NIGHT_HUNTER_SHOOT`：事件流中不含任何 `HUNTER_SHOOT` 事件
+14. **胜负先于开枪**：构造「被刀的猎人正是最后一个神（屠边）」的局面，断言对局在第一次 `checkWin` 处结束为狼胜，且事件流中**不含** `NIGHT_HUNTER_SHOOT` 阶段与 `HUNTER_SHOOT` 事件
+15. 夜晚结算产出的每条 `Effect` 的 `source` 均为 `'role'`；解药的 `order` 小于狼刀与毒药的 `order`，猎人开枪的 `order` 大于二者的 `order`（可据此断言 RUL-8 的时序）
+16. 未分出胜负时，夜晚结束后 `phase === 'DAY_ANNOUNCE'`；此时对本 phase 提交任何 action 均抛 `UnhandledTransitionError`（RFC-004 尚未实现该阶段）
 
 ## 6. 边界与测试
 

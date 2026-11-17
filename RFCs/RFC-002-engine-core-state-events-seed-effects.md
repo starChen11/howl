@@ -107,6 +107,22 @@ type ResolutionPoint = 'NIGHT_RESOLVE' | 'VOTE_RESOLVE' | 'DEATH_RESOLVE' | 'WIN
 function applyEffects(state: GameState, effects: Effect[]): GameState;
 ```
 
+### 2.7 胜负谓词
+
+胜负判定需要一个**纯谓词**，但它被两个 RFC 使用：夜间死亡结算（RFC-003）与白天放逐结算（RFC-004）都要在「死亡之后、技能之前」判一次（RUL-1）。
+
+因此本 RFC 提供谓词，**不提供判定时机与流程**：
+
+```ts
+function checkWin(state: GameState): { result: 'wolf' | 'good'; condition: string } | null;
+```
+
+它只读 `state.seats` 与 `state.mode`，不推进状态、不产生事件。谁在什么时候调用它、判完之后怎么走，由 RFC-003 与 RFC-004 决定。
+
+`condition` 是给复盘用的可读描述（如 `'all-seers-and-witches-and-hunters-dead'`）。
+
+**注意**：这不是把 F6 拆到本 RFC。F6（胜负判定）仍归 RFC-004；本 RFC 只提供被两个 RFC 共用的纯函数。
+
 ### 2.5 随机
 
 - 算法：`mulberry32`（或等价的、状态可序列化为一个 32 位整数的生成器）。
@@ -129,6 +145,7 @@ function applyEffects(state: GameState, effects: Effect[]): GameState;
 | `src/engine/effects.ts` | `applyEffects`、`applyModifiers`、`Modifier` |
 | `src/engine/rng.ts` | PRNG 与 `nextInt` |
 | `src/engine/transitions.ts` | 每个 phase 的允许 action 集合 |
+| `src/engine/win.ts` | `checkWin(state): { result: 'wolf' \| 'good'; condition: string } \| null`（纯谓词，见 §2.7） |
 | `src/engine/errors.ts` | `UnhandledTransitionError` |
 | `tests/engine/replay.test.ts` | 事件溯源与确定性 |
 | `tests/engine/effects.test.ts` | 效果顺序与插入点 |
@@ -157,7 +174,8 @@ function applyEffects(state: GameState, effects: Effect[]): GameState;
 12. 不注册任何 modifier 时，`applyModifiers` 返回与输入深度相等（仅顺序规范化）的效果列表
 13. 扫描 `src/engine/` 全部 `.ts`，断言不出现 `Math.random(`
 14. `src/engine/` 行覆盖率 ≥ 90%、分支覆盖率 ≥ 85%
-15. 引擎测试期间零网络调用：`fetch` 被替换为抛错桩后全部引擎测试通过
+15. `checkWin` 是纯谓词：只读 `state.seats` 与 `state.mode`，不产生事件、不推进状态；屠边与屠城两个模式下用构造局面各断言一次返回值与 `condition` 文案
+16. 引擎测试期间零网络调用：`fetch` 被替换为抛错桩后全部引擎测试通过
 
 ## 6. 边界与测试
 

@@ -48,40 +48,37 @@ type DayStartedPayload = {
 | 结果 | 处理 |
 |---|---|
 | 唯一最高票 | 该玩家进入 `DAY_LYNCH` |
-| 并列最高票 | 进入 `DAY_VOTE_RUNOFF`，选项集 = 并列者 + `'abstain'`（RUL-2） |
-| 全员弃权（有效票为 0） | 无人出局，直接进入下一夜（计一次 stalemate） |
-| 重投仍并列 | 无人出局，直接进入下一夜（RUL-9，计一次 stalemate） |
+| 并列最高票 | 进入 `DAY_VOTE_RUNOFF`，选项集**仅为并列者本身**，不能弃权、不能投他人（RUL-2） |
+| 全员弃权（有效票为 0） | 无人出局，直接进入下一夜 |
+| 重投仍并列 | 无人出局，直接进入下一夜（RUL-9） |
 
 ### 2.4 放逐与开枪
 
 `DAY_LYNCH`：被放逐者出局，产出 `PLAYER_DIED`（`cause: 'lynch'`）。
 
-若出局者是猎人 → 进入 `DAY_HUNTER_SHOOT`，允许 `HUNTER_SHOOT`（可放弃）。**开枪结算完成后才进行胜负判定**（RUL-1）。
+**先判胜负，再决定是否有开枪机会**（RUL-1）：
+
+1. 应用放逐造成的死亡。
+2. **第一次胜负判定**。若已分出胜负（例如他是最后一个神，屠边条件达成）→ 对局立即结束，**不进入开枪阶段**。
+3. 未分出胜负且出局者是猎人 → 进入 `DAY_HUNTER_SHOOT`，允许 `HUNTER_SHOOT`（可放弃）。
+4. 开枪结算完成后 → **第二次胜负判定**。
 
 ### 2.5 胜负判定
 
-判定点在**每个结算点完成、所有技能效果应用完毕后**，执行一次，进入 `WIN_CHECK`：
+判定点是**两处**（RUL-1）：① 死亡结算完成后、死亡触发技能之前；② 死亡触发技能结算完成后。两处都进入 `WIN_CHECK`：
 
 | 模式 | 狼人胜 | 好人胜 |
 |---|---|---|
 | `slaughter-side`（默认） | 神全部出局，或民全部出局 | 狼人**全部**出局（死因任意） |
 | `slaughter-all` | 好人全部出局 | 狼人全部出局 |
 
-判定后进入 `FINISHED`，记录 `result: 'wolf' | 'good' | 'draw'`。`FINISHED` 后任何 action 产出 `Rejected`（`code: 'PHASE_MISMATCH'`）。
+判定后进入 `FINISHED`，记录 `result: 'wolf' | 'good'`（**无平局**）。`FINISHED` 后任何 action 产出 `Rejected`（`code: 'PHASE_MISMATCH'`）。
 
-### 2.6 平局兜底
+### 2.6 不存在「同时达成」，也没有平局
 
-连续 **3** 个白天「本夜无死亡 且 当日无人出局」→ `result: 'draw'`，进入 `FINISHED`（RUL-10）。计数 `state.stalemateDays`：满足条件时 +1，否则清零；只在白天结束时更新。
+按 RUL-1，狼胜条件成立的**瞬间**对局就结束，猎人没有开枪机会，因此两阵营**不可能在同一时刻都满足条件**。原「同归于尽 → 平局」分支与「连续 N 天无进展 → 平局」兜底**均已移除**（RUL-10 已标 `[REMOVED]`）。
 
-### 2.7 同时达成（本 RFC 新增裁决）
-
-存在两阵营同时满足条件的局面，最典型的是「猎人开枪带走最后一只狼，而猎人自己就是最后一个神」。RULES §6 未覆盖此情形。
-
-本 RFC 的裁决：**同时达成 → `result: 'draw'`（同归于尽）**，并在复盘标注「同归于尽」。
-
-理由：RUL-1 只规定「技能结算先于胜负判定」，没有规定谁优先；给任一方优先都会在「最后一换一」时显得任意。平局是对称的，且与 RUL-10 已有的 `draw` 概念一致。
-
-**这条裁决必须回写 `RULES.md` §6**（走 `/manage-changes`），已记入 `RFCS.md` 的 Open conflicts。
+**终止性论证**（替代人为平局上限）：女巫解药全局限一次；用尽后每夜必有狼刀死亡。死亡单调累积，必然在某天达成某个屠边/屠城条件。因此对局必然终止，不需要人为上限。
 
 ## 3. 交付物
 
@@ -90,37 +87,36 @@ type DayStartedPayload = {
 | `src/engine/phases/day.ts` | `DAY_ANNOUNCE` / `DAY_SPEECH` 与 cursor |
 | `src/engine/phases/vote.ts` | 投票、结算、重投 |
 | `src/engine/phases/lynch.ts` | 放逐与猎人开枪 |
-| `src/engine/win.ts` | 双模式判定、同时达成、平局兜底 |
+| `src/engine/win.ts` | 双模式判定（复用 RFC-002 的 `checkWin`）+ 两次判定的时机编排 |
 | `tests/engine/day.test.ts` | 发言顺序 |
 | `tests/engine/vote.test.ts` | 投票与平票 |
-| `tests/engine/win.test.ts` | 胜负与平局 |
+| `tests/engine/win.test.ts` | 胜负判定与两次判定的时序 |
 | `tests/engine/full-game.test.ts` | 无 AI 全流程 |
 
 ## 4. 实现要点
 
 - `speechStart` 的随机抽取只发生在 `DAY_ANNOUNCE` 入口，结果进事件 payload；`speechStart(state)` 是读字段的纯函数。
 - 票箱从 `VOTE_CAST` 事件推导，不在 `state` 里另存一份可变 Map（ARCH-3 禁止 `Map`）。
-- `stalemateDays` 的更新集中在 `WIN_CHECK` 一处，避免多处 +1 导致误判。
 - `FINISHED` 后所有 action 走 `Rejected`（`PHASE_MISMATCH`），不是抛错——这是合法但无效的提交。
 
 ## 5. 验收标准
 
 1. 发言顺序是单一顺时针循环：每轮恰好遍历所有存活席位一次，无重复、无遗漏
 2. 首日有死者时，`DAY_STARTED.speechStartSeat` 等于「结算顺序第一位死者的下一位存活席位」
-3. 当日无死者时，`speechStartSeat` 由 `state.rng` 决定，并记录在 `DAY_STARTED` payload 中；同 `seed` 两次运行该字段相同
-4. 起点席位恰好是死者时，起点继续顺时针推进到下一个存活席位
-5. 已出局玩家不出现在发言队列中
-6. 每张票以 `VOTE_CAST` 事件记录，其 `visibleTo === 'self:<投票者>'`；投票阶段结束前，任意观察者的投影中不含他人票型
-7. 投票结算后产出一条 `VOTE_REVEALED` 公开事件，含全部投票者与其选择（弃权者标注为 `abstain`）
-8. 唯一最高票者出局，产出 `PLAYER_DIED` 且 `cause === 'lynch'`
-9. 出现并列最高票时进入重投，选项集恰为「并列者 + abstain」；重投仍并列时当日无人出局，`phase` 推进到下一夜
-11. 全员弃权（有效票 0）时当日无人出局，`phase` 推进到下一夜
-12. 屠边模式：神全灭 → 狼胜；民全灭 → 狼胜；狼全灭 → 好人胜（三种局面各一条用例，狼的死因分别为夜间被杀、被毒、被放逐）
-13. 屠城模式：好人全灭 → 狼胜；狼全灭 → 好人胜
-14. 技能先于判定：构造「猎人被放逐并开枪带走最后一狼，且猎人就是最后一个神」，断言 `result === 'draw'`（§2.7）
-15. 胜负只判定一次：进入 `FINISHED` 后再提交 action 产出 `Rejected`（`code === 'PHASE_MISMATCH'`），除 `seq` 外状态不变
-16. 连续 3 个白天「本夜无死亡且当日无人出局」时 `result === 'draw'` 并进入 `FINISHED`；中间任一天打破条件则 `stalemateDays` 归零
-17. 用预置的无 AI 脚本（固定种子，逐步指定各席位动作）能把一整局跑到 `FINISHED`，且事件流 `replay` 出同一终局
+3. 当日无死者时，`speechStartSeat` 由 `state.rng` 决定并记录在 `DAY_STARTED` payload 中；同 `seed` 两次运行该字段相同
+4. 起点席位恰好是死者时，起点继续顺时针推进到下一个存活席位；已出局玩家不出现在发言队列中
+5. 每张票以 `VOTE_CAST` 事件记录，`visibleTo === 'self:<投票者>'`；投票结算前任意观察者的投影中不含他人票型
+6. 投票结算后产出一条 `VOTE_REVEALED` 公开事件，含全部投票者与其选择（首轮弃权者标注为 `abstain`）
+7. 唯一最高票者出局，产出 `PLAYER_DIED` 且 `cause === 'lynch'`
+8. 出现并列最高票时进入重投，重投的选项集**恰为并列者本身**：提交 `abstain` 或指向非并列者的票均产出 `Rejected`（`code === 'INVALID_RUNOFF_TARGET'`）
+9. 重投仍并列时当日无人出局，`phase` 推进到下一夜；全员弃权（有效票 0）时同样当日无人出局并推进到下一夜
+10. 屠边模式：神全灭 → 狼胜；民全灭 → 狼胜；狼全灭 → 好人胜（三种局面各一条用例，狼的死因分别为夜间被杀、被毒、被放逐）
+11. 屠城模式：好人全灭 → 狼胜；狼全灭 → 好人胜
+12. **胜负先于技能**：构造「猎人被刀且他正是最后一个神」的局面，断言对局在第一次胜负判定处结束为狼胜，事件流中**不含任何 `HUNTER_SHOOT` 事件**（RUL-1）
+13. **技能后二次判定**：构造「猎人被刀、狼还剩 1 只、好人另有存活」，猎人开枪带走最后一狼后断言结果为好人胜（RUL-1 的第二次判定）
+14. 不存在平局：对上述全部胜负用例断言 `result ∈ {'wolf','good'}`，且事件流中不出现 `'draw'`；`GameState` 中不存在 `stalemateDays` 字段
+15. 进入 `FINISHED` 后再提交 action 产出 `Rejected`（`code === 'PHASE_MISMATCH'`），除 `seq` 外状态不变
+16. 用预置的无 AI 脚本（固定种子，逐步指定各席位动作）能把一整局跑到 `FINISHED`，且事件流 `replay` 出同一终局
 
 ## 6. 边界与测试
 
@@ -134,6 +130,5 @@ type DayStartedPayload = {
 | ID | 问题 | 假设 |
 |---|---|---|
 | Q-004-1 | 重投时非并列者能否投票 | **(assumption)** 能；选项集只限制被投目标，不限制投票人 |
-| Q-004-2 | 平局是否计入任何一方胜场 | **(assumption)** 不计；复盘显示为平局 |
 | Q-004-3 | 猎人被自曝夜里的刀杀死能否开枪 | **(assumption)** 能；只有「被毒杀」与「被放逐时放弃」两种例外 |
-| Q-004-4 | §2.7 的「同时达成判平局」是否被接受 | **(pending)** 需用户确认并回写 RULES.md §6 |
+| Q-004-4 | ~~同时达成判平局~~ | **已关闭**：RUL-1 反转后该情形不存在（`CHANGE-REQUEST-002`） |
