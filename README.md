@@ -8,7 +8,7 @@ Howl 是狼在夜里的长嚎，也是玩家在白天的"喊话"——两个词�
 
 ## 状态
 
-v0.9 · **工程骨架已落地；RFC-001 评审的 6 个阻塞项已修完，状态回到 `Implemented`，等待复审。** 两轮记录见 [`reviews/REVIEW-RFC-001.md`](reviews/REVIEW-RFC-001.md) 与 [`RFCs/RFC-001`](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) §8.7。[`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC（1 个 `Implemented`、15 个 `Not started`），[`TEST-STRATEGY.md`](TEST-STRATEGY.md) 覆盖全部 222 条验收标准，[`RULES.md`](RULES.md) 75 条工程规则（含 `RA-1`~`RA-10` 裁决），[`FEATURES.md`](FEATURES.md) 57 个功能，[`PRD.md`](PRD.md) 58 条需求。
+v0.9 · **工程骨架已落地；RFC-001 Round 2 评审结论为 `Changes requested`，代码与 78 个用例仍全绿。** 三个阻塞项是：C-17 的跨 RFC payload 契约（RFC-002/004/006/007/009/014）、F6 残留的 RFC §2.3 与代码注释、F1 的 `EventEnvelope` 默认类型缺回归夹具。Round 1/2 记录见 [`reviews/REVIEW-RFC-001.md`](reviews/REVIEW-RFC-001.md)，冲突见 [`RFCS.md`](RFCS.md) §8.1 的 C-13 ~ C-17。[`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC（1 个 `Changes requested`、15 个 `Not started`），[`TEST-STRATEGY.md`](TEST-STRATEGY.md) 覆盖全部 222 条验收标准，[`RULES.md`](RULES.md) 75 条工程规则（含 `RA-1`~`RA-10` 裁决），[`FEATURES.md`](FEATURES.md) 57 个功能，[`PRD.md`](PRD.md) 58 条需求。
 
 已有代码：`src/shared/`（跨层类型契约的唯一归属）、`src/server/`（Fastify 骨架 + `/api/health`）、`src/client/`（占位页）。**还没有任何游戏逻辑**——那是 RFC-002 起的活。
 
@@ -35,7 +35,8 @@ pnpm test       # 78 个用例，含五条命令的门禁测试
 ```
 评审 Round 1 → reviews/REVIEW-RFC-001.md（Changes requested）
 6 个阻塞项已修 → RFC §8.7
-下一步：/review-rfc 001（必须再换一个新会话，Round 2 追加在同一文件）
+评审 Round 2 → reviews/REVIEW-RFC-001.md（Changes requested：B1 / B2 / B3）
+下一步：先 /manage-changes 统一 C-17 的 payload 形状，并修掉 B2 / B3，再开 Round 3
 ```
 
 随时查看全局进度：`/workflow-status`。
