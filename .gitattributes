@@ -1,0 +1,21 @@
+# 统一换行：Windows 上检出也必须保持 LF，否则技能文件与文档会产生无意义的 diff，
+# 且 SKILLS.lock.json 的哈希会随平台变化。
+* text=auto eol=lf
+
+*.md   text eol=lf
+*.json text eol=lf
+*.mjs  text eol=lf
+*.js   text eol=lf
+*.py   text eol=lf
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
