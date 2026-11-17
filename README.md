@@ -10,4 +10,24 @@ Howl 是狼在夜里的长嚎，也是玩家在白天的"喊话"——两个词�
 
 v0.0.1 · 项目刚刚创建。玩法、规则与架构方案仍在制定中，尚未有代码。
 
-后续的设计与方案文档会放在 `docs/` 下。
+开发流程与 agent 协作方式已先行固化，见下节。
+
+## 怎么参与开发
+
+本项目由人和 AI agent 在 DeepSeek Harness（DSH）里协作完成，流程与工具已固定在仓库内，不依赖个人环境。
+
+| 先读 | 内容 |
+|------|------|
+| [`AGENTS.md`](AGENTS.md) | 硬规则：阶段门禁、技能来源、跨平台约定（每个会话自动加载） |
+| [`docs/process/WORKFLOW.md`](docs/process/WORKFLOW.md) | 完整流程：9 个阶段、RFC 状态机、完成定义、技能治理 |
+| [`docs/process/SKILLS.lock.json`](docs/process/SKILLS.lock.json) | 21 个固化技能的版本与校验和 |
+
+用 DSH 打开本仓库后，`.dsh/skills/` 下的技能会自动生效并覆盖个人安装的同名技能，因此每个人跑的是同一套流程。
+
+当前进度：
+
+```
+/create-prd      ← 下一步：把玩法需求谈成 PRD.md
+```
+
+随时查看全局进度：`/workflow-status`。
