@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.4 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.10 · 最后更新 2026-11-17
+> 版本 v1.5 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.11 · 最后更新 2026-11-17
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -29,8 +29,8 @@ RFC-001 已实现并通过评审修复，`Exists?` 按实际落地情况回填�
 
 ```
 $ pnpm test
- Test Files  15 passed (15)     # unit 9 个 + meta 6 个
-      Tests  87 passed (87)
+ Test Files  28 passed (28)     # unit 21 个 + meta 7 个
+      Tests  186 passed (186)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -142,25 +142,26 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 ## RFC-002: 引擎内核：状态机、事件流、种子与效果管道
 
+> v1.5 回填：RFC-002 已实现，`Exists?` 全部 `existing`。计划 10 个文件，实际 12 个（多了
+> `replay-parity.test.ts` 与 `no-network.test.ts`，少了独立的 `coverage.test.ts`——覆盖率
+> 门禁挪进了 `tests/meta/`，因为它是会起子进程的门禁而不是引擎单测）。
+
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2 | `tests/engine/step.test.ts`：参数化覆盖每种 `Action`；断言 `reduce(s,a)` 与 `step(s,a).state` 深相等；`Object.freeze(state)` 后调用不抛；连调两次结果相等 | unit | proposed | Must |
-| 3 | `tests/engine/serialization.test.ts`：往返 JSON 断言深度相等；递归断言每个值原型为 `Object.prototype` 或 `Array`，无 `Date`/`Map`/`Set`/函数 | unit | proposed | Must |
-| 4、5 | `tests/engine/replay.test.ts`：固定 `seed` 跑一段 action 序列得事件流，`replay` 后与最终状态深相等；同 seed 跑两次事件流逐条相等（忽略 `ts`） | unit | proposed | Must |
-| 6、7 | `tests/engine/events.test.ts`：断言 `seq` 从 1 严格递增无跳号；首事件为 `GAME_STARTED` 且 payload 含 `seed`/`mode`/`playerSeat`/`roles`/`personas` | unit | proposed | Must |
-| 8 | `tests/engine/reject.test.ts`：`PLAYERS` 阶段提交 `START` 以外的 action，断言产出 `REJECTED` 且 `code === 'PHASE_MISMATCH'`，除 `seq` 外状态不变 | unit | proposed | Must |
-| 9 | `tests/engine/transitions.test.ts`：遍历 `transitions` 表每个 `(phase, action)` 允许对，断言存在 handler；对一个故意缺失 handler 的假表断言抛 `UnhandledTransitionError` | unit | proposed | Must |
-| 10 | `tests/engine/effects.test.ts`：构造乱序 `Effect[]`，断言应用后按 `order` 升序、同级按 `id` 字典序；同数组两次应用结果相等 | unit | proposed | Must |
-| 11 | `tests/engine/effects.test.ts`：注册假 modifier 到 `VOTE_RESOLVE` 注入「票无效」效果，断言最终状态因此改变；再断言不注册时结果与基线相等 | unit | proposed | Must |
-| 12 | `tests/engine/rng.test.ts`：同 seed 两次抽序列相等；扫描 `src/engine/**.ts` 断言无 `Math.random(` | unit | proposed | Must |
-| 13、14、16 | `tests/engine/coverage.test.ts` 由 `pnpm test` 的覆盖率报告断言阈值；引擎测试运行时把 `fetch` 换成抛错桩，全部通过 | integration | proposed | Must |
-| 15 | `tests/engine/win.test.ts`：构造屠边/屠城局面各一，断言 `checkWin` 返回值与 `condition` 文案；断言调用不产生事件、不改状态 | unit | proposed | Must |
+| 1、2 | `tests/engine/step.test.ts`：10 种 action 样本逐一断言 `reduce === step().state`；`Object.freeze` 后调用不抛；不修改 action | unit | existing: tests/engine/step.test.ts | Must |
+| 3 | `tests/engine/serialization.test.ts`：JSON 往返 + 递归原型断言（含 `Date`/`Map`/`Set` 反例） | unit | existing: tests/engine/serialization.test.ts | Must |
+| 4 | `tests/engine/replay.test.ts`：只传事件流重建；seq 跳号 / 首事件不对 / 缺 `rngAfter` / 未知类型 / gameId 混流各有否定用例 | unit | existing: tests/engine/replay.test.ts | Must |
+| 5 | `tests/engine/determinism.test.ts`：同 seed + 同序列两次事件流逐条相等；不同 seed 发牌不同 | unit | existing: tests/engine/determinism.test.ts | Must |
+| 6、7 | `tests/engine/events.test.ts`：seq 严格递增无跳号；首事件 `GAME_STARTED` 且 payload 四个字段齐全、可见性 `server`、带 `rngAfter` | unit | existing: tests/engine/events.test.ts | Must |
+| 8 | `tests/engine/reject.test.ts`：phase 不匹配 → `Rejected`（`PHASE_MISMATCH`）且除 seq 外状态不变；另覆盖 `START_STATE_MISMATCH` | unit | existing: tests/engine/reject.test.ts | Must |
+| 9 | `tests/engine/transitions.test.ts`：表覆盖 14 phase、每个允许对都有 handler、假表缺 handler 抛 `UnhandledTransitionError` | unit | existing: tests/engine/transitions.test.ts | Must |
+| 10、11、12 | `tests/engine/effects.test.ts`：顺序（order + id）、两次应用相等、假 modifier 注入改变终态、无 modifier 时仅规范化 | unit | existing: tests/engine/effects.test.ts | Must |
+| 13 | `tests/engine/rng.test.ts`：扫描 `src/engine` 无 `Math.random(`（含反空转断言）+ PRNG 确定性 | unit | existing: tests/engine/rng.test.ts | Must |
+| 14、16 | `tests/meta/coverage.test.ts`（阈值 + 无忽略注释）+ `tests/setup/no-network.ts` 与 `tests/engine/no-network.test.ts`（`fetch` 抛错桩） | integration / unit | existing: 三个文件 | Must |
+| 15 | `tests/engine/win.test.ts`：屠边/屠城各断言、RUL-5 只数存活、纯谓词（调用前后状态相等） | unit | existing: tests/engine/win.test.ts | Must |
+| C-18（变更） | `tests/engine/replay-parity.test.ts`：`replay` 后用重建状态继续 `step`，事件/终态/胜负判定都与实时一致。比较的是整个 state，RFC-003 起加派生字段会自动覆盖 | unit | existing: tests/engine/replay-parity.test.ts | Must |
 
-| C-18（变更） | `tests/engine/replay-parity.test.ts`：跑一段含派生字段（cursor / 票箱 / 药水位 / 夜聊提交）的 action 序列，取事件流，再 `replay` 后**用重建状态继续 `step`**，断言其判定与原始运行逐项一致（尤其「药已用」「该谁发言」「谁已投票」）。这是「派生字段只由 `applyEvent` 写」这条纪律的唯一自动验收手段 | unit | proposed | Must |
-
-**依赖与夹具**：需要 RFC-001 的类型与 `isVisibleTo`。夹具 `tests/fixtures/states.ts` 提供「夜晚中」「投票中」「已终局」三个手写状态。
-
-> C-18 的落地规则在 `RFCs/RFC-001` §2.3（派生字段的两条约束）与 `RFCs/RFC-002` §2.1（`applyEvent` 是唯一写入口）。上表最后一行是那条规则的验收方式：**没有它，纪律就只是文档**。
+**夹具**：`tests/fixtures/states.ts`（`lobbyState` / `startedState` / `stateWithRoles`）。
 
 ---
 
@@ -432,6 +433,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-17 | v1.0 | 初次生成：16 个 RFC 小节、222 条验收标准的逐条落表、126 条计划测试、6 项人工检查 |
+| 2026-11-17 | v1.5 | RFC-002 实现后回填：10 行全部 `existing`，文件数从计划的 10 改为实际 12（覆盖率门禁移入 `tests/meta/`）；基线用例数 87 → 186 |
 | 2026-11-17 | v1.4 | RFC-001 Round 4 后同步：用例数 86 → 87，`RFCS.md` 引用由 v2.7 更新为 v2.10（C-20） |
 | 2026-11-17 | v1.3 | RFC-001 Round 2 修复后回填：`contracts.test.ts` 拆成 domain / actions / events 三个文件；补 B3（`EventEnvelope` 夹具）、N1（五个严格开关）、N2（构建前清 `dist`）、N3（`EFFECT_SOURCES` / `SELF_VISIBILITY_PREFIX`）与 CR-003 一行 |
 | 2026-11-17 | v1.1 | RFC-001 实现后按实际落地的测试回填：新增 T-4（自递归）、T-5（代理改用 HTTP）、T-6（路径按 RFC）、T-7（构建测试不跳过）；RFC-001 小节的实际用例数以 `RFCs/RFC-001-*.md` §8.5 为准 |

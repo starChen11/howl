@@ -38,7 +38,7 @@
 | RFC | 标题 | 功能 | 复杂度 | Status |
 |---|---|---|---|---|
 | [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Reviewed |
-| [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Not started |
+| [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Implemented |
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Not started |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Not started |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
@@ -238,6 +238,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-17 | v2.11 | RFC-002 实现完成（Status → Implemented）：三个纯函数 + 事件草稿盖章 + 效果管道 + `checkWin` + `replay`；C-18 的验收手段 `tests/engine/replay-parity.test.ts` 落地；覆盖率门禁 98.01% / 94.04%。偏离与决定见 RFC-002 §8.2 |
 | 2026-11-17 | v2.10 | RFC-001 Round 4 评审完成（Status → `Reviewed`）：16 条 AC 与 21 个变异探针全部通过，干净检出 87 用例全绿；C-18 / C-19 复核通过；新增 C-20（`TEST-STRATEGY` 基线、RFC §2.2 构建描述、§8.4 文件清单的文档同步，非阻塞），并同步 RFC-001 状态与 `README.md`。证据见 `reviews/REVIEW-RFC-001.md` Round 4。 |
 | 2026-11-17 | v2.9 | RFC-001 Round 3 评审修复：`CHANGE-REQUEST-004` 裁决 C-18（派生字段只由 `applyEvent` 写、加 replay 一致性测试）与 C-19（`DAY_VOTE_RESOLVE` → 结算点 `VOTE_RESOLVE`）；补 B2 残留的三处注释/引用、§8.5 的验证数字、health 单测的自指断言 |
 | 2026-11-17 | v2.8 | RFC-001 Round 3 评审完成（Status → `Changes requested`）：B1 / B3 复核通过；B2 仍有 `src/shared/events.ts:160` 的 `type: string` 不实注释与两处 `contracts.test.ts` 失效引用；README 与 RFC §8.5 的验证数字落后于 86 个用例；新增 C-18（`GameState` / `step` 与 RFC-003/004/005 的事件推导缺口，阻塞 RFC-002）与 C-19（`DAY_VOTE_RESOLVE` 不在 `Phase` 中）。证据见 `reviews/REVIEW-RFC-001.md` Round 3。 |
