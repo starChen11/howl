@@ -232,7 +232,10 @@ function checkWin(state: GameState): { result: 'wolf' | 'good'; condition: strin
 | **D-11** | `GAME_STARTED` 带 `rngAfter`（发牌后的生成器状态） | 发牌消耗了随机数（§2.2 第 2 条）；没有它，`replay` 恢复出的 `state.rng` 会退回初始种子态，之后所有随机结果都漂移 | 计划内 |
 | **D-12** | `START` 的 `seed` / `mode` / `playerSeat` 与已发牌状态不一致时产出 `Rejected`（`code: 'START_STATE_MISMATCH'`），不抛错 | 抛错会把一次坏请求变成 500。这也让 §2.3 的「规则拒绝」一栏有了第一个真实实例，而不是只存在于表格里 | 计划内 |
 | **D-13** | `applyEvent` 校验 `gameId`：状态已有对局时，事件必须属于同一局，否则抛 `InvalidEventStreamError` | 拼接两局的事件流是那种「能跑出结果所以没人发现」的损坏；顺手也把 `replay` 的起点（空状态 `gameId === ''`）收敛成「首个事件建立对局身份」 | 计划内 |
-| **D-14** | `LOBBY` 的 `day` 是 `0`，`GAME_STARTED` 之后才是 `1` | RFC-001 的注释说 `day`「从 1 开始」，指的是对局内的天数；LOBBY 不属于任何一天 | 计划内 |
+| **D-14** | `LOBBY` 的 `day` 是 `0`，`GAME_STARTED` 之后才是 `1`；`phase` 从 `LOBBY` 变成 `NIGHT_WOLF_CHAT` | RFC-001 的注释说 `day`「从 1 开始」，指的是对局内的天数；LOBBY 不属于任何一天。`NIGHT_WOLF_CHAT` 依 RFC-003 §2.2 的阶段图（该图以夜聊开头） | 计划内 |
+| **D-15** | `nextInt(rng: RngState, max)` 而不是 §2.5 写的 `nextInt(state: GameState, max)` | 抽取只需要生成器状态，把整个 `GameState` 传进去会让这个纯函数能碰到与随机无关的字段，也让测试必须伪造一局对局。同理 `shuffle(rng, items)`、`nextRandom(rng)` 都只收 `RngState` | 评审 N4 |
+| **D-16** | 额外导出（§3 未列）：`createEmptyState`、`orderEffects`、`RANDOM_CONSUMING_EVENTS`、`WinCondition`、`PAYLOAD_SCHEMAS`、`ACTION_TYPES` | `createEmptyState` 是 `replay` 的起点；`orderEffects` 被 AC-10/12 的测试直接引用；`RANDOM_CONSUMING_EVENTS` 是「哪些事件必须带 `rngAfter`」的单一声明处；`WinCondition` 是 `GAME_ENDED.condition` 的封闭枚举（RFC-014 会消费它，见 D-17） | 评审 N6 |
+| **D-17** | `WinCondition` 是封闭联合（`'all-wolves-dead'` / `'all-gods-dead'` / `'all-villagers-dead'` / `'all-good-dead'`），不是任意字符串 | §2.7 的例子 `'all-seers-and-witches-and-hunters-dead'` 是**示意**，不是精确文案。封闭枚举让 RFC-014 的复盘文案可以穷举映射，也让拼写漂移变成编译错误；`condition` 仍满足 §2.7 的 `string` | 评审 N7 |
 
 ### 8.3 文件清单（FILES CHANGED）
 
@@ -256,7 +259,7 @@ function checkWin(state: GameState): { result: 'wolf' | 'good'; condition: strin
 | 1 | `tests/engine/step.test.ts` · 10 种 action 的样本逐一断言 `reduce` 与 `step().state` 深度相等；含已开局后的拒绝路径 | PASS |
 | 2 | 同上 · 同一 `(state, action)` 两次调用结果相等；`Object.freeze` 后调用不抛；不修改 action | PASS |
 | 3 | `tests/engine/serialization.test.ts` · JSON 往返深度相等且能继续推进；递归断言每个值是原始值 / 普通数组 / 纯对象（原型为 `Object.prototype`），并用 `Date`/`Map`/`Set` 反例证明断言不是空转 | PASS |
-| 4 | `tests/engine/replay.test.ts` · 只传事件流重建；`rng` 是发牌后的状态而非初始种子态；seq 跳号 / 首事件不对 / 缺 `rngAfter` / 未知类型 / gameId 混流各有否定用例 | PASS |
+| 4 | `tests/engine/replay.test.ts` · 只传事件流重建；`rng` 是发牌后的状态而非初始种子态；seq 跳号 / 首事件不对 / 缺 `rngAfter` / 未知类型 / gameId 混流各有否定用例。**事件权威**：用合成 `GAME_STARTED`（互换两个异身份席位）证明重建采用 `payload.roles` 而不是按 `seed` 重新发牌——评审 P4 把 `applyGameStarted` 改成重新发牌，此用例变红 | PASS |
 | 5 | `tests/engine/determinism.test.ts` · 同 seed + 同 action 序列两次运行事件流逐条相等；不同 seed 发牌不同；同 seed 重放一致 | PASS |
 | 6 | `tests/engine/events.test.ts` · `seq` 从 1 起严格递增无跳号无重复；`type` 落在 `GAME_EVENT_TYPES` 内；每条事件带 `gameId` 与数字 `ts` | PASS |
 | 7 | 同上 · 首事件为 `GAME_STARTED`，payload 含 `seed`/`mode`/`playerSeat`/`roles`（另有 `personas`），可见性为 `server`，带 `rngAfter` | PASS |
@@ -265,10 +268,11 @@ function checkWin(state: GameState): { result: 'wolf' | 'good'; condition: strin
 | 10 | `tests/engine/effects.test.ts` · 顺序为 `order` 升序 + 同级 `id` 字典序；应用顺序与规范化一致且不改入参；两次应用结果相等；未注册 applier 抛 `UnknownEffectError` | PASS |
 | 11 | 同上 · 注册到 `VOTE_RESOLVE` 的假 modifier 注入效果后最终状态改变；modifier 只在它关心的结算点注入；多 modifier 依次折叠 | PASS |
 | 12 | 同上 · 不注册 modifier 时结果 = 输入的顺序规范化；已排好序的输入深度相等 | PASS |
-| 13 | `tests/engine/rng.test.ts` · 扫描 `src/engine` 全部 `.ts` 断言无 `Math.random(`（并有「扫描确实读到文件」的反空转断言） | PASS |
+| 13 | `tests/engine/rng.test.ts` + `tests/helpers/source-scan.ts` · **递归**扫描 `src/engine` 全部 `.ts`（含子目录）；反空转断言列出九个交付文件；扫描器的递归能力由 `source-scan.test.ts` 用临时目录证明。评审 P13（在 `src/engine/nested/` 放 `Math.random()`）现在变红 | PASS |
 | 14 | `tests/meta/coverage.test.ts` · `--coverage` 退出码 0；报告数字行 98.01% / 分支 94.04%（阈值 90 / 85）；引擎源码无 `c8 ignore` / `v8 ignore` / `istanbul ignore` | PASS |
 | 15 | `tests/engine/win.test.ts` · 屠边三种条件各一例、屠城两种；「神全灭但民还活着」在屠城下**不**判狼胜；RUL-5 只数存活；调用前后状态深度相等 | PASS |
 | 16 | `tests/engine/no-network.test.ts` · `fetch` 已被替换为抛错桩（并断言它不是原生实现） | PASS |
+| **N 项** | `mode` 不一致拒绝（N8 / P19）、post-START 的 `phase === 'NIGHT_WOLF_CHAT'` 与 `day === 1`（N5 / P22）、`ACTION_TYPES` 双向等值（N2）、两个 payload schema 的 `safeParse`（N3）、真分段重放（N1）、整体推进比较（N10）、modifier 经 `step` 的入口到达 handler（N9）、一个 action 产出 3 条事件时 seq 连续（N11）、忽略注释扫描改为递归（N12） | PASS |
 | **C-18** | `tests/engine/replay-parity.test.ts` · 跑一段序列 → `replay` → 用重放状态继续 `step`，事件与终态都与实时一致；判断胜负面一致；分段重放与一次重放一致。测试比较的是**整个 state**，RFC-003 起加了派生字段会自动被覆盖 | PASS |
 
 ### 8.5 验证输出（实跑，非转述）
@@ -278,12 +282,12 @@ $ pnpm typecheck    → exit 0
 $ pnpm lint         → exit 0
 $ pnpm format:check → "All matched files use Prettier code style!"   exit 0
 $ pnpm build        → dist/client/index.html + dist/server/index.js  exit 0
-$ pnpm test         → Test Files 28 passed (28) · Tests 186 passed (186)  exit 0
+$ pnpm test         → Test Files 29 passed (29) · Tests 206 passed (206)  exit 0
 $ pnpm test:e2e     → "skipped：tests/e2e/ 下没有用例"                exit 0
 $ pnpm selfplay     → "pnpm selfplay 未实现（RFC-015）"               exit 1
 
 $ pnpm exec vitest run --project unit --coverage
-  All files | % Stmts 98.13 | % Branch 94.04 | % Funcs 100 | % Lines 98.01
+  All files | % Stmts 98.13 | % Branch 95.23 | % Funcs 100 | % Lines 98.01
   apply.ts 96/91.30 · effects.ts 100/88.88 · errors.ts 100/100 · init.ts 90.9/80
   replay.ts 100/100 · rng.ts 96.15/90 · step.ts 100/100 · transitions.ts 100/100 · win.ts 100/100
 ```
@@ -301,3 +305,5 @@ $ pnpm exec vitest run --project unit --coverage
 | 从 JSON 恢复时的事件校验 | `replay` 收的是**已定型**的 `GameEvent`（D-1）。会话存储从磁盘/数据库拿到的仍是 `unknown`，需要 envelope + payload 的 Zod 校验 | RFC-008 |
 | 多套板子（F45） | `createInitialState` 的 `deck` 参数是缝，不做功能 | 延后（`RFCS.md` §5.1） |
 | 覆盖率只覆盖 `src/engine/` | `shared` / `server` / `client` 的覆盖率门禁不在 TEST-2 范围内 | 按 RULES 现状；如需扩展改 TEST-2 |
+| `RANDOM_CONSUMING_EVENTS` 是手工维护的集合 | 新增消耗随机数的事件时若忘了加进去，`applyEvent` 就不会要求 `rngAfter`，重放会静默漂移。**纪律**：RFC-003/004 每次新增这类事件，同时更新该集合与一条「缺 `rngAfter` 抛 `MissingRngStateError`」的用例 | RFC-003 / RFC-004 |
+| 没有做深冻结（N14） | `Object.freeze` 只冻结一层，嵌套对象仍可被改。当前 `step` 不写嵌套对象，且纯函数性已有两条测试（冻结不抛 + 两次调用相等）；深冻结收益边际 | 按需 |
