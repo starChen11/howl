@@ -32,6 +32,8 @@ function reduce(state: GameState, action: Action): GameState;
 function replay(events: EventEnvelope[]): GameState;
 ```
 
+`applyEvent` 是**派生字段的唯一写入口**（RFC-001 §2.3 的 C-18 裁决）：`GameState` 里凡是由事件折叠出来的值（发言 cursor、票箱、药水位、夜聊提交集合），只能在 `applyEvent` 里写，且必须能从事件 payload 完整重算。`replay` 因此**必须重建全部派生字段**——它是这条纪律的验收手段，不是可选项。
+
 `reduce(s, a) === step(s, a).state`，测试必须断言这一点。`ARCH-4` 写的是 `reduce(state, action) => state`，本 RFC 用 `step` 承担事件产出、用 `reduce` 保持该签名成立——**这不是偏离，是让两个要求同时为真**。
 
 ### 2.2 事件溯源
@@ -105,6 +107,7 @@ type RejectedPayload = {
 ```ts
 type Modifier = (point: ResolutionPoint, state: GameState, effects: Effect[]) => Effect[];
 type ResolutionPoint = 'NIGHT_RESOLVE' | 'VOTE_RESOLVE' | 'DEATH_RESOLVE' | 'WIN_CHECK';
+// 结算点是「一次性结算动作」，不是 Phase：`VOTE_RESOLVE` 发生在 `DAY_VOTE` 阶段内部（C-19）。
 
 function applyEffects(state: GameState, effects: Effect[]): GameState;
 ```

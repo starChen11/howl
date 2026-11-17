@@ -15,7 +15,7 @@ import { GAME_EVENT_TYPES, SELF_VISIBILITY_PREFIX } from './events';
  * 刻意**不做**「schema 输出类型 = `Action`」的静态断言：zod 的 `.optional()` 推出的是
  * `target?: SeatId | undefined`，而 `exactOptionalPropertyTypes` 下 `Action` 的
  * `target?: SeatId` 不接受显式 `undefined`，两者天生不兼容。用 `as` 架桥会把这件事藏起来；
- * 改为在 `tests/shared/contracts.test.ts` 里用 `@ts-expect-error` 夹具证明 `Action` 的严格性。
+ * 改为在 `tests/shared/actions.test.ts` 里用 `@ts-expect-error` 夹具证明 `Action` 的严格性。
  */
 
 const timestampSchema = z.number().int().nonnegative();

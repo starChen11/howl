@@ -86,6 +86,17 @@ export interface GameState {
 }
 ```
 
+**派生字段（C-18 的裁决）**：`GameState` 可以包含由事件折叠出的**派生字段**——发言 cursor、票箱、药水位、夜聊提交集合等。它们必须同时满足两条：
+
+1. **只由 `applyEvent` 写入**，且写入逻辑能从事件 payload 完整重算，不得依赖调用时的外部信息；
+2. 它们是事件的**物化视图**，不是第二权威；与事件流冲突时以事件流为准（`DATA-3`）。
+
+因此「不在 `state` 里另存」的准确含义是**不在 `state` 里另存不可重建的副本**。`ARCH-3` 禁止的仍然是 `Map` / `Set` / `Date` / 类实例，不是普通数组。
+
+**本 RFC 不预设这些字段的形状**：谁是相关事件的拥有者，谁就在加事件的同时加字段与 `applyEvent` 分支（药水位 → RFC-003，cursor 与票箱 → RFC-004，夜聊提交集合 → RFC-005）。RFC-001 只定规则，因为形状取决于那些 RFC 的结算逻辑。
+
+为什么不让 `step` 直接读事件流（`step(state, events, action)`）：那会与 `RULES ARCH-4` 的 `reduce(state, action) => state` 字面签名冲突，要把 `step` 从 `O(1)` 变成 `O(N)`，并把「纯函数 = 状态 + 动作」的验收标准退化成「纯函数 = 整条历史」。裁决过程与备选方案见 `changes/CHANGE-REQUEST-004.md`。
+
 #### `src/shared/actions.ts`
 
 `Action` 是判别联合，`type` 为判别键。**每个 action 必带 `ts`**（引擎不读时钟，ARCH-4）。
@@ -368,7 +379,7 @@ export const ROLE_LABELS = { wolf: '狼人', ... } as const;
 |---|---|---|
 | 1 | `tests/meta/commands.test.ts`（5 条命令各一条用例，`start` 用 3999 端口起真实进程探活后关掉） | PASS |
 | 2 | `tests/meta/tsconfig.test.ts` · `package.json` 的 `packageManager` / `engines.node` / `type` | PASS |
-| 3 | `tests/meta/tsconfig.test.ts` · 三份配置存在、`moduleResolution: bundler`、`target: ES2022`、子配置不覆盖 `moduleResolution`/`target`/`strict`、`include` 各自划清边界（server 不含 client、client 不含 server、都含 shared）、**别名与 `configs/alias.ts` 逐项一致** | PASS |
+| 3 | `tests/meta/tsconfig.test.ts` · 三份配置存在、`moduleResolution: bundler`、`target: ES2022`、子配置不覆盖 `moduleResolution`/`target` **以及全部五个严格开关**、`include` 各自划清边界（server 不含 client、client 不含 server、都含 shared）、**别名与 `configs/alias.ts` 逐项一致** | PASS |
 | 4 | `tests/meta/tsconfig.test.ts` · 五个开关全开 + **五份两向夹具**（开启必失败、关闭必通过）。见 C-11 | PASS |
 | 5 | `tests/shared/domain.test.ts` · `PHASES` 恰 14 项且逐项等于 RFC 列表；`WITCH_POTIONS` 恰 3 项；`NIGHT_MOON` 用 `@ts-expect-error` 证明联合封闭；**`expectTypeOf<Phase>().toEqualTypeOf<(typeof EXPECTED_PHASES)[number]>()`** 让「只加类型成员」也会编译失败（评审 M1） | PASS |
 | 6 | `tests/shared/effects.test.ts` · 省略 `target` 的夹具编译失败、`target: null` 合法、四个分区边界 + 升序等价于 RUL-8/RUL-1；**`expectTypeOf<typeof EFFECT_ORDER>()` 断言四个字面量**，删掉 `as const` 会编译失败（评审 M2） | PASS |
@@ -390,17 +401,19 @@ export const ROLE_LABELS = { wolf: '狼人', ... } as const;
 | **F1 / C-15** 事件 type 与 payload 静态绑定 | `src/shared/events.ts` 的 `GameEvent` 映射类型 + `GAME_EVENT_TYPES`；`EventEnvelope` 的默认 `type` 收紧为 `GameEventType`；`EventSchema` 用 `z.enum(GAME_EVENT_TYPES)`。`tests/shared/events.test.ts` 里有「未知 type」「错误 payload」两份夹具与 `expectTypeOf<keyof GameEventMap>()` 的双向等值断言；评审的 M11 探针（直接用 `EventEnvelope` 写假 type）现在编译失败 | PASS |
 | **F2 / C-16** `WITCH_ACT` 的 potion/target 配对 | 类型拆成两条分支、Zod 加 `.refine`；`tests/shared/actions.test.ts` 覆盖三种非法组合（类型层 `@ts-expect-error` + `ActionSchema` 拒绝）与三种合法组合 | PASS |
 
-**全量输出**（实现会话实跑，非转述）：
+**全量输出**（Round 3 修复后实跑，非转述）：
 
 ```
 $ pnpm typecheck   → exit 0
 $ pnpm lint        → exit 0
 $ pnpm format:check → "All matched files use Prettier code style!"      exit 0
 $ pnpm build       → dist/client/index.html + assets + dist/server/index.js   exit 0
-$ pnpm test        → Test Files 12 passed (12) · Tests 57 passed (57)   exit 0
+$ pnpm test        → Test Files 15 passed (15) · Tests 87 passed (87)   exit 0
 $ pnpm test:e2e    → "skipped：tests/e2e/ 下没有用例"                    exit 0
 $ pnpm selfplay    → "pnpm selfplay 未实现（RFC-015）"                   exit 1
 ```
+
+> 这里是**当前**证据，不是历史快照。Round 1 时是 57 个用例、Round 2 是 78/86 个；数字随修复变化，以本节为准。
 
 **构建产物上的端到端验证**（AC-1 要求 `start` 能响应健康检查，且产物必须真能跑）：
 
@@ -416,13 +429,13 @@ $ grep -rl DEEPSEEK_API_KEY dist/client | wc -l → 0
 **全新安装验证**（评审 §0.4 列为 `unverified`，本轮补上）：
 
 ```
-$ D=$(mktemp -d) && git archive b5285a0 | tar -x -C "$D" && cd "$D"
-$ CI=true pnpm install --frozen-lockfile   → exit 0（1.1s）
+$ D=$(mktemp -d) && git archive HEAD | tar -x -C "$D" && cd "$D"
+$ CI=true pnpm install --frozen-lockfile   → exit 0
 $ pnpm typecheck → 0   $ pnpm lint → 0   $ pnpm format:check → 0
-$ pnpm build     → 0   $ pnpm test → 0   Test Files 13 passed / Tests 78 passed
+$ pnpm build     → 0   $ pnpm test → 0   Test Files 15 passed / Tests 87 passed
 ```
 
-不是只验证锁文件完整，而是从**提交树**（不是当前工作目录）重装一遍再跑全部门禁。
+不是只验证锁文件完整，而是从**提交树**（不是当前工作目录）重装一遍再跑全部门禁。`HEAD` 指的是含本轮修复的那个提交；数字仍与上面一致，否则说明工作树有未提交的改动。
 
 ### 8.6 已知缺口（交给后续 RFC，不隐藏）
 
@@ -460,6 +473,20 @@ Round 2 的结论是「F2/F3/F4/F5 已闭合，但契约的下游可用性没闭
 | **B1 / C-17** `GameEventMap` 与下游 RFC 的 payload 形状不一致（三个） | 走 `/manage-changes`：`changes/CHANGE-REQUEST-003.md` 提出三个候选并由用户裁决——**C1** `REJECTED.actionType` 按 RFC-002 收窄为 `Action['type']`；**C2** `VOTE_CAST` 保留 `{ seat, target }`、改 RFC-004 的 `{ target }`；**C3** `AI_THOUGHT` 统一为嵌套 `claim`（改 RFC-007/009/014 的字段路径，RFC-006 形状不动）。同步改了 RFC-001 §2.3、RFC-002、RFC-004、RFC-006、RFC-007、RFC-009、RFC-014 | P21（`actionType: 'NOT_AN_ACTION'`）、P22（顶层 `claimedRole`）、P23（`VOTE_CAST` 缺 `seat`）三者在 `tests/shared/events.test.ts` 里都是 `@ts-expect-error` 夹具；新形状有一条正向夹具 |
 | **B2** RFC 正文与三处注释仍说不实的话 | §2.3 的「只含类型与 `as const` 常量，不含运行时逻辑」改为「以类型与 `as const` 为主，`visibility.ts` 与 `schemas.ts` 两处运行时逻辑是 `ARCH-2` 的例外（C-13）」；`visibility.ts` / `events.ts` 的注释同步；§8.7 声称「已改正 §2.3」这次是真的 | 见 §2.3 首段、`src/shared/visibility.ts` 文件头、`src/shared/events.ts` 的 `EventEnvelope` 注释 |
 | **B3** `EventEnvelope` 默认类型的回归没有夹具（P1 证明可静默回退） | `tests/shared/events.test.ts` 新增一条直接用 `EventEnvelope` 写假 type 的 `@ts-expect-error` 夹具 | 把默认参数改回 `string` 后 `pnpm typecheck` 立刻报「未使用的指令」（本轮实跑 P1） |
+
+### 8.9 评审回应（Round 3 · Changes requested → 本轮修复）
+
+Round 3 的结论是「代码与 16 条 AC 都是好的，Round 2 的 B1 / B3 / N1 / N2 / N3 已闭合」，剩余三项阻塞：
+
+| 评审项 | 处理 | 证据 |
+|---|---|---|
+| **F1 / B2 残留** `events.ts` 里仍写「默认类型参数（`type: string`）」、两处指向已删除的 `contracts.test.ts` | 三处都改：默认 `type` 是 `GameEventType`、默认 `payload` 仍是 `unknown`（所以构造必须走 `GameEvent`）；引用改指 `tests/shared/events.test.ts` 与 `actions.test.ts` | 全仓库 `grep contracts.test src/` 为空 |
+| **F2 / 状态漂移** RFC §8.5 的「全量输出」还是 57 / 78 个用例与 `b5285a0` | 换成当前证据（15 文件 / 87 用例）并注明「这里是当前证据，不是历史快照」；全新安装验证改为 `git archive HEAD`，并写明数字必须与本节一致、否则说明工作树有未提交改动；AC-3 的描述补上「全部五个严格开关」（N1 之后测试已扩到五个） | 见 §8.5 |
+| **F3 / C-18** `step(state, action)` 看不到事件，而 RFC-003/004/005 要求药水位 / cursor / 票箱 / 夜聊提交由事件流推导 | 走 `/manage-changes`：`changes/CHANGE-REQUEST-004.md` 提出方案 A / B 并由用户选 A——**`GameState` 允许派生字段，但只能由 `applyEvent` 从事件折叠、必须可完整重建、与事件冲突时以事件流为准**。规则写进 §2.3；唯一写入口写进 RFC-002 §2.1；RFC-003/004 的「不在 `state` 里另存」改成「不另存**不可重建**的副本」；TEST-STRATEGY 的 RFC-002 小节加一条 `replay` 一致性测试（`tests/engine/replay-parity.test.ts`） | RFC §2.3、RFC-002 §2.1 / §2.4、RFC-003 §2.5、RFC-004 §2.3、RFC-005 §2.2、TEST-STRATEGY RFC-002 |
+| **F4 / C-19** `DAY_VOTE_RESOLVE` 不在 14 个 `Phase` 里 | 定为 `DAY_VOTE` 阶段内部的结算点 `VOTE_RESOLVE`（RFC-002 §2.4 已有的 `ResolutionPoint`），`Phase` 保持 14、AC-5 不动；RFC-002 §2.4 旁加一行说明「结算点不是 Phase」 | RFC-004 §2.3、RFC-002 §2.4 |
+| **F5** health 单测自指 `HEALTH_PATH`（P-ac12 证明改成 `/api/health2` 仍全绿） | 加一条断言 `HEALTH_PATH === '/api/health'`，让 unit 用例自己就能证明 AC-12 的字面路径 | `tests/server/health.test.ts` |
+
+未做的（评审已确认是延后项，不是遗漏）：**F6** `isVisibleTo` 行为矩阵归 RFC-005（§6 已声明，且评审同意「RFC-005 第一个提交就补」）；**F7** F43 全量术语扫描归 RFC-012（§8.6 已记录理由）。
 
 非阻塞项一并处理：
 

@@ -43,7 +43,7 @@ type DayStartedPayload = {
 
 - 阶段 `DAY_VOTE`，所有存活玩家提交 `VOTE`。
 - **每张票以私有事件记录**：`VOTE_CAST`（`visibleTo: 'self:<seat>'`，payload `{ seat, target }`）。这样既保住投票保密，又能被 `replay` 重建。payload **必须显式带 `seat`**：`replay` 重建票型时没有观察者，从 `visibleTo` 字符串反解投票者等于拿可见性字段当数据用（CR-003 C2）；也与同节的 `VOTE_REVEALED.votes[]` 保持同一形状。
-- 全部提交后进入 `DAY_VOTE_RESOLVE`，产出一条公开的 `VOTE_REVEALED` 事件（payload 为完整票型），随后：
+- 全部提交后在 `DAY_VOTE` 阶段内触发结算点 **`VOTE_RESOLVE`**（RFC-002 §2.4 的 `ResolutionPoint`，**不是** `Phase`——`Phase` 保持 RFC-001 AC-5 的 14 个），产出一条公开的 `VOTE_REVEALED` 事件（payload 为完整票型），随后：
 
 | 结果 | 处理 |
 |---|---|
@@ -96,7 +96,7 @@ type DayStartedPayload = {
 ## 4. 实现要点
 
 - `speechStart` 的随机抽取只发生在 `DAY_ANNOUNCE` 入口，结果进事件 payload；`speechStart(state)` 是读字段的纯函数。
-- 票箱从 `VOTE_CAST` 事件推导，不在 `state` 里另存一份可变 Map（ARCH-3 禁止 `Map`）。
+- 票箱从 `VOTE_CAST` 事件推导：可以作为派生字段存在 `state` 里，但**不得另存不可重建的副本**，且只能由 `applyEvent` 写（RFC-001 §2.3 的 C-18 规则）。`ARCH-3` 禁止的是 `Map`，普通数组不在此列。
 - `FINISHED` 后所有 action 走 `Rejected`（`PHASE_MISMATCH`），不是抛错——这是合法但无效的提交。
 
 ## 5. 验收标准

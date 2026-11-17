@@ -93,7 +93,7 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 ## 4. 实现要点
 
 - **拒绝一律走 `Rejected` 事件**（RFC-002 §2.3），不抛业务异常。`code` 取值：`PHASE_MISMATCH`、`TARGET_NOT_ALIVE`、`WOLF_KILL_WOLF`、`WITCH_SELF_SAVE`、`POTION_ALREADY_USED`、`NOT_YOUR_TURN`。
-- 药水是否已用**从事件流推导**，不在 `state` 里加布尔位。
+- 药水是否已用**从事件流推导**：可以以派生字段的形式存在 `state` 里，但**不得另存不可重建的副本**，且只能由 `applyEvent` 写（RFC-001 §2.3 的 C-18 规则）。
 - `NIGHT_RESOLVE` 是自动推进的阶段：没有 action，进入时立即结算并离开。
 - `DAY_ANNOUNCE` 阶段的处理实现在 RFC-004；本 RFC 的 `transitions.ts` 对它只登记「无允许 action」并在测试中预期抛 `UnhandledTransitionError`——这保证 RFC-003 独立可测，且不会静默放行。
 

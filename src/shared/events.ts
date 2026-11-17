@@ -131,7 +131,7 @@ export type GameEventType = keyof GameEventMap;
  *
  * `GameEventMap` 是接口，类型擦除后拿不到键；而 Zod 校验与出站事件校验需要一份运行时清单。
  * 这里显式列一次，`satisfies` 拦住写错的成员，并由
- * `tests/shared/contracts.test.ts` 用 `expectTypeOf` 断言它与 `keyof GameEventMap`
+ * `tests/shared/events.test.ts` 用 `expectTypeOf` 断言它与 `keyof GameEventMap`
  * **完全相等**——多了少了都会编译失败。
  */
 export const GAME_EVENT_TYPES = [
@@ -157,9 +157,10 @@ export const GAME_EVENT_TYPES = [
 /**
  * 事件的完整类型：`type` 与 `payload` 由 `GameEventMap` 静态绑定。
  *
- * `EventEnvelope` 的默认类型参数（`type: string` / `payload: unknown`）只用于「只能确定
- * 是一条事件」的位置，例如可见性判定的入参。**任何真正构造事件的地方都必须用
- * `GameEvent`**，否则 DATA-2「事件类型必须是联合类型的枚举成员」就只是一句注释。
+ * `EventEnvelope` 的默认 `type` 已经是 `GameEventType`（写不出假类型），但默认 `payload`
+ * 仍是 `unknown`——它不知道具体是哪一种事件。所以**任何真正构造事件的地方都必须用
+ * `GameEvent`**，否则 DATA-2「事件类型必须是联合类型的枚举成员」以及「payload 由
+ * `GameEventMap` 约束」都只是一句注释。
  */
 export type GameEvent = {
   [K in GameEventType]: EventEnvelope<K, GameEventMap[K]>;

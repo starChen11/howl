@@ -21,6 +21,11 @@ describe('AC-12 · GET /api/health', () => {
     await app.close();
   });
 
+  it('常量本身就是 AC-12 的字面路径 /api/health', () => {
+    // 用例如果只用 HEALTH_PATH 请求，把常量改成 /api/health2 也照样绿（评审 F5）。
+    expect(HEALTH_PATH).toBe('/api/health');
+  });
+
   it('返回 200 且响应体为 {"ok":true}', async () => {
     const response = await app.inject({ method: 'GET', url: HEALTH_PATH });
 

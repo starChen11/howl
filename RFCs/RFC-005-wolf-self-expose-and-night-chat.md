@@ -35,7 +35,7 @@
 阶段 `NIGHT_WOLF_CHAT`（RFC-003 中占位跳过），位于 `NIGHT_WOLVES` 之前。
 
 - 每个**存活**狼人提交且仅提交一条 `WOLF_CHAT`（`text` 可为空串，表示「我先听」）。
-- 已提交的席位记录在状态里（由 `WOLF_CHAT_POSTED` 事件推导）。
+- 已提交的席位记录在状态里（由 `WOLF_CHAT_POSTED` 事件推导）。这是 RFC-001 §2.3 的 C-18 派生字段规则在本 RFC 的实例：只由 `applyEvent` 写，且可完整重建。
 - **当所有存活狼都提交过一条后**，阶段推进到 `NIGHT_WOLVES`。这是确定性的、有界的退出条件，不依赖编排层判断「AI 说完了没有」。
 - 白天提交 `WOLF_CHAT` → `Rejected`（`code: 'PHASE_MISMATCH'`）。
 

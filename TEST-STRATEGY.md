@@ -156,7 +156,11 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 13、14、16 | `tests/engine/coverage.test.ts` 由 `pnpm test` 的覆盖率报告断言阈值；引擎测试运行时把 `fetch` 换成抛错桩，全部通过 | integration | proposed | Must |
 | 15 | `tests/engine/win.test.ts`：构造屠边/屠城局面各一，断言 `checkWin` 返回值与 `condition` 文案；断言调用不产生事件、不改状态 | unit | proposed | Must |
 
+| C-18（变更） | `tests/engine/replay-parity.test.ts`：跑一段含派生字段（cursor / 票箱 / 药水位 / 夜聊提交）的 action 序列，取事件流，再 `replay` 后**用重建状态继续 `step`**，断言其判定与原始运行逐项一致（尤其「药已用」「该谁发言」「谁已投票」）。这是「派生字段只由 `applyEvent` 写」这条纪律的唯一自动验收手段 | unit | proposed | Must |
+
 **依赖与夹具**：需要 RFC-001 的类型与 `isVisibleTo`。夹具 `tests/fixtures/states.ts` 提供「夜晚中」「投票中」「已终局」三个手写状态。
+
+> C-18 的落地规则在 `RFCs/RFC-001` §2.3（派生字段的两条约束）与 `RFCs/RFC-002` §2.1（`applyEvent` 是唯一写入口）。上表最后一行是那条规则的验收方式：**没有它，纪律就只是文档**。
 
 ---
 
