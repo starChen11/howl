@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -14,9 +17,14 @@ import { collectTypeScriptFiles, findFilesContaining } from '../helpers/source-s
 
 const ENGINE_DIR = fileURLToPath(new URL('../../src/engine', import.meta.url));
 
-/** 递归扫描（评审 B1 / P13）：RFC-003 会加 `engine/phases/`、`engine/resolve/` 子目录。 */
-function engineSources() {
-  return collectTypeScriptFiles(ENGINE_DIR);
+/**
+ * 递归扫描（评审 B1 / P13）：RFC-003 会加 `engine/phases/`、`engine/resolve/` 子目录。
+ *
+ * 根目录**可注入**是为了让「它真的是递归的」变成接线层面可测的事实（评审 B-R2-2）：
+ * 如果这里换回一层 `readdirSync`，下面那条用临时目录的用例会立刻红。
+ */
+function engineSources(root: string = ENGINE_DIR) {
+  return collectTypeScriptFiles(root);
 }
 
 describe('AC-13 · 引擎不得使用 Math.random', () => {
@@ -45,13 +53,21 @@ describe('AC-13 · 引擎不得使用 Math.random', () => {
     );
   });
 
-  it('扫描器是递归的（子目录里的违规也必须被扫到）', () => {
-    // 递归能力由 tests/helpers/source-scan.test.ts 用临时目录证明；
-    // 这里只断言本测试用的是那个递归实现，而不是自己写的一层循环。
-    const scanned = engineSources();
+  it('接线本身是递归的：临时根目录里的嵌套违规也必须被扫到（B-R2-2）', () => {
+    // 这条测试守的是 engineSources() 的**接线**，不是 helper 的实现：
+    // 只用临时目录、不碰 src/，而且断言的是「嵌套文件被找到」这个结果。
+    const root = mkdtempSync(join(tmpdir(), 'howl-engine-scan-'));
+    try {
+      writeFileSync(join(root, 'top.ts'), 'export const clean = 1;\n');
+      mkdirSync(join(root, 'nested'), { recursive: true });
+      writeFileSync(join(root, 'nested', 'violation.ts'), 'export const noise = Math.random();\n');
 
-    expect(Array.isArray(scanned)).toBe(true);
-    expect(scanned.every((file) => typeof file.relativePath === 'string')).toBe(true);
+      expect(findFilesContaining(engineSources(root), 'Math.random(')).toEqual([
+        'nested/violation.ts',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

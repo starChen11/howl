@@ -92,24 +92,39 @@ describe('N9 · modifier 通过 step 的入口传到 handler', () => {
     const seen: string[] = [];
     const modifier: Modifier = (point, state, effects) => {
       seen.push(`${point}@${state.phase}`);
-      return [...effects];
+      return [
+        ...effects,
+        {
+          id: 'injected',
+          source: 'extension',
+          type: 'noop',
+          target: null,
+          payload: {},
+          order: 900,
+        },
+      ];
     };
 
-    // 自定义 handler：把「拿到的 modifier 数量」写进事件，证明参数确实流到了 handler 里。
+    // 自定义 handler **真的调用 applyModifiers**（RFC-003 的结算 handler 就是这么写的），
+    // 把产出效果的数量写进事件。这样断言走的是完整链路：step → handler → applyModifiers，
+    // 而不是在测试里直接调一次夹具（评审 Round 2 指出原写法没经过 step）。
     const engine = createEngine({
       transitions: DEFAULT_TRANSITIONS,
       handlers: {
-        START: (_state, action, context) => [
-          {
-            type: 'REJECTED',
-            visibleTo: 'public',
-            payload: {
-              actionType: action.type,
-              code: context.modifiers.length > 0 ? 'SAW_MODIFIER' : 'NO_MODIFIER',
-              message: '',
+        START: (state, action, context) => {
+          const effects = applyModifiers('VOTE_RESOLVE', state, [], context.modifiers);
+          return [
+            {
+              type: 'REJECTED',
+              visibleTo: 'public',
+              payload: {
+                actionType: action.type,
+                code: `EFFECTS_${effects.length}`,
+                message: '',
+              },
             },
-          },
-        ],
+          ];
+        },
       },
       appliers: {},
     });
@@ -117,15 +132,12 @@ describe('N9 · modifier 通过 step 的入口传到 handler', () => {
     const lobby = lobbyState();
     const action = startActionOf(lobby);
 
-    expect(engine.step(lobby, action).events[0]?.payload).toMatchObject({ code: 'NO_MODIFIER' });
-    expect(engine.step(lobby, action, [modifier]).events[0]?.payload).toMatchObject({
-      code: 'SAW_MODIFIER',
-    });
+    expect(engine.step(lobby, action).events[0]?.payload).toMatchObject({ code: 'EFFECTS_0' });
 
-    // handler 里若真的用了 applyModifiers，modifier 会被调用一次
-    const handler = (state: typeof lobby, list: readonly Modifier[]) =>
-      applyModifiers('VOTE_RESOLVE', state, [], list);
-    expect(handler(lobby, [modifier])).toEqual([]);
+    seen.length = 0;
+    expect(engine.step(lobby, action, [modifier]).events[0]?.payload).toMatchObject({
+      code: 'EFFECTS_1',
+    });
     expect(seen).toEqual(['VOTE_RESOLVE@LOBBY']);
   });
 });

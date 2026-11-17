@@ -194,7 +194,7 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     ]);
   });
 
-  it('playerSeat 从 payload 决定哪个席位是玩家', () => {
+  it('playerSeat 从 payload 决定哪个席位是玩家（唯一一个）', () => {
     const lobby = lobbyState({ seed: 777, playerSeat: 3 });
     const [original] = step(lobby, startActionOf(lobby)).events;
     if (original?.type !== 'GAME_STARTED') throw new Error('缺少 GAME_STARTED');
@@ -202,7 +202,12 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     const synthetic: GameEvent = { ...original, payload: { ...original.payload, playerSeat: 5 } };
     const replayed = replay([synthetic]);
 
-    expect(replayed.seats.filter((seat) => seat.isPlayer).map((seat) => seat.seat)).toEqual([5]);
+    const playerSeats = replayed.seats.filter((seat) => seat.isPlayer).map((seat) => seat.seat);
+
+    expect(playerSeats).toEqual([5]);
+    // 反方向也要断言：原来的玩家席位不再是玩家，且全场只有一个玩家。
+    expect(replayed.seats[2]?.isPlayer).toBe(false);
+    expect(playerSeats).toHaveLength(1);
   });
 
   it('未实现折叠的事件类型抛 UnknownEventError（不静默忽略）', () => {

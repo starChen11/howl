@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { collectTypeScriptFiles, findFilesContaining } from './source-scan';
+import { collectTypeScriptFiles, findFilesContaining, toPosixPath } from './source-scan';
 
 /**
  * 扫描器自身的回归测试。
@@ -78,6 +78,26 @@ describe('collectTypeScriptFiles', () => {
 
   it('目录为空时返回空数组（不抛错）', () => {
     expect(collectTypeScriptFiles(makeTree({}))).toEqual([]);
+  });
+});
+
+describe('toPosixPath（B-R2-1）', () => {
+  it('Windows 风格的反斜杠被转成 /', () => {
+    expect(toPosixPath('nested\\violation.ts')).toBe('nested/violation.ts');
+    expect(toPosixPath('a\\b\\c.ts')).toBe('a/b/c.ts');
+  });
+
+  it('POSIX 风格原样返回', () => {
+    expect(toPosixPath('nested/violation.ts')).toBe('nested/violation.ts');
+    expect(toPosixPath('top.ts')).toBe('top.ts');
+  });
+
+  it('收集结果的 relativePath 里不出现反斜杠', () => {
+    const root = makeTree({ 'a/b/c.ts': 'x', 'top.ts': 'x' });
+
+    for (const file of collectTypeScriptFiles(root)) {
+      expect(file.relativePath).not.toContain('\\');
+    }
   });
 });
 
