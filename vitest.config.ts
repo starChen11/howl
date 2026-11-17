@@ -14,6 +14,18 @@ import { ALIAS } from './configs/alias.ts';
 export default defineConfig({
   resolve: { alias: ALIAS },
   test: {
+    /**
+     * 覆盖率门禁只针对 `src/engine/`（TEST-2 / AC-14）。
+     *
+     * 平时 `pnpm test` 不算覆盖率（否则本地每次迭代都要多跑一遍），
+     * 由 `tests/meta/coverage.test.ts` 显式带 `--coverage` 跑并断言阈值。
+     */
+    coverage: {
+      provider: 'v8',
+      include: ['src/engine/**/*.ts'],
+      reporter: ['text', 'json-summary'],
+      thresholds: { lines: 90, branches: 85 },
+    },
     projects: [
       {
         extends: true,
@@ -22,6 +34,8 @@ export default defineConfig({
           include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
           exclude: ['tests/meta/**', 'tests/e2e/**', 'node_modules/**'],
           environment: 'node',
+          // 引擎必须可离线推理（TEST-4 / AC-16）：这个 setup 把 fetch 换成抛错桩。
+          setupFiles: ['tests/setup/no-network.ts'],
         },
       },
       {

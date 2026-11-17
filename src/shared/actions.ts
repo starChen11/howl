@@ -10,6 +10,23 @@ export type WitchPotion = (typeof WITCH_POTIONS)[number];
 export type TargetedWitchPotion = Exclude<WitchPotion, 'none'>;
 
 /**
+ * 动作类型的运行时可枚举集合（Zod 校验与测试需要）。由测试断言它与 `Action['type']`
+ * **完全相等**——多了少了都编译失败。
+ */
+export const ACTION_TYPES = [
+  'START',
+  'WOLF_CHAT',
+  'WOLF_KILL',
+  'SEER_CHECK',
+  'WITCH_ACT',
+  'HUNTER_SHOOT',
+  'SPEECH',
+  'SPEECH_SKIP',
+  'VOTE',
+  'SELF_EXPOSE',
+] as const satisfies readonly Action['type'][];
+
+/**
  * 玩家与 AI 提交的动作。`type` 是判别键。
  *
  * 每条都必带 `ts`：引擎不读时钟，时间只能作为输入进来（ARCH-4）。

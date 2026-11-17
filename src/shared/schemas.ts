@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import { WITCH_POTIONS } from './actions';
-import { SEAT_IDS, WIN_MODES } from './domain';
+import { ACTION_TYPES, WITCH_POTIONS } from './actions';
+import { ROLES, SEAT_IDS, WIN_MODES } from './domain';
 import { GAME_EVENT_TYPES, SELF_VISIBILITY_PREFIX } from './events';
 
 /**
@@ -21,6 +21,7 @@ import { GAME_EVENT_TYPES, SELF_VISIBILITY_PREFIX } from './events';
 const timestampSchema = z.number().int().nonnegative();
 
 export const seatIdSchema = z.literal(SEAT_IDS);
+export const actionTypeSchema = z.enum(ACTION_TYPES);
 export const winModeSchema = z.enum(WIN_MODES);
 export const witchPotionSchema = z.enum(WITCH_POTIONS);
 
@@ -134,3 +135,28 @@ export function makeEventEnvelopeSchema<P extends z.ZodType>(payload: P) {
 
 /** 只校验信封、不校验 payload 形状。payload 级校验由各自的 RFC 追加。 */
 export const EventSchema = makeEventEnvelopeSchema(z.unknown());
+
+/**
+ * 事件 payload 的 schema：**由拥有该事件的 RFC 追加**（C-10 的归属规则）。
+ *
+ * RFC-002 拥有 `GAME_STARTED` 与 `REJECTED`；`DAY_STARTED` 归 RFC-004，其余由各自的 RFC 加。
+ */
+export const GameStartedPayloadSchema = z.object({
+  seed: z.number().int(),
+  mode: winModeSchema,
+  playerSeat: seatIdSchema,
+  roles: z.array(z.enum(ROLES)).length(SEAT_IDS.length),
+  personas: z.array(z.string().nullable()).length(SEAT_IDS.length),
+});
+
+export const RejectedPayloadSchema = z.object({
+  actionType: actionTypeSchema,
+  code: z.string().min(1),
+  message: z.string(),
+});
+
+/** 已登记 payload schema 的事件，可以拿去 `makeEventEnvelopeSchema` 组合成完整校验。 */
+export const PAYLOAD_SCHEMAS = {
+  GAME_STARTED: GameStartedPayloadSchema,
+  REJECTED: RejectedPayloadSchema,
+} as const;
