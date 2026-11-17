@@ -8,7 +8,7 @@ Howl 是狼在夜里的长嚎，也是玩家在白天的"喊话"——两个词�
 
 ## 状态
 
-v0.7 · 实现计划已拆分：[`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC，覆盖全部 31 个 Must 功能。[`RULES.md`](RULES.md) 75 条工程规则（含 `RA-1`~`RA-10` 裁决），[`FEATURES.md`](FEATURES.md) 57 个功能，[`PRD.md`](PRD.md) 58 条需求。尚未有代码。
+v0.8 · 测试计划已就绪：[`TEST-STRATEGY.md`](TEST-STRATEGY.md) 覆盖 222 条验收标准，[`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC。[`RULES.md`](RULES.md) 75 条工程规则（含 `RA-1`~`RA-10` 裁决），[`FEATURES.md`](FEATURES.md) 57 个功能，[`PRD.md`](PRD.md) 58 条需求。尚未有代码。
 
 开发流程与 agent 协作方式已先行固化，见下节。
 
@@ -27,7 +27,7 @@ v0.7 · 实现计划已拆分：[`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC，
 当前进度：
 
 ```
-/test-strategy      ← 下一步：为每个 RFC 写测试计划（硬规则 3：先有计划才开工）
+/implement-rfc 001  ← 下一步：实现 RFC-001（先出计划，等你批准再写代码）
 ```
 
 随时查看全局进度：`/workflow-status`。
