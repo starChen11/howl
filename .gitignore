@@ -8,3 +8,19 @@ Desktop.ini
 # 编辑器
 .idea/
 .vscode/
+
+# 依赖与构建产物
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# 测试产物
+test-results/
+playwright-report/
+blob-report/
+
+# 本地环境（密钥只从服务端环境变量读取，见 SEC-1）
+.env
+.env.*
+!.env.example

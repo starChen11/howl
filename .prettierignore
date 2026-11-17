@@ -1,0 +1,14 @@
+# 依赖与产物
+node_modules
+dist
+coverage
+test-results
+playwright-report
+pnpm-lock.yaml
+
+# 文档层：由人工维护排版（表格、全角标点、术语表），格式化只针对代码。
+# 让 Prettier 碰这些文件会产生零语义收益的巨大 diff，见 RFC-001 Implementation Notes。
+*.md
+.dsh
+docs
+changes
