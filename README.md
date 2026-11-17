@@ -8,14 +8,14 @@ Howl 是狼在夜里的长嚎，也是玩家在白天的"喊话"——两个词�
 
 ## 状态
 
-v0.9 · **工程骨架已落地，RFC-001 `Implemented`，等待评审。** [`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC（1 个 `Implemented`、15 个 `Not started`），[`TEST-STRATEGY.md`](TEST-STRATEGY.md) 覆盖全部 222 条验收标准，[`RULES.md`](RULES.md) 75 条工程规则（含 `RA-1`~`RA-10` 裁决），[`FEATURES.md`](FEATURES.md) 57 个功能，[`PRD.md`](PRD.md) 58 条需求。
+v0.9 · **工程骨架已落地；RFC-001 评审的 6 个阻塞项已修完，状态回到 `Implemented`，等待复审。** 两轮记录见 [`reviews/REVIEW-RFC-001.md`](reviews/REVIEW-RFC-001.md) 与 [`RFCs/RFC-001`](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) §8.7。[`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC（1 个 `Implemented`、15 个 `Not started`），[`TEST-STRATEGY.md`](TEST-STRATEGY.md) 覆盖全部 222 条验收标准，[`RULES.md`](RULES.md) 75 条工程规则（含 `RA-1`~`RA-10` 裁决），[`FEATURES.md`](FEATURES.md) 57 个功能，[`PRD.md`](PRD.md) 58 条需求。
 
 已有代码：`src/shared/`（跨层类型契约的唯一归属）、`src/server/`（Fastify 骨架 + `/api/health`）、`src/client/`（占位页）。**还没有任何游戏逻辑**——那是 RFC-002 起的活。
 
 ```bash
 pnpm install
 pnpm dev        # http://localhost:5173
-pnpm test       # 57 个用例，含五条命令的门禁测试
+pnpm test       # 78 个用例，含五条命令的门禁测试
 ```
 
 ## 怎么参与开发
@@ -33,7 +33,9 @@ pnpm test       # 57 个用例，含五条命令的门禁测试
 当前进度：
 
 ```
-/review-rfc 001  ← 下一步：换一个新会话评审 RFC-001（不能是写它代码的会话）
+评审 Round 1 → reviews/REVIEW-RFC-001.md（Changes requested）
+6 个阻塞项已修 → RFC §8.7
+下一步：/review-rfc 001（必须再换一个新会话，Round 2 追加在同一文件）
 ```
 
 随时查看全局进度：`/workflow-status`。

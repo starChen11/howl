@@ -1,13 +1,15 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.0 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.1 / `RFCS.md` v2.2 · 生成日期 2026-11-17
+> 版本 v1.2 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.5 · 最后更新 2026-11-17
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
 
 ## 0. STEP 0 · 基线
 
-**当前不存在任何测试套件。** 实测输出：
+### 0.1 制定计划时（2026-11-17，阶段 6）
+
+当时仓库里没有任何代码，实测：
 
 ```
 $ ls package.json src tests
@@ -16,13 +18,24 @@ $ ls package.json src tests
   ✗ 无 tests/
 
 $ pnpm test
-ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or package.json5)
-  was found in "/Users/chenxin/Desktop/project/dsh-project/howl".
+ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND
 ```
 
-因此本文件里 **`Exists?` 列全部是 `proposed`**，没有 `existing`。等 RFC-001 落地后出现第一批测试，后续更新应把已存在的标为 `existing: <文件>`。
+所以本文件初稿里 `Exists?` 列全部是 `proposed`。
 
-覆盖统计：**16 个 RFC、222 条验收标准、0 条已实现**。
+### 0.2 RFC-001 落地后（v1.2 回填）
+
+RFC-001 已实现并通过评审修复，`Exists?` 按实际落地情况回填（`existing: <文件>`）。当前实测：
+
+```
+$ pnpm test
+ Test Files  13 passed (13)     # unit 7 个 + meta 6 个
+      Tests  78 passed (78)
+
+$ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
+```
+
+覆盖统计：**16 个 RFC、222 条验收标准、其中 RFC-001 的 16 条全部已实现（`existing`）**，其余 15 个 RFC 仍为 `proposed`。
 
 ---
 
@@ -80,7 +93,7 @@ ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or packag
 
 | RFC | 验收标准 | 计划测试行 | 需人工检查 |
 |---|---|---|---|
-| RFC-001 工程骨架与共享契约 | 16 | 11 | 0 |
+| RFC-001 工程骨架与共享契约 | 16 | 14 | 0 |
 | RFC-002 引擎内核 | 16 | 11 | 0 |
 | RFC-003 板子与夜晚 | 16 | 10 | 0 |
 | RFC-004 白天与胜负 | 16 | 8 | 0 |
@@ -102,21 +115,27 @@ ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or packag
 
 ## RFC-001: 工程骨架与共享契约
 
+> v1.2 回填：本 RFC 已实现，`Exists?` 一律为 `existing`。测试分成两个 Vitest project：
+> `unit`（纯函数与静态扫描，毫秒级）与 `meta`（起子进程跑 `pnpm` 命令，串行）。
+
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1 | `tests/meta/commands.test.ts`：依次执行 5 条 `pnpm` 命令并断言退出码 0；`start` 用子进程起后请求 `/api/health` 再 SIGTERM。失败点：任一命令非 0 | integration | proposed | Must |
-| 2、3、4 | `tests/meta/tsconfig.test.ts`：读取 `package.json` 与三份 tsconfig，断言 `packageManager`/`engines`/`type` 与四个严格开关；再临时写出关掉 `strict` 的配置跑 `tsc --noEmit` 断言报错 | unit | proposed | Must |
-| 5、7 | `tests/shared/contracts.test.ts`：断言 `Phase` 取值集合恰为 14 个、`EventEnvelope` 的 `visibleTo`/`seq`/`gameId` 必填（用 `expectTypeOf` 或反例对象编译失败断言） | unit | proposed | Must |
-| 6 | `tests/shared/effects.test.ts`：构造去掉 `target` 的 `Effect` 断言类型错误；断言 `ORDER` 常量三个分区边界为 0 / 100 / 900 | unit | proposed | Must |
-| 8 | `tests/shared/terms.test.ts`：断言 `TERMS` 的键集合覆盖 PRD 术语表 13 条，`TermKey` 能穷举；`ROLE_LABELS` 含 5 个身份 | unit | proposed | Must |
-| 9 | `tests/security/no-hardcoded-terms.test.ts`：扫描 `src/**/*.{ts,tsx}`（排除 `terms.ts`），断言不含五个身份名字面量。失败点：任何组件里写死「狼人」 | security | proposed | Must |
-| 10、11 | `tests/meta/dependency-direction.test.ts`：解析各文件 import，断言 `shared` 不引用其它层、`engine` 只引用 `shared`、`client` 只引用 `shared`、`server` 只引用 `engine`+`shared`；断言 `shared` 除 `zod` 外无运行时依赖 | unit | proposed | Must |
-| 12 | `tests/server/health.test.ts`：`fastify.inject()` 请求 `/api/health` 断言 200 与 `{ok:true}`；另用 Playwright 请求 `http://localhost:5173/api/health` 断言代理生效 | integration | proposed | Must |
-| 13 | `tests/meta/build.test.ts`：跑 `pnpm build` 后断言 `dist/client/index.html` 与 `dist/server/index.js` 存在；递归读 `dist/client` 全部文件断言不含 `DEEPSEEK_API_KEY` | integration | proposed | Must |
-| 14、15 | `tests/meta/lint.test.ts`：读取 ESLint 配置断言两条规则为 `error`；跑 `pnpm lint`、`pnpm format:check`、`pnpm test:e2e` 断言退出码 0 | integration | proposed | Must |
-| 16 | `tests/meta/selfplay-placeholder.test.ts`：跑 `pnpm selfplay` 断言退出码 1 且 stderr 含 `RFC-015` | integration | proposed | Must |
+| 1 | `tests/meta/commands.test.ts`（5 例）：跑 `typecheck` / `lint` / `vitest --project unit` / `build`，再用 3999 端口起 `pnpm start` 探活并关掉。内层用 `--project unit` 避免递归（T-4） | integration | existing: tests/meta/commands.test.ts | Must |
+| 2、3、4 | `tests/meta/tsconfig.test.ts`：`package.json` 三个字段、三份配置存在与 `moduleResolution`/`target`、`include` 边界、别名与 `configs/alias.ts` 一致；五个严格开关用**两向夹具**证明（开启必失败、关闭必通过，C-11 已推翻原文方向） | unit | existing: tests/meta/tsconfig.test.ts + tests/meta/fixtures/ | Must |
+| 5、7 | `tests/shared/contracts.test.ts`：`PHASES` 恰 14 且逐项相等、`expectTypeOf<Phase>()` 等值；`EventEnvelope` 三字段缺失夹具（`@ts-expect-error`） | unit | existing: tests/shared/contracts.test.ts | Must |
+| 6 | `tests/shared/effects.test.ts`：省略 `target` 编译失败、`target: null` 合法、四个分区边界（C-12 由三改四）+ `expectTypeOf<typeof EFFECT_ORDER>()` 字面量断言 | unit | existing: tests/shared/effects.test.ts | Must |
+| 8 | `tests/shared/terms.test.ts`：13 条键与标签逐项等于 PRD 术语表、`ROLE_LABELS` 5 项顺序等于 `ROLES` | unit | existing: tests/shared/terms.test.ts | Must |
+| 9 | `tests/security/no-hardcoded-terms.test.ts`：扫 `src/**/*.{ts,tsx}`（排除 `terms.ts`），身份名集合从 `ROLE_LABELS` 反查 | security | existing: tests/security/no-hardcoded-terms.test.ts | Must |
+| 10、11 | `tests/dependency-direction.test.ts`（路径按 RFC §3，T-6）+ `tests/helpers/import-scan.ts` 及其回归测试：静态 / 仅副作用 / 动态 `import()` / `require()` 四种写法都扫，防的是「动态导入绕过 `shared → server`」（评审 F5） | unit | existing: tests/dependency-direction.test.ts, tests/helpers/import-scan.test.ts | Must |
+| 12 | `tests/server/health.test.ts`（`inject`）+ `tests/meta/dev-proxy.test.ts`：起真实 `pnpm dev`，`localhost:3000` 直连与 `localhost:5173` 代理都要 200 且 `{"ok":true}`。**不用 Playwright**（T-5：代理规则不需要浏览器内核） | integration | existing: 两文件 | Must |
+| 13 | `tests/meta/build.test.ts`：跑 `pnpm build` 后断言 `dist/client/index.html` 与 `dist/server/index.js` 存在；递归扫 `dist/client` 无 `DEEPSEEK_API_KEY`、无 `@fastify/static` | integration | existing: tests/meta/build.test.ts | Must |
+| 14、15 | `tests/meta/lint.test.ts`：用 ESLint API 问 `.ts` 与 `.tsx` 的**生效**等级（M8 的缺口）、`pnpm lint` / `format:check` / `test:e2e` 退出 0，且 `test:e2e` 的 stdout 含 `skipped`（M9） | integration | existing: tests/meta/lint.test.ts | Must |
+| 16 | `tests/meta/selfplay-placeholder.test.ts`：退出码 1，stderr 同时含「未实现」与 `RFC-015`（M10） | integration | existing: tests/meta/selfplay-placeholder.test.ts | Must |
+| F1（评审新增） | `tests/shared/contracts.test.ts`：`GameEvent` 的未知 type / 错误 payload 负向夹具、`GAME_EVENT_TYPES` 与 `keyof GameEventMap` 双向等值、`EventSchema` 拒绝假 type | unit | existing: tests/shared/contracts.test.ts | Must |
+| F2（评审新增） | `tests/shared/contracts.test.ts`：`WITCH_ACT` 三种非法组合在类型与 Zod 两侧都被拒、三种合法组合通过 | unit | existing: tests/shared/contracts.test.ts | Must |
+| F7（评审新增） | `tests/shared/contracts.test.ts`：`SEAT_IDS` / `FACTION_OF` / `FACTIONS` / `WIN_MODES` 的取值断言 | unit | existing: tests/shared/contracts.test.ts | Should |
 
-**依赖与夹具**：无前置。需要能起子进程的测试超时（建议 120s）。`tests/meta/` 下全部用 `execa` 或 `node:child_process`。
+**依赖与夹具**：无前置。`tests/meta/` 会起子进程，两个 wait 超时分别是 30s（`start`）与 60s（`dev`），单例上限 180s。
 
 ---
 

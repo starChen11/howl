@@ -96,7 +96,8 @@ export type Action =
   | { type: 'WOLF_CHAT'; ts: number; seat: SeatId; text: string }
   | { type: 'WOLF_KILL'; ts: number; seat: SeatId; target: SeatId }
   | { type: 'SEER_CHECK'; ts: number; seat: SeatId; target: SeatId }
-  | { type: 'WITCH_ACT'; ts: number; seat: SeatId; potion: 'heal' | 'poison' | 'none'; target?: SeatId }
+  | { type: 'WITCH_ACT'; ts: number; seat: SeatId; potion: 'heal' | 'poison'; target: SeatId }
+  | { type: 'WITCH_ACT'; ts: number; seat: SeatId; potion: 'none' }
   | { type: 'HUNTER_SHOOT'; ts: number; seat: SeatId; target?: SeatId }
   | { type: 'SPEECH'; ts: number; seat: SeatId; text: string }
   | { type: 'SPEECH_SKIP'; ts: number; seat: SeatId }
@@ -104,7 +105,7 @@ export type Action =
   | { type: 'SELF_EXPOSE'; ts: number; seat: SeatId };
 ```
 
-约束：`WITCH_ACT` 的 `potion: 'none'` 与 `target?: undefined` 配套；`HUNTER_SHOOT` 省略 `target` 表示放弃开枪；`VOTE.target: 'abstain'` 表示弃权。
+约束：`WITCH_ACT` 的 `potion: 'none'` 与「没有 `target`」配套、`'heal'` / `'poison'` 必须带 `target`。**一条 `target?: SeatId` 表达不出这条约束**，所以类型拆成上面两条分支（C-16）；Zod 侧用 `.refine` 表达同一条语义，两侧都要拒绝。`HUNTER_SHOOT` 省略 `target` 表示放弃开枪；`VOTE.target: 'abstain'` 表示弃权。
 
 #### `src/shared/events.ts`
 
@@ -114,7 +115,7 @@ export type Visibility =
   | 'server'                 // 服务端专用：任何席位都不可见（如全员身份）
   | `self:${SeatId}`;
 
-export interface EventEnvelope<T extends string = string, P = unknown> {
+export interface EventEnvelope<T extends GameEventType = GameEventType, P = unknown> {
   gameId: string;
   seq: number;          // 单局内从 1 严格递增
   ts: number;
@@ -126,6 +127,17 @@ export interface EventEnvelope<T extends string = string, P = unknown> {
 ```
 
 `seq` 的作用域是**单局**（不是会话），SSE 的 `id` 因此也按局唯一（API-2）。
+
+`EventEnvelope` 的默认 `type` 是 `GameEventType` 而不是 `string`：**凭空写一个不存在的事件类型必须编译失败**（C-15）。「只能确定是一条事件」的位置用它；**真正构造事件**的地方用 `GameEvent`，它把 `type` 与 `payload` 静态绑定到 `GameEventMap`：
+
+```ts
+export type GameEvent = {
+  [K in GameEventType]: EventEnvelope<K, GameEventMap[K]>;
+}[GameEventType];
+
+/** 运行时可枚举的 type 集合（Zod 校验需要），由测试断言与 keyof GameEventMap 完全相等 */
+export const GAME_EVENT_TYPES = [...] as const satisfies readonly GameEventType[];
+```
 
 事件 `type` 必须是下面这个联合的成员（DATA-2），payload 形状由 `GameEventMap` 约束。本 RFC 定义**全集与扩展规则**，各 RFC 只增加成员、不得改写既有成员的 payload：
 
@@ -226,7 +238,8 @@ export const ROLE_LABELS = { wolf: '狼人', ... } as const;
 | `src/shared/actions.ts` | `Action` 联合 |
 | `src/shared/events.ts` | `EventEnvelope`、`Visibility` |
 | `src/shared/effects.ts` | `Effect`、`EffectSource` |
-| `src/shared/visibility.ts` | `isVisibleTo`（唯一需要运行时逻辑的共享文件） |
+| `src/shared/visibility.ts` | `isVisibleTo`（共享的可见性判定，`shared` 内两处运行时逻辑之一） |
+| `src/shared/schemas.ts` | Zod schema（信封 + `ActionSchema`；事件 payload 的 schema 由拥有它的 RFC 追加，见 C-10） |
 | `src/shared/terms.ts` | 术语表与身份名 |
 | `src/server/app.ts` | Fastify 实例与 `GET /api/health` |
 | `src/server/index.ts` | 启动入口 |
@@ -236,7 +249,9 @@ export const ROLE_LABELS = { wolf: '狼人', ... } as const;
 
 ## 4. 实现要点
 
-- `src/shared/visibility.ts` 是 shared 里唯一带逻辑的文件——它必须如此，因为客户端与服务端都要用它，且不能各写一份。除此之外 shared 只放类型与常量。
+- `src/shared/` 里有**两处**运行时逻辑，都受 `ARCH-2` 的例外覆盖（C-13），其余文件只放类型与常量：
+  - `visibility.ts` —— 客户端与服务端必须共用同一份可见性判定，各写一份就是「AI 不作弊」的漏洞；
+  - `schemas.ts` —— 跨层契约的 Zod 校验（`API-1` 要求共享类型由 Zod 校验），它无法只靠类型表达。
 - `pnpm selfplay` 在本 RFC 阶段只打印「未实现（RFC-015）」并以退出码 1 结束。这是对 `OPS-3` 的**临时偏离**，已记入 `RFCS.md` 的 Open conflicts，由 RFC-015 消除。
 - `pnpm test:e2e` 在无用例时退出码 0 并打印 skipped；`TEST-6` 的 Playwright 要求从 RFC-012（首个用户可见功能）起生效。
 - 依赖方向测试读取各目录的 `import` 语句做断言，不依赖打包器解析。
@@ -313,7 +328,7 @@ export const ROLE_LABELS = { wolf: '狼人', ... } as const;
 - **`test:e2e` = `node scripts/test-e2e.mjs`**：Playwright 1.65 的 `--pass-with-no-tests` 在零用例时**静默**退出 0，事后分不清「跑过了」与「一个用例都没有」。包装脚本在无用例时打印 `skipped` 并退出 0，有用例时转交 Playwright。两条路径都实证过（临时 spec 跑通后已删除）。
 - **`pnpm.onlyBuiltDependencies: ["esbuild"]`**：pnpm 10 默认拦 esbuild 的 postinstall，`pnpm install` 会打印 "Ignored build scripts"，看起来像装坏了。登记进 `package.json`，让新机器安装结果一致。
 - **依赖只装本 RFC 用得到的**：`openai`（RFC-006）、`@fastify/cookie`（RFC-008）、`jsdom` + `@testing-library/react`（RFC-012）、`@vitest/coverage-v8`（RFC-002）留到各自的 RFC 按 DOC-2 登记。
-- **命名：`STYLE-2` 与 §2.3 点名的标识符冲突时按 RFC 走**。`TERMS` / `ROLE_LABELS` / `ActionSchema` / `EventSchema` 是 §2.3 指定的名字，后 15 个 RFC 的正文都在引用它们；`STYLE-2` 的「常量 SCREAMING_SNAKE_CASE」按纯量常量执行（`SEAT_IDS` / `PHASES` / `EFFECT_ORDER`）。
+- **命名：`STYLE-2` 与 §2.3 点名的标识符冲突时按 RFC 走**。`TERMS` / `ROLE_LABELS` / `ActionSchema` / `EventSchema` 是 §2.3 指定的名字，本 RFC 的实现与测试都按这些名字导入；`STYLE-2` 的「常量 SCREAMING_SNAKE_CASE」按纯量常量执行（`SEAT_IDS` / `PHASES` / `EFFECT_ORDER`）。
 - **`ActionSchema` 不做「输出类型 = `Action`」的静态桥接**。zod 的 `.optional()` 推出 `target?: SeatId | undefined`，而 `exactOptionalPropertyTypes` 下 `Action` 的 `target?: SeatId` 不接受显式 `undefined`；用 `as` 架桥会把不兼容藏起来。改为在 `tests/shared/contracts.test.ts` 用 `@ts-expect-error` 夹具证明 `Action` 的严格性。
 
 ### 8.4 文件清单（FILES CHANGED）
@@ -339,20 +354,27 @@ export const ROLE_LABELS = { wolf: '狼人', ... } as const;
 |---|---|---|
 | 1 | `tests/meta/commands.test.ts`（5 条命令各一条用例，`start` 用 3999 端口起真实进程探活后关掉） | PASS |
 | 2 | `tests/meta/tsconfig.test.ts` · `package.json` 的 `packageManager` / `engines.node` / `type` | PASS |
-| 3 | `tests/meta/tsconfig.test.ts` · 三份配置存在、`moduleResolution: bundler`、`target: ES2022`、子配置只覆盖 `include`/`lib`/`types` | PASS |
+| 3 | `tests/meta/tsconfig.test.ts` · 三份配置存在、`moduleResolution: bundler`、`target: ES2022`、子配置不覆盖 `moduleResolution`/`target`/`strict`、`include` 各自划清边界（server 不含 client、client 不含 server、都含 shared）、**别名与 `configs/alias.ts` 逐项一致** | PASS |
 | 4 | `tests/meta/tsconfig.test.ts` · 五个开关全开 + **五份两向夹具**（开启必失败、关闭必通过）。见 C-11 | PASS |
-| 5 | `tests/shared/contracts.test.ts` · `PHASES` 恰 14 项且逐项等于 RFC 列表；`WITCH_POTIONS` 恰 3 项；`NIGHT_MOON` 用 `@ts-expect-error` 证明联合封闭 | PASS |
-| 6 | `tests/shared/effects.test.ts` · 省略 `target` 的夹具编译失败、`target: null` 合法、四个分区边界 + 升序等价于 RUL-8/RUL-1 | PASS |
+| 5 | `tests/shared/contracts.test.ts` · `PHASES` 恰 14 项且逐项等于 RFC 列表；`WITCH_POTIONS` 恰 3 项；`NIGHT_MOON` 用 `@ts-expect-error` 证明联合封闭；**`expectTypeOf<Phase>().toEqualTypeOf<(typeof EXPECTED_PHASES)[number]>()`** 让「只加类型成员」也会编译失败（评审 M1） | PASS |
+| 6 | `tests/shared/effects.test.ts` · 省略 `target` 的夹具编译失败、`target: null` 合法、四个分区边界 + 升序等价于 RUL-8/RUL-1；**`expectTypeOf<typeof EFFECT_ORDER>()` 断言四个字面量**，删掉 `as const` 会编译失败（评审 M2） | PASS |
 | 7 | `tests/shared/contracts.test.ts` · 三个字段各有一份缺失夹具（`@ts-expect-error`） | PASS |
 | 8 | `tests/shared/terms.test.ts` · 13 条键与标签逐项等于 PRD 术语表；`TERMS[key]` 的类型索引本身就是穷举断言；`ROLE_LABELS` 5 项且顺序等于 `ROLES` | PASS |
 | 9 | `tests/security/no-hardcoded-terms.test.ts` · 扫 `src/**/*.{ts,tsx}`（排除 `terms.ts`），身份名集合从 `ROLE_LABELS` 反查，测试里不抄第二份 | PASS |
-| 10 | `tests/dependency-direction.test.ts` · `shared` 无跨层 import；外部依赖白名单只含 `zod`（且不允许 `node:*`） | PASS |
-| 11 | `tests/dependency-direction.test.ts` · 跨层只走别名且方向在白名单内、相对路径不得跨层逃逸、`node:*` 只给服务端 | PASS（`src/engine/` 尚不存在，相关断言当前恒真，见 §8.6） |
+| 10 | `tests/dependency-direction.test.ts` + `tests/helpers/import-scan.ts` · `shared` 无跨层 import（静态、动态 `import()`、`require()` 三种写法都扫）；外部依赖白名单只含 `zod`（且不允许 `node:*`） | PASS |
+| 11 | `tests/dependency-direction.test.ts` + 扫描器自身的 `tests/helpers/import-scan.test.ts`（含动态导入与带注释的动态导入） · 跨层只走别名且方向在白名单内、相对路径不得跨层逃逸、`node:*` 只给服务端 | PASS（`src/engine/` 尚不存在，相关断言当前恒真，见 §8.6） |
 | 12 | `tests/server/health.test.ts`（`inject` 打 `/api/health`）+ `tests/meta/dev-proxy.test.ts`（`pnpm dev` 起真实进程，`localhost:3000` 直连与 `localhost:5173` 代理都要 200 且 `{"ok":true}`） | PASS |
 | 13 | `tests/meta/build.test.ts` · `dist/client/index.html` 与 `dist/server/index.js` 存在；递归扫 `dist/client` 无 `DEEPSEEK_API_KEY`；另加一条「无服务端模块」扫描（`@fastify/static`） | PASS |
-| 14 | `tests/meta/lint.test.ts` · 用 ESLint API 问 `.ts` 文件的**生效**等级（不是解析配置文本），两条规则均为 error；`pnpm lint` 退出 0 | PASS |
-| 15 | `tests/meta/lint.test.ts` · `pnpm format:check` 与 `pnpm test:e2e` 均退出 0；后者在零用例时打印 `skipped`（见 §8.3） | PASS |
-| 16 | `tests/meta/selfplay-placeholder.test.ts` · `pnpm selfplay` 退出码 1 且 stderr 含 `RFC-015` | PASS |
+| 14 | `tests/meta/lint.test.ts` · 用 ESLint API 问 `.ts` **与 `.tsx`** 文件的**生效**等级（不是解析配置文本），两条规则均为 error；`pnpm lint` 退出 0。`.tsx` 是评审 M8 的缺口（配置只留 `**/*.ts` 时原断言不会红） | PASS |
+| 15 | `tests/meta/lint.test.ts` · `pnpm format:check` 与 `pnpm test:e2e` 均退出 0；后者**断言 stdout 含 `skipped` 且不含 `Running `**——只看退出码的话把文案改成 `done` 也不会红（评审 M9） | PASS |
+| 16 | `tests/meta/selfplay-placeholder.test.ts` · `pnpm selfplay` 退出码 1，stderr 同时含「未实现」与 `RFC-015`（评审 M10：只断言 `RFC-015` 时删掉「未实现」不会红） | PASS |
+
+评审新增的阻塞项（不是原始 AC）：
+
+| 项 | 证据 | 结果 |
+|---|---|---|
+| **F1 / C-15** 事件 type 与 payload 静态绑定 | `src/shared/events.ts` 的 `GameEvent` 映射类型 + `GAME_EVENT_TYPES`；`EventEnvelope` 的默认 `type` 收紧为 `GameEventType`；`EventSchema` 用 `z.enum(GAME_EVENT_TYPES)`。`tests/shared/contracts.test.ts` 里有「未知 type」「错误 payload」两份夹具与 `expectTypeOf<keyof GameEventMap>()` 的双向等值断言；评审的 M11 探针（直接用 `EventEnvelope` 写假 type）现在编译失败 | PASS |
+| **F2 / C-16** `WITCH_ACT` 的 potion/target 配对 | 类型拆成两条分支、Zod 加 `.refine`；`tests/shared/contracts.test.ts` 覆盖三种非法组合（类型层 `@ts-expect-error` + `ActionSchema` 拒绝）与三种合法组合 | PASS |
 
 **全量输出**（实现会话实跑，非转述）：
 
@@ -381,9 +403,26 @@ $ grep -rl DEEPSEEK_API_KEY dist/client | wc -l → 0
 
 | 缺口 | 说明 | 归属 |
 |---|---|---|
-| 别名一致性无自动化断言 | `tsconfig.json` 的 `paths` 与 `configs/alias.ts` 必须一致（§2.2 要求），目前靠人工核对 | 建议 `TEST-STRATEGY` 补一行 |
+| ~~别名一致性无自动化断言~~ | **已关闭**：`tests/meta/tsconfig.test.ts` 的「别名单一来源」逐项比对 `paths` 与 `configs/alias.ts` | — |
 | `src/engine/` 尚不存在 | AC-11 里关于 `engine` 只 import `shared` 的断言当前恒真。目录由 RFC-002 建，届时自动生效 | RFC-002 |
 | `isVisibleTo` 的行为矩阵 | 本 RFC 只定义与实现，**行为验收在 RFC-005**（§6 已声明） | RFC-005 |
 | `TEST-6` 的 Playwright 覆盖 | 从 RFC-012（首个用户可见功能）起生效（`TEST-STRATEGY` T-1） | RFC-012 |
 | `SEC-2` 的完整产物扫描 | 本 RFC 只扫了密钥字符串与 `@fastify/static`；完整的服务端模块泄漏检查 | RFC-016 |
 | zod 输出与 `Action` 的类型桥接 | `.optional()` 与 `exactOptionalPropertyTypes` 的兼容方式，等真正写路由校验时定（RFC-011） | RFC-011 |
+| F43 的全量术语扫描 | `tests/security/no-hardcoded-terms.test.ts` 只扫 5 个身份名。扩展成 13 条术语需要按**字符串字面量与 JSX 文本**扫描（`刀` / `票` 是单字，纯文本扫描会把「投票按钮」这类正常注释算成违规）。AC-9 只要求身份名，全量扫描等真实 UI 文案出现时做 | RFC-012（或独立小 RFC） |
+| `configs/alias.ts` 与 `tsconfig` 的 `paths` 之外 | 新增别名时两边仍要手工同步；测试只覆盖当前四个键 | 有需要时再说 |
+
+### 8.7 评审回应（Round 1 · Changes requested → 本轮修复）
+
+评审见 `reviews/REVIEW-RFC-001.md`。六个阻塞项的处理，全部落实到代码与测试，不是只改文档：
+
+| 评审项 | 处理 | 证据 |
+|---|---|---|
+| **F1** 事件 type/payload 未绑定（C-15） | 新增 `GameEvent` 映射类型与 `GAME_EVENT_TYPES`；`EventEnvelope` 默认 `type` 由 `string` 收紧为 `GameEventType`；`EventSchema` 的 `type` 改为 `z.enum(GAME_EVENT_TYPES)`；`GAME_EVENT_TYPES` 与 `keyof GameEventMap` 用 `toEqualTypeOf` 双向锁定 | 评审 M11 探针从「exit 0」变为编译失败；`tests/shared/contracts.test.ts` 有正负五条用例 |
+| **F2** `WITCH_ACT` 的 potion/target 无约束（C-16） | `Action` 拆成两条分支（`none` 无 target / `heal`+`poison` 必须有 target）；`ActionSchema` 加 `.refine` 表达同一语义 | 三种非法组合在类型与 Zod 两侧都被拒绝；三种合法组合通过 |
+| **F3** AC-5 / AC-6 缺类型层测试 | `expectTypeOf<Phase>()` 与 `expectTypeOf<typeof EFFECT_ORDER>()` 各加等值断言 | 评审 M1、M2 探针均从「exit 0」变为失败 |
+| **F4** AC-15 未断言 `skipped` | 断言 stdout 含 `skipped` 且不含 `Running ` | 评审 M9 探针（改成 `done`）变为失败 |
+| **F5** 动态 import 可绕过依赖检查 | 抽出 `tests/helpers/import-scan.ts`，覆盖静态 / 仅副作用 / 动态 `import()` / `require()`，并允许中间夹注释；扫描器自身有 6 条回归用例 | 评审 M5 探针（`shared` 里 `import('@server/app')`）现在让 2 条断言变红 |
+| **F6** ARCH-2 / STYLE-2 冲突未登记 + RFC 正文不实 | 评审已登记 C-13 / C-14；本轮改正 §2.3 / §3 / §4 中「`visibility.ts` 是唯一带逻辑的文件」与 §8.3 的「后 15 个 RFC 都引用」两处不实描述 | 见 §2.3、§3 交付物表、§4、§8.3 |
+
+非阻塞项也顺手清掉了：`.tsx` 的 ESLint 等级（M8）、`playwright.config.ts` 的 `baseURL` 与注释、`commands.test.ts` 的 T-2→T-4 与 `VERIFICATION`→§8.5、`tsconfig.test.ts` 过强的用例名并补上 `include` 断言、`configs/alias.ts` 那句「测试会断言」（现在真的有测试了）、`FACTION_OF` 等契约常量断言（F7）。**未做**：F8 的全量术语扫描，理由见 §8.6。
