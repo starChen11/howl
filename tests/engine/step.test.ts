@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { Action } from '@shared/actions';
 import type { GameState } from '@shared/domain';
 
+import type { Modifier } from '@engine/effects';
+import { applyModifiers } from '@engine/effects';
 import { createEngine, DEFAULT_HANDLERS, reduce, step } from '@engine/step';
 import { DEFAULT_APPLIERS } from '@engine/step';
 import { DEFAULT_TRANSITIONS } from '@engine/transitions';
@@ -82,6 +84,83 @@ describe('AC-2 · step 是纯函数', () => {
     const b = lobbyState({ seed: 2 });
 
     expect(a.seats.map((seat) => seat.role)).not.toEqual(b.seats.map((seat) => seat.role));
+  });
+});
+
+describe('N9 · modifier 通过 step 的入口传到 handler', () => {
+  it('传给 step 的 modifiers 会出现在 handler 的 context 里', () => {
+    const seen: string[] = [];
+    const modifier: Modifier = (point, state, effects) => {
+      seen.push(`${point}@${state.phase}`);
+      return [...effects];
+    };
+
+    // 自定义 handler：把「拿到的 modifier 数量」写进事件，证明参数确实流到了 handler 里。
+    const engine = createEngine({
+      transitions: DEFAULT_TRANSITIONS,
+      handlers: {
+        START: (_state, action, context) => [
+          {
+            type: 'REJECTED',
+            visibleTo: 'public',
+            payload: {
+              actionType: action.type,
+              code: context.modifiers.length > 0 ? 'SAW_MODIFIER' : 'NO_MODIFIER',
+              message: '',
+            },
+          },
+        ],
+      },
+      appliers: {},
+    });
+
+    const lobby = lobbyState();
+    const action = startActionOf(lobby);
+
+    expect(engine.step(lobby, action).events[0]?.payload).toMatchObject({ code: 'NO_MODIFIER' });
+    expect(engine.step(lobby, action, [modifier]).events[0]?.payload).toMatchObject({
+      code: 'SAW_MODIFIER',
+    });
+
+    // handler 里若真的用了 applyModifiers，modifier 会被调用一次
+    const handler = (state: typeof lobby, list: readonly Modifier[]) =>
+      applyModifiers('VOTE_RESOLVE', state, [], list);
+    expect(handler(lobby, [modifier])).toEqual([]);
+    expect(seen).toEqual(['VOTE_RESOLVE@LOBBY']);
+  });
+});
+
+describe('N11 · 一个 action 产出多条事件时 seq 仍然连续', () => {
+  it('handler 返回 3 个草稿，seq 为 +1 / +2 / +3 且状态 seq 跟上', () => {
+    const engine = createEngine({
+      transitions: DEFAULT_TRANSITIONS,
+      handlers: {
+        START: (_state, action) => [
+          {
+            type: 'REJECTED',
+            visibleTo: 'public',
+            payload: { actionType: action.type, code: 'C1', message: '' },
+          },
+          {
+            type: 'REJECTED',
+            visibleTo: 'public',
+            payload: { actionType: action.type, code: 'C2', message: '' },
+          },
+          {
+            type: 'REJECTED',
+            visibleTo: 'public',
+            payload: { actionType: action.type, code: 'C3', message: '' },
+          },
+        ],
+      },
+      appliers: {},
+    });
+
+    const lobby = lobbyState();
+    const result = engine.step(lobby, startActionOf(lobby));
+
+    expect(result.events.map((event) => event.seq)).toEqual([1, 2, 3]);
+    expect(result.state.seq).toBe(3);
   });
 });
 

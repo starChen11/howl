@@ -136,6 +136,75 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     expect(() => replay([broken])).toThrow(/personas 必须是 9 项/);
   });
 
+  /**
+   * 评审 B2 / P4：正常事件流里，「用 payload.roles」和「按 payload.seed 重新发牌」结果
+   * 完全相同，所以一条会破坏旧对局重放的实现也能全绿。要锁住「事件是唯一权威」，
+   * 必须造一个**与重新发牌结果不同**的合成事件。
+   */
+  it('采用 payload.roles 的发牌结果，而不是按 seed 重新发牌', () => {
+    const lobby = lobbyState({ seed: 777 });
+    const [original] = step(lobby, startActionOf(lobby)).events;
+    if (original?.type !== 'GAME_STARTED') throw new Error('缺少 GAME_STARTED');
+
+    // 互换两个**身份不同**的席位：如果实现改成按 seed 重新发牌，这个结果就对不上。
+    const roles = [...original.payload.roles];
+    const firstWolf = roles.findIndex((role) => role === 'wolf');
+    const firstGood = roles.findIndex((role) => role !== 'wolf');
+    if (firstWolf < 0 || firstGood < 0) throw new Error('夹具里缺少狼或好人');
+    const wolfRole = roles[firstWolf];
+    const goodRole = roles[firstGood];
+    if (wolfRole === undefined || goodRole === undefined) throw new Error('夹具身份缺失');
+    roles[firstWolf] = goodRole;
+    roles[firstGood] = wolfRole;
+
+    const synthetic: GameEvent = { ...original, payload: { ...original.payload, roles } };
+    const replayed = replay([synthetic]);
+
+    expect(replayed.seats.map((seat) => seat.role)).toEqual(roles);
+    expect(replayed.seats.map((seat) => seat.role)).not.toEqual(original.payload.roles);
+    // 对照：同一 seed 重新发牌得到的是原结果，不是合成结果
+    expect(lobby.seats.map((seat) => seat.role)).toEqual(original.payload.roles);
+  });
+
+  it('seed / mode / playerSeat / personas 也从 payload 重建', () => {
+    const lobby = lobbyState({ seed: 777 });
+    const [original] = step(lobby, startActionOf(lobby)).events;
+    if (original?.type !== 'GAME_STARTED') throw new Error('缺少 GAME_STARTED');
+
+    const personas = ['p-alpha', 'p-beta', null, null, null, null, null, null, null];
+    const synthetic: GameEvent = {
+      ...original,
+      payload: { ...original.payload, personas, seed: 424_242, mode: 'slaughter-all' },
+    };
+
+    const replayed = replay([synthetic]);
+
+    expect(replayed.seed).toBe(424_242);
+    expect(replayed.mode).toBe('slaughter-all');
+    expect(replayed.seats.map((seat) => seat.personaId)).toEqual([
+      'p-alpha',
+      'p-beta',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('playerSeat 从 payload 决定哪个席位是玩家', () => {
+    const lobby = lobbyState({ seed: 777, playerSeat: 3 });
+    const [original] = step(lobby, startActionOf(lobby)).events;
+    if (original?.type !== 'GAME_STARTED') throw new Error('缺少 GAME_STARTED');
+
+    const synthetic: GameEvent = { ...original, payload: { ...original.payload, playerSeat: 5 } };
+    const replayed = replay([synthetic]);
+
+    expect(replayed.seats.filter((seat) => seat.isPlayer).map((seat) => seat.seat)).toEqual([5]);
+  });
+
   it('未实现折叠的事件类型抛 UnknownEventError（不静默忽略）', () => {
     const [startedEvent] = eventsOfStart();
     if (startedEvent === undefined) throw new Error('缺少 GAME_STARTED');

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { GameEvent } from '@shared/events';
 import { GAME_EVENT_TYPES } from '@shared/events';
+import { GameStartedPayloadSchema, RejectedPayloadSchema } from '@shared/schemas';
 
+import { replay } from '@engine/replay';
 import { step } from '@engine/step';
 
 import { lobbyState, startActionOf, playerSeatOf } from '../fixtures/states';
@@ -52,11 +54,46 @@ describe('AC-6 · seq 与事件类型', () => {
     }
   });
 
+  it('REJECTED 的 payload schema 能校验真实载荷（N3）', () => {
+    const lobby = lobbyState();
+    const rejected = step(lobby, { type: 'VOTE', ts: 1, seat: 2, target: 'abstain' });
+
+    expect(RejectedPayloadSchema.safeParse(rejected.events[0]?.payload).success).toBe(true);
+    expect(
+      RejectedPayloadSchema.safeParse({ actionType: 'NOT_AN_ACTION', code: 'X', message: 'y' })
+        .success,
+    ).toBe(false);
+  });
+
   it('ts 来自 action，不由引擎读时钟（ARCH-4 / Q-002-1）', () => {
     const lobby = lobbyState();
     const result = step(lobby, startActionOf(lobby, 987_654));
 
     expect(result.events[0]?.ts).toBe(987_654);
+  });
+});
+
+describe('post-START 的相位与天数（评审 N5 / P22）', () => {
+  it('开局后进入第一夜的 NIGHT_WOLF_CHAT，day === 1', () => {
+    // P22：把 GAME_STARTED 之后的 phase 改成 DAY_ANNOUNCE，全套 12 个引擎测试仍然全绿。
+    const lobby = lobbyState();
+    const started = step(lobby, startActionOf(lobby)).state;
+
+    expect(started.phase).toBe('NIGHT_WOLF_CHAT');
+    expect(started.day).toBe(1);
+  });
+
+  it('LOBBY 里 day 是 0（不属于任何一天）', () => {
+    expect(lobbyState().day).toBe(0);
+    expect(lobbyState().phase).toBe('LOBBY');
+  });
+
+  it('replay 也重建出同样的相位与天数', () => {
+    const lobby = lobbyState();
+    const result = step(lobby, startActionOf(lobby));
+
+    expect(replay(result.events).phase).toBe('NIGHT_WOLF_CHAT');
+    expect(replay(result.events).day).toBe(1);
   });
 });
 
@@ -83,6 +120,18 @@ describe('AC-7 · 首事件与 GAME_STARTED 的 payload', () => {
 
     expect(first.payload.roles).toEqual(lobby.seats.map((seat) => seat.role));
     expect(started.state.seats.map((seat) => seat.role)).toEqual(first.payload.roles);
+  });
+
+  it('payload schema 能校验真实 payload，并拒绝坏数据（N3）', () => {
+    if (first?.type !== 'GAME_STARTED') throw new Error('首个事件不是 GAME_STARTED');
+
+    expect(GameStartedPayloadSchema.safeParse(first.payload).success).toBe(true);
+    expect(GameStartedPayloadSchema.safeParse({ ...first.payload, roles: ['wolf'] }).success).toBe(
+      false,
+    );
+    expect(GameStartedPayloadSchema.safeParse({ ...first.payload, playerSeat: 10 }).success).toBe(
+      false,
+    );
   });
 
   it('可见性是 server：任何席位都不该看到全员身份', () => {

@@ -87,6 +87,21 @@ describe('AC-8 · 拒绝路径', () => {
     expect(event.visibleTo).toBe('public');
   });
 
+  it('START 的 mode 与已发牌状态不一致时同样被拒（评审 N8 / P19）', () => {
+    const lobby = lobbyState({ mode: 'slaughter-side' });
+    const mismatched: Action = {
+      type: 'START',
+      ts: 1,
+      seed: lobby.seed,
+      mode: 'slaughter-all',
+      playerSeat: playerSeatOf(lobby),
+    };
+
+    const { event } = rejectionOf(lobby, mismatched);
+
+    expect(event.payload.code).toBe('START_STATE_MISMATCH');
+  });
+
   it('START 的 playerSeat 与已发牌状态不一致时同样被拒', () => {
     const lobby = lobbyState();
     const otherSeat = lobby.seats.find((seat) => !seat.isPlayer)?.seat;

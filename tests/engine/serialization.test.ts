@@ -60,7 +60,10 @@ describe('AC-3 · GameState 可序列化', () => {
     expect(restored).toEqual(started);
 
     const nextFromRestored = step(restored, { type: 'SPEECH', ts: 5_000, seat: 2, text: '嗨' });
-    expect(nextFromRestored.state.seq).toBe(started.seq + 1);
+    const nextFromOriginal = step(started, { type: 'SPEECH', ts: 5_000, seat: 2, text: '嗨' });
+
+    // 比较整个推进结果，不只 seq：往返后「还能继续推进」的意思是推进结果完全一致。
+    expect(nextFromRestored).toEqual(nextFromOriginal);
   });
 
   it('状态里每个值都是原始值 / 普通数组 / 纯对象', () => {

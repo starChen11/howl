@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { Action } from '@shared/actions';
-import { WITCH_POTIONS } from '@shared/actions';
+import { ACTION_TYPES, WITCH_POTIONS } from '@shared/actions';
 import { ActionSchema } from '@shared/schemas';
 
 /**
@@ -26,6 +26,14 @@ const VALID_ACTIONS = [
   { type: 'VOTE', ts: 0, seat: 3, target: 'abstain' },
   { type: 'SELF_EXPOSE', ts: 0, seat: 1 },
 ];
+
+describe('ACTION_TYPES 与 Action 的类型集合一致（评审 N2）', () => {
+  it('双向精确相等：多一个少一个都编译失败', () => {
+    expectTypeOf<Action['type']>().toEqualTypeOf<(typeof ACTION_TYPES)[number]>();
+    expect(ACTION_TYPES).toHaveLength(10);
+    expect(new Set(ACTION_TYPES).size).toBe(10);
+  });
+});
 
 describe('AC-5 · potion 的三个取值', () => {
   it('WITCH_POTIONS 恰为 heal / poison / none', () => {

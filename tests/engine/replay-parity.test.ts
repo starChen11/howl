@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { applyEvent } from '@engine/apply';
 import { replay } from '@engine/replay';
 import { step } from '@engine/step';
 import { checkWin } from '@engine/win';
@@ -63,13 +64,17 @@ describe('C-18 · replay 后继续 step 与原始运行一致', () => {
     expect(checkWin(replay(events))).toEqual(checkWin(last.state));
   });
 
-  it('分两段重放（前半 + 后半）与一次重放结果相同——派生值不依赖「一次折叠完」', () => {
+  it('真的分段重放：先 replay 前半，再把后半逐个 applyEvent 折进去（N1）', () => {
     const { events } = playSequence();
     const half = Math.ceil(events.length / 2);
 
-    const whole = replay(events);
-    const replayedInTwoSteps = replay([...events.slice(0, half), ...events.slice(half)]);
+    // 前半走 replay（从空状态起），后半用同一个折叠基元接上去。
+    // 原来的写法是 `replay([...前半, ...后半])`，那只是同一次重放换了个写法。
+    const afterFirstHalf = replay(events.slice(0, half));
+    const afterSecondHalf = events
+      .slice(half)
+      .reduce((state, event) => applyEvent(state, event), afterFirstHalf);
 
-    expect(replayedInTwoSteps).toEqual(whole);
+    expect(afterSecondHalf).toEqual(replay(events));
   });
 });

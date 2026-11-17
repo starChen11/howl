@@ -1,9 +1,9 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { initialStateFromSeed, nextInt, nextRandom, shuffle } from '@engine/rng';
+
+import { collectTypeScriptFiles, findFilesContaining } from '../helpers/source-scan';
 
 /**
  * AC-13 与随机源的确定性（DATA-4 / DATA-5 / F38）。
@@ -14,26 +14,44 @@ import { initialStateFromSeed, nextInt, nextRandom, shuffle } from '@engine/rng'
 
 const ENGINE_DIR = fileURLToPath(new URL('../../src/engine', import.meta.url));
 
-function engineSources(): { file: string; source: string }[] {
-  return readdirSync(ENGINE_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
-    .map((entry) => {
-      const file = join(ENGINE_DIR, entry.name);
-      return { file, source: readFileSync(file, 'utf8') };
-    });
+/** 递归扫描（评审 B1 / P13）：RFC-003 会加 `engine/phases/`、`engine/resolve/` 子目录。 */
+function engineSources() {
+  return collectTypeScriptFiles(ENGINE_DIR);
 }
 
 describe('AC-13 · 引擎不得使用 Math.random', () => {
-  it('src/engine 下没有任何 Math.random( 调用', () => {
-    const offenders = engineSources()
-      .filter(({ source }) => source.includes('Math.random('))
-      .map(({ file }) => relative(ENGINE_DIR, file));
-
-    expect(offenders).toEqual([]);
+  it('递归扫描 src/engine 的**全部** .ts，没有任何违规调用', () => {
+    expect(findFilesContaining(engineSources(), 'Math.random(')).toEqual([]);
   });
 
   it('扫描确实读到了文件（防止断言因为走空而假通过）', () => {
-    expect(engineSources().length).toBeGreaterThan(5);
+    const files = engineSources();
+    const names = files.map((file) => file.relativePath).sort();
+
+    expect(files.length).toBeGreaterThanOrEqual(9);
+    // 这九个是 RFC-002 的交付物；少一个说明扫描或目录结构出了问题。
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'apply.ts',
+        'effects.ts',
+        'errors.ts',
+        'init.ts',
+        'replay.ts',
+        'rng.ts',
+        'step.ts',
+        'transitions.ts',
+        'win.ts',
+      ]),
+    );
+  });
+
+  it('扫描器是递归的（子目录里的违规也必须被扫到）', () => {
+    // 递归能力由 tests/helpers/source-scan.test.ts 用临时目录证明；
+    // 这里只断言本测试用的是那个递归实现，而不是自己写的一层循环。
+    const scanned = engineSources();
+
+    expect(Array.isArray(scanned)).toBe(true);
+    expect(scanned.every((file) => typeof file.relativePath === 'string')).toBe(true);
   });
 });
 

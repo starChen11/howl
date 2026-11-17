@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+
+import { collectTypeScriptFiles, findFilesContaining } from '../helpers/source-scan';
 
 import { pnpm, REPO_ROOT } from './helpers/run';
 
@@ -16,6 +19,7 @@ import { pnpm, REPO_ROOT } from './helpers/run';
  */
 
 const SUMMARY_PATH = join(REPO_ROOT, 'coverage', 'coverage-summary.json');
+const ENGINE_SRC = fileURLToPath(new URL('../../src/engine', import.meta.url));
 
 interface CoverageMetric {
   pct: number;
@@ -39,26 +43,14 @@ describe('AC-14 · 引擎覆盖率门禁', () => {
     expect(summary.total.branches.pct).toBeGreaterThanOrEqual(85);
   });
 
-  it('引擎源码里没有覆盖率忽略注释（TEST-2 明令禁止）', () => {
-    const offenders: string[] = [];
-
-    for (const file of [
-      'apply.ts',
-      'effects.ts',
-      'errors.ts',
-      'init.ts',
-      'replay.ts',
-      'rng.ts',
-      'step.ts',
-      'transitions.ts',
-      'win.ts',
-    ]) {
-      const source = readFileSync(join(REPO_ROOT, 'src', 'engine', file), 'utf8');
-      for (const marker of ['c8 ignore', 'v8 ignore', 'istanbul ignore']) {
-        if (source.includes(marker)) offenders.push(`${file} 含 ${marker}`);
-      }
-    }
+  it('引擎源码里没有覆盖率忽略注释（TEST-2 明令禁止）——递归扫描，含子目录', () => {
+    // 评审 B1 / N12：原来硬编码 9 个顶层文件名，RFC-003 一加子目录就漏。
+    const files = collectTypeScriptFiles(ENGINE_SRC);
+    const offenders = ['c8 ignore', 'v8 ignore', 'istanbul ignore'].flatMap((marker) =>
+      findFilesContaining(files, marker).map((file) => `${file} 含 ${marker}`),
+    );
 
     expect(offenders).toEqual([]);
+    expect(files.length).toBeGreaterThanOrEqual(9);
   });
 });
