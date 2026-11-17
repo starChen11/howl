@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { Action } from '@shared/actions';
 import { WITCH_POTIONS } from '@shared/actions';
 import type { Phase } from '@shared/domain';
-import { PHASES } from '@shared/domain';
-import type { EventEnvelope } from '@shared/events';
+import { FACTION_OF, FACTIONS, PHASES, ROLES, SEAT_IDS, WIN_MODES } from '@shared/domain';
+import type { EventEnvelope, GameEvent, GameEventMap } from '@shared/events';
+import { GAME_EVENT_TYPES } from '@shared/events';
 import { ActionSchema, EventSchema } from '@shared/schemas';
 
 /**
@@ -44,6 +45,12 @@ describe('AC-5 · Phase 与 potion 的取值集合', () => {
     // @ts-expect-error 'NIGHT_MOON' 不在 14 个取值里
     const unknownPhase: Phase = 'NIGHT_MOON';
     expect(unknownPhase).toBe('NIGHT_MOON');
+  });
+
+  it('Phase 的类型集合与运行时数组完全相等（加第 15 个成员会编译失败）', () => {
+    // 评审 M1：只加类型成员、不改数组时，运行时断言与 'NIGHT_MOON' 夹具仍然通过。
+    // toEqualTypeOf 是双向精确比较，多一个少一个都编译失败。
+    expectTypeOf<Phase>().toEqualTypeOf<(typeof EXPECTED_PHASES)[number]>();
   });
 
   it('WITCH_ACT 的 potion 只有 heal / poison / none', () => {
@@ -158,5 +165,153 @@ describe('C-10 · ActionSchema / EventSchema', () => {
     expect(EventSchema.safeParse(envelope).success).toBe(true);
     expect(EventSchema.safeParse({ ...envelope, visibleTo: 'self:10' }).success).toBe(false);
     expect(EventSchema.safeParse({ ...envelope, seq: 0 }).success).toBe(false);
+  });
+
+  it('EventSchema 拒绝不在 GameEventMap 里的 type（评审 F1 / M11）', () => {
+    const envelope = {
+      gameId: 'game-1',
+      seq: 1,
+      ts: 0,
+      visibleTo: 'public',
+      payload: {},
+    };
+
+    expect(EventSchema.safeParse({ ...envelope, type: 'NOT_A_REAL_EVENT' }).success).toBe(false);
+    expect(EventSchema.safeParse({ ...envelope, type: '' }).success).toBe(false);
+    expect(EventSchema.safeParse({ ...envelope, type: 'SPEECH' }).success).toBe(true);
+  });
+});
+
+/**
+ * 评审 F2：§2.3 的约束句要求 `potion: 'none'` 与省略 `target` 配套、`heal`/`poison`
+ * 必须带目标。一条 `target?: SeatId` 表达不出来，所以类型拆成两个分支、Zod 加 refine。
+ * 两侧都要拒绝——类型挡住本仓库的代码，Zod 挡住未来从 HTTP 进来的入站校验（SEC-4）。
+ */
+describe('F2 · WITCH_ACT 的 potion / target 配对', () => {
+  it('三种非法组合都被类型拒绝', () => {
+    // @ts-expect-error potion 为 none 时不得带 target
+    const noneWithTarget: Action = { type: 'WITCH_ACT', ts: 0, seat: 6, potion: 'none', target: 2 };
+    // @ts-expect-error heal 必须带 target
+    const healWithoutTarget: Action = { type: 'WITCH_ACT', ts: 0, seat: 6, potion: 'heal' };
+    // @ts-expect-error poison 必须带 target
+    const poisonWithoutTarget: Action = { type: 'WITCH_ACT', ts: 0, seat: 6, potion: 'poison' };
+
+    expect([noneWithTarget, healWithoutTarget, poisonWithoutTarget]).toHaveLength(3);
+  });
+
+  it('三种合法组合都能构造', () => {
+    const none: Action = { type: 'WITCH_ACT', ts: 0, seat: 6, potion: 'none' };
+    const heal: Action = { type: 'WITCH_ACT', ts: 0, seat: 6, potion: 'heal', target: 2 };
+    const poison: Action = { type: 'WITCH_ACT', ts: 0, seat: 6, potion: 'poison', target: 2 };
+
+    expect([none, heal, poison]).toHaveLength(3);
+  });
+
+  it('三种非法组合也都被 ActionSchema 拒绝', () => {
+    const cases = [
+      { type: 'WITCH_ACT', ts: 0, seat: 6, potion: 'none', target: 2 },
+      { type: 'WITCH_ACT', ts: 0, seat: 6, potion: 'heal' },
+      { type: 'WITCH_ACT', ts: 0, seat: 6, potion: 'poison' },
+    ];
+
+    for (const action of cases) {
+      expect(ActionSchema.safeParse(action).success, JSON.stringify(action)).toBe(false);
+    }
+  });
+});
+
+/**
+ * 评审 F1：`EventEnvelope` 的默认参数（`type: string` / `payload: unknown`）太宽，
+ * DATA-2 与 §2.3 正文要求 type 必须是 `GameEventMap` 成员、payload 由 map 约束。
+ * `GameEvent` 承担这件事，运行时的 `GAME_EVENT_TYPES` 与 map 的键双向绑定。
+ */
+describe('F1 · GameEvent 与 GAME_EVENT_TYPES', () => {
+  it('类型合法的事件可以构造', () => {
+    const started: GameEvent = {
+      gameId: 'game-1',
+      seq: 1,
+      ts: 0,
+      type: 'GAME_STARTED',
+      visibleTo: 'server',
+      payload: {
+        seed: 42,
+        mode: 'slaughter-side',
+        playerSeat: 3,
+        roles: [
+          'wolf',
+          'wolf',
+          'wolf',
+          'seer',
+          'witch',
+          'hunter',
+          'villager',
+          'villager',
+          'villager',
+        ],
+        personas: [null, 'p1', 'p2', null, null, null, null, null, null],
+      },
+    };
+
+    expect(started.type).toBe('GAME_STARTED');
+  });
+
+  it('未知 type 与错误 payload 都无法通过编译', () => {
+    // 注意：`@ts-expect-error` 必须紧贴出错的那一行。多行字面量里 TS 把错误报在**属性**上，
+    // 不在 `const` 上，写错位置会变成「未使用的指令」——那也是一种失败，但失败得莫名其妙。
+    const bogusType: GameEvent = {
+      gameId: 'g',
+      seq: 1,
+      ts: 0,
+      // @ts-expect-error 'NOT_A_REAL_EVENT' 不是 GameEventMap 的成员（DATA-2 / 评审 M11）
+      type: 'NOT_A_REAL_EVENT',
+      visibleTo: 'public',
+      payload: { seat: 1 },
+    };
+
+    const badPayload: GameEvent = {
+      gameId: 'g',
+      seq: 1,
+      ts: 0,
+      type: 'GAME_STARTED',
+      visibleTo: 'server',
+      // @ts-expect-error GAME_STARTED 的 payload 由 GameEventMap 约束
+      payload: { seed: 'not-a-number' },
+    };
+
+    expect([bogusType, badPayload]).toHaveLength(2);
+  });
+
+  it('GAME_EVENT_TYPES 与 GameEventMap 的键完全一致', () => {
+    // 双向精确比较：运行时可枚举清单漏一个成员、或多写一个，都会编译失败。
+    expectTypeOf<keyof GameEventMap>().toEqualTypeOf<(typeof GAME_EVENT_TYPES)[number]>();
+    expect(GAME_EVENT_TYPES).toHaveLength(17);
+    expect(new Set(GAME_EVENT_TYPES).size).toBe(17);
+  });
+});
+
+/**
+ * 评审 F7：AC 没有覆盖的契约常量。`FACTION_OF` 写错一个阵营仍然满足
+ * `satisfies Record<Role, Faction>`，只能靠断言挡住。
+ */
+describe('F7 · 其余共享常量', () => {
+  it('SEAT_IDS 是 1..9', () => {
+    expect([...SEAT_IDS]).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it('FACTION_OF 把五个身份映射到正确阵营', () => {
+    expect(FACTION_OF).toEqual({
+      wolf: 'wolf',
+      seer: 'good',
+      witch: 'good',
+      hunter: 'good',
+      villager: 'good',
+    });
+    // 键必须覆盖 ROLES，否则 satisfies 之外还得靠这条兜住顺序漂移
+    expect(Object.keys(FACTION_OF)).toEqual([...ROLES]);
+  });
+
+  it('FACTIONS 与 WIN_MODES 的取值集合', () => {
+    expect([...FACTIONS]).toEqual(['wolf', 'good']);
+    expect([...WIN_MODES]).toEqual(['slaughter-side', 'slaughter-all']);
   });
 });

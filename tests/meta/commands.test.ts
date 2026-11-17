@@ -6,8 +6,8 @@ import { pnpm, pnpmBackground, waitForHttp, delay } from './helpers/run';
  * RFC-001 AC-1：五条命令全部以退出码 0 结束。
  *
  * `pnpm test` 这里跑的是 `--project unit`：在本测试里再跑一遍完整 `pnpm test` 会连自己
- * 一起收进去，无限递归（TEST-STRATEGY.md §7 T-2）。完整套件的结果由实现会话在
- * VERIFICATION 里贴原始输出。
+ * 一起收进去，无限递归（TEST-STRATEGY.md §7 T-4）。完整套件的结果由实现会话贴在
+ * `RFCs/RFC-001-project-scaffold-and-shared-contracts.md` §8.5。
  *
  * 顺序有意义：`start` 依赖 `build` 产出的 `dist/server/index.js`，所以 build 在 start 之前。
  */

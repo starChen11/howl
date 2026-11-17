@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { Effect } from '@shared/effects';
 import { EFFECT_ORDER } from '@shared/effects';
@@ -44,6 +44,17 @@ describe('AC-6 · order 分区常量', () => {
     expect(EFFECT_ORDER.DEATH).toBe(100);
     expect(EFFECT_ORDER.DEATH_TRIGGER).toBe(200);
     expect(EFFECT_ORDER.EXTENSION).toBe(900);
+  });
+
+  it('EFFECT_ORDER 保持字面量类型（删掉 as const 会编译失败）', () => {
+    // 评审 M2：删掉 `as const` 后四个数字断言仍然通过，因为运行时值没变。
+    // AC-6 要求的是「以 as const 导出」，所以要断言类型而不是值。
+    expectTypeOf<typeof EFFECT_ORDER>().toEqualTypeOf<{
+      readonly CANCEL: 0;
+      readonly DEATH: 100;
+      readonly DEATH_TRIGGER: 200;
+      readonly EXTENSION: 900;
+    }>();
   });
 
   it('升序应用即「抵消 → 死亡 → 死亡触发技能 → 扩展」', () => {

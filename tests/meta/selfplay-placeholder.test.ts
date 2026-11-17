@@ -14,6 +14,8 @@ describe('AC-16 · selfplay 占位', () => {
     const result = await pnpm(['selfplay']);
 
     expect(result.code).toBe(1);
+    // 两个片段都要断言：只留 'RFC-015' 的话，把「未实现」删掉也不会红（评审 M10）。
+    expect(result.stderr).toContain('未实现');
     expect(result.stderr).toContain('RFC-015');
   });
 });

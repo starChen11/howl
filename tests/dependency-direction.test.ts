@@ -3,6 +3,8 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import { importSpecifiers } from './helpers/import-scan';
+
 /**
  * RFC-001 AC-10 / AC-11：依赖方向。
  *
@@ -62,18 +64,6 @@ function layerOf(absolutePath: string): Layer | null {
     return first;
   }
   return null;
-}
-
-/** 收集 `from 'x'` 与 `import 'x'` 两类说明符，去重。 */
-function importSpecifiers(source: string): string[] {
-  const specifiers = new Set<string>();
-  for (const pattern of [/\bfrom\s+['"]([^'"]+)['"]/g, /(?:^|\n)\s*import\s+['"]([^'"]+)['"]/g]) {
-    for (const match of source.matchAll(pattern)) {
-      const specifier = match[1];
-      if (specifier !== undefined) specifiers.add(specifier);
-    }
-  }
-  return [...specifiers];
 }
 
 function sourceFiles(): { file: string; layer: Layer; specifiers: string[] }[] {

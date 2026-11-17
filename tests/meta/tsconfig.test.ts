@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { ALIAS } from '../../configs/alias';
 import { REPO_ROOT, run } from './helpers/run';
 
 /**
@@ -159,14 +160,32 @@ describe('AC-3 · 三份 tsconfig', () => {
     expect(root.compilerOptions?.target).toBe('ES2022');
   });
 
-  it('子配置继承根配置，只覆盖 include / lib / types', () => {
+  it('子配置继承根配置，不覆盖 moduleResolution / target', () => {
     for (const file of ['tsconfig.server.json', 'tsconfig.client.json']) {
       const config = readJson<TsConfigFile & { extends?: string }>(file);
 
       expect(config.extends).toBe('./tsconfig.json');
       expect(config.compilerOptions?.moduleResolution).toBeUndefined();
       expect(config.compilerOptions?.target).toBeUndefined();
+      // strict 等严格开关也只能来自根配置，否则两个边界会各说各话
+      expect(config.compilerOptions?.strict).toBeUndefined();
     }
+  });
+
+  // 评审 3.5-4：原来没有断言 include，用例名却写着「只覆盖 include/lib/types」。
+  it('子配置的 include 各自划清边界，互不包含对方目录', () => {
+    const server = readJson<{ include: string[] }>('tsconfig.server.json');
+    const client = readJson<{ include: string[] }>('tsconfig.client.json');
+
+    expect(server.include.some((glob) => glob.includes('src/client'))).toBe(false);
+    expect(server.include.some((glob) => glob.includes('src/server'))).toBe(true);
+
+    expect(client.include.some((glob) => glob.includes('src/server'))).toBe(false);
+    expect(client.include.some((glob) => glob.includes('src/client'))).toBe(true);
+
+    // 两层都要能看见 shared，否则共享契约在任一侧不可用
+    expect(server.include.some((glob) => glob.includes('src/shared'))).toBe(true);
+    expect(client.include.some((glob) => glob.includes('src/shared'))).toBe(true);
   });
 
   it('server 配置不含 DOM，client 配置不含 Node 类型', () => {
@@ -176,6 +195,30 @@ describe('AC-3 · 三份 tsconfig', () => {
     expect(server.compilerOptions?.lib).toEqual(['ES2022']);
     expect(client.compilerOptions?.lib).toEqual(['ES2022', 'DOM', 'DOM.Iterable']);
     expect(client.compilerOptions?.types).toEqual([]);
+  });
+});
+
+/**
+ * `configs/alias.ts` 的注释声称 tsconfig 的 `paths` 与它一致。这条测试让那句话成立，
+ * 也把 RFC §8.6 里「别名一致性靠人工核对」这个缺口关掉。
+ */
+describe('别名单一来源', () => {
+  it('tsconfig.json 的 paths 与 configs/alias.ts 逐项指向同一目录', () => {
+    const root = readJson<{ compilerOptions?: { paths?: Record<string, string[]> } }>(
+      'tsconfig.json',
+    );
+    const paths = root.compilerOptions?.paths ?? {};
+
+    expect(Object.keys(paths).sort()).toEqual(['@client/*', '@engine/*', '@server/*', '@shared/*']);
+
+    for (const [pattern, targets] of Object.entries(paths)) {
+      const aliasKey = pattern.replace('/*', '');
+      const target = targets[0];
+      expect(target, `${pattern} 缺少映射目标`).toBeDefined();
+
+      const expected = join(REPO_ROOT, (target ?? '').replace('./', '').replace('/*', ''));
+      expect(ALIAS[aliasKey as keyof typeof ALIAS], `${aliasKey} 与 paths 不一致`).toBe(expected);
+    }
   });
 });
 
