@@ -1,0 +1,422 @@
+# RFC-001 评审 · 工程骨架与共享契约
+
+> **评审会话**：新会话（未参与 RFC-001 的实现）
+> **日期**：2026-11-17
+> **分支 / HEAD**：`rfc/001-project-scaffold-and-shared-contracts` / `c380a20`
+> **结论**：**Changes requested**
+> **整体风险**：**Medium**（当前可运行功能没有崩溃级缺陷；共享契约的静态约束有缺口，会被后续 15 个 RFC 继承）
+
+---
+
+## 0. STEP 0 · 实际执行结果
+
+### 0.1 环境
+
+```
+$ node -v
+v22.22.2
+$ pnpm -v
+10.33.0
+```
+
+### 0.2 四条门禁（真实输出）
+
+```
+$ pnpm typecheck
+> howl@0.0.0 typecheck /Users/chenxin/Desktop/project/dsh-project/howl
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit
+EXIT 0  (3.27s)
+```
+
+```
+$ pnpm lint
+> howl@0.0.0 lint /Users/chenxin/Desktop/project/dsh-project/howl
+> eslint .
+EXIT 0  (0.85s，无诊断输出)
+```
+
+```
+$ pnpm test
+> howl@0.0.0 test /Users/chenxin/Desktop/project/dsh-project/howl
+> vitest run
+
+ RUN  v5.1.0 /Users/chenxin/Desktop/project/dsh-project/howl
+
+ ✓ |unit| tests/security/no-hardcoded-terms.test.ts (2 tests) 4ms
+ ✓ |unit| tests/shared/terms.test.ts (6 tests) 4ms
+ ✓ |unit| tests/dependency-direction.test.ts (5 tests) 4ms
+ ✓ |unit| tests/shared/effects.test.ts (5 tests) 5ms
+ ✓ |unit| tests/shared/contracts.test.ts (9 tests) 7ms
+ ✓ |unit| tests/server/health.test.ts (2 tests) 59ms
+ ✓ |meta| tests/meta/commands.test.ts (5 tests) 6356ms
+   ✓ AC-1 · 五条命令 (5)
+     ✓ pnpm typecheck 退出 0 3140ms
+     ✓ pnpm lint 退出 0 599ms
+     ✓ pnpm test 的单元与集成部分退出 0 567ms
+     ✓ pnpm build 退出 0 515ms
+     ✓ pnpm start 起得来、能响应健康检查、能被关掉 1533ms
+ ✓ |meta| tests/meta/dev-proxy.test.ts (1 test) 1802ms
+   ✓ AC-12 · Vite 开发代理 (1)
+     ✓ 直连 3000 与经 5173 代理都返回 200 与 {"ok":true} 1800ms
+ ✓ |meta| tests/meta/tsconfig.test.ts (13 tests) 2496ms
+   ✓ AC-4 · 五个严格开关 (6)
+     ✓ strict 开启时夹具编译失败、关闭时通过 463ms
+     ✓ noUncheckedIndexedAccess 开启时夹具编译失败、关闭时通过 498ms
+     ✓ exactOptionalPropertyTypes 开启时夹具编译失败、关闭时通过 563ms
+     ✓ noImplicitOverride 开启时夹具编译失败、关闭时通过 483ms
+     ✓ verbatimModuleSyntax 开启时夹具编译失败、关闭时通过 485ms
+ ✓ |meta| tests/meta/lint.test.ts (4 tests) 2215ms
+   ✓ AC-14 · ESLint 规则等级 (2)
+     ✓ pnpm lint 退出 0 1206ms
+   ✓ AC-15 · 格式化与 e2e 门禁 (2)
+     ✓ pnpm format:check 退出 0 568ms
+ ✓ |meta| tests/meta/build.test.ts (4 tests) 538ms
+   ✓ AC-13 · 构建产物 (4)
+     ✓ pnpm build 退出 0 535ms
+ ✓ |meta| tests/meta/selfplay-placeholder.test.ts (1 test) 348ms
+   ✓ AC-16 · selfplay 占位 (1)
+     ✓ 以退出码 1 结束，且提示指向 RFC-015 347ms
+
+ Test Files  12 passed (12)
+      Tests  57 passed (57)
+   Duration  14.53s
+EXIT 0
+```
+
+```
+$ pnpm build
+> howl@0.0.0 build /Users/chenxin/Desktop/project/dsh-project/howl
+> vite build && vite build --config vite.server.config.ts
+
+vite v8.3.8 building client environment for production...
+✓ 14 modules transformed.
+dist/client/index.html                  0.42 kB │ gzip:  0.31 kB
+dist/client/assets/index-DTkfWeVY.js  219.65 kB │ gzip: 68.71 kB
+✓ built in 74ms
+vite v8.3.8 building ssr environment for production...
+✓ 3 modules transformed.
+dist/server/index.js  1.25 kB │ gzip: 0.86 kB
+✓ built in 9ms
+EXIT 0  (0.46s)
+```
+
+复核：完成下面的变异探针后我又重跑了一次，四条命令仍是 `typecheck 0 / lint 0 / test 57 passed / build 0`，工作树干净。
+
+### 0.3 其他验收相关命令
+
+```
+$ pnpm format:check
+All matched files use Prettier code style!
+EXIT 0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+EXIT 0
+
+$ pnpm selfplay
+[stderr] pnpm selfplay 未实现（RFC-015）
+EXIT 1
+
+$ node scripts/verify-skills.mjs
+OK：21 个固化技能与 lock 一致
+EXIT 0
+```
+
+生产产物探活（独立于测试，端口 3998）：
+
+```
+$ PORT=3998 node dist/server/index.js
+Server listening at http://127.0.0.1:3998
+GET /api/health  -> 200  {"ok":true}
+GET /             -> 200  <!doctype html>...
+$ grep -c '@shared/' dist/server/index.js        -> 0
+$ grep -rl DEEPSEEK_API_KEY dist/client | wc -l  -> 0
+$ grep -rl '@fastify/static' dist/client | wc -l -> 0
+```
+
+### 0.4 未验证项
+
+`pnpm install` 的“全新安装”没有在本会话重新验证：
+
+```
+$ pnpm install --frozen-lockfile --offline
+ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY  Aborted removal of modules directory due to no TTY
+EXIT 1
+```
+
+这说明 pnpm 在当前 `node_modules` 上要求先清理模块目录再装（原因未进一步诊断）；我**没有**强制清理，以免破坏评审用的可运行环境；因此“从零 `pnpm install` 后四条命令仍通过”这一点是 **unverified**。现有安装上的四条门禁是实际跑过的。
+
+---
+
+## 1. Product Type 与检查范围
+
+`PRD.md` 的 **Product Type** 是 **game（主）+ web app（交付形态）**。RFC-001 只交付工程骨架、共享类型与健康检查，没有任何游戏循环或 UI，因此：
+
+| 适用 | 本 RFC 的检查 |
+|---|---|
+| 数据模型 / 契约 | 共享类型、Zod schema、依赖方向 |
+| 安全 | 密钥不出现在客户端产物、输入校验契约 |
+| 构建与运行 | 五条命令、产物、静态托管 |
+| 测试 | 16 条 AC 的覆盖与门禁 |
+
+**显式跳过**（本 RFC 无对应实现，跳过不是遗漏）：
+
+| 跳过 | 理由 |
+|---|---|
+| 核心循环 / 难度 / 进度 | 无游戏逻辑，`reduce` 在 RFC-002 |
+| 响应式 / 无障碍 / 浏览器矩阵 | 无用户可见功能，TEST-6 从 RFC-012 起 |
+| 首屏性能预算 | 占位页，性能预算在 RFC-016 |
+| 帧率 / 音视频 | 纯文字、回合制，PRD 已声明不适用 |
+
+---
+
+## 2. 16 条 AC：如果行为回退，哪个测试会红？
+
+> 这一节不只读测试名。除逻辑推导外，我还做了 13 个临时变异探针（改文件 → 跑定向测试 → 恢复），探针结束后工作树为 clean。`✅` 表示探针或类型检查确实变红；`⚠️` 表示存在“改了也不会红”的路径。
+
+| AC | 负责的测试 | 回退时会发生什么 | 结论 |
+|---|---|---|---|
+| 1 五条命令 | `tests/meta/commands.test.ts` 5 例 + 外层 `pnpm test` | 命令改为非 0 会让对应 case 红；`start` 起不来会让探活红 | ✅（`pnpm test` 内层只跑 `--project unit`，见 T-4） |
+| 2 package 字段 | `tests/meta/tsconfig.test.ts` AC-2 | 删 `packageManager` / 改 `engines` / 改 `type` 都会红 | ✅ |
+| 3 三份 tsconfig | 同上 AC-3 | 删文件、改根 `target` / `moduleResolution`、子配置覆盖这两个字段都会红 | ✅（“只覆盖 include/lib/types”只验证了两个字段，见 5.2） |
+| 4 五个严格开关 | 同上 AC-4 + 5 份两向夹具 | 根配置关任一开关会红；夹具在开关关闭时会通过 | ✅（C-11 已批准该改写） |
+| 5 Phase 恰 14、potion 恰 3 | `tests/shared/contracts.test.ts` | 运行时增删 `PHASES` / `WITCH_POTIONS` 会红；**但只改类型、不改数组不会红** | ⚠️ 探针 M1：给 `Phase` 联合再加一个类型成员后 `typecheck` 仍 0 |
+| 6 Effect.target 必填、order 四分区 | `tests/shared/effects.test.ts` | 把 `target` 改可选会让 `@ts-expect-error` 变成未使用指令，`typecheck` 红（M3 证明机制）；**去掉 `as const` 不会红** | ⚠️ 探针 M2：删 `EFFECT_ORDER` 的 `as const` 后 `typecheck` 仍 0 |
+| 7 EventEnvelope 三字段必填 | `tests/shared/contracts.test.ts` AC-7 | 把 `visibleTo` 改可选会让 `@ts-expect-error` 变未使用，`typecheck` 红（M3） | ✅ |
+| 8 术语表 13 条、身份名 | `tests/shared/terms.test.ts` | 删/换键、改标签、空定义都会红；测试自己保存了 PRD 的副本，PRD 改了测试不会自动跟 | ✅（有“测试与 PRD 双份维护”风险，见 5.3） |
+| 9 五个身份名不得硬编码 | `tests/security/no-hardcoded-terms.test.ts` | 在 `src/` 写 `'狼人'` 会让测试红 | ✅ 探针 M4 |
+| 10 shared 无跨层 import、除 zod 无运行时依赖 | `tests/dependency-direction.test.ts` | 静态 `@server/*` alias 会让测试红（M6）；**动态 `import('@server/app')` 不会红** | ⚠️ 探针 M5：动态 import 通过全部 5 个断言 |
+| 11 client/server/engine 方向 | 同上 | 静态 alias 方向会红；engine 当前不存在所以相关断言恒真；动态 import 同样绕过 | ⚠️ 探针 M7 证明 engine 文件一出现静态检查会红；M5 的动态绕过仍存在 |
+| 12 health 直连与 Vite 代理 | `tests/server/health.test.ts` + `tests/meta/dev-proxy.test.ts` | 删代理后探针 M12 红；删 health 路由两处都红 | ✅ |
+| 13 构建产物与密钥扫描 | `tests/meta/build.test.ts` | 产物缺失时探针 M13 红；客户端出现密钥字符串会红 | ✅ |
+| 14 ESLint 两条规则 error + lint 通过 | `tests/meta/lint.test.ts` | 把规则降为 warn 会红；**配置只留 `**/*.ts`、去掉 `**/*.tsx` 不会红** | ⚠️ 探针 M8 |
+| 15 format:check 与 e2e skipped | `tests/meta/lint.test.ts` AC-15 | format 失败会红；**把 `skipped` 文案改成 `done` 不会红**（测试只看退出码） | ⚠️ 探针 M9 |
+| 16 selfplay 退出 1 且提示未实现 | `tests/meta/selfplay-placeholder.test.ts` | 退出 0 会红；**只留 `RFC-015`、删掉「未实现」不会红** | ⚠️ 探针 M10 |
+
+**统计**：16 条中 9 条有“回退必红”的直接证据，7 条存在无法变红的路径（AC-5/6/10/11/14/15/16）。这不是说代码现在坏了，而是说“测试通过”不能推出“AC 被守住”。
+
+### 2.1 变异探针明细
+
+| 探针 | 改动 | 运行 | 结果 |
+|---|---|---|---|
+| M1 | `Phase` 类型加 `'EXTRA_PHASE'`，数组不变 | `pnpm typecheck` | **exit 0 → 缺口** |
+| M2 | 删除 `EFFECT_ORDER` 的 `as const` | `pnpm typecheck` | **exit 0 → 缺口** |
+| M3 | `EventEnvelope.visibleTo` 改可选 | `pnpm typecheck` | exit 2（未使用 `@ts-expect-error`）→ AC-7 有覆盖 |
+| M4 | 新增 `src/__mutation_hardcoded.ts` 含 `'狼人'` | security test | exit 1 → AC-9 有覆盖 |
+| M5 | 新增 `src/shared/__mutation_dynamic.ts` 动态 import `@server/app` | dependency test | **exit 0 → 缺口** |
+| M6 | 新增 shared 静态 import `@server/app` | dependency test | exit 1 → AC-10 有覆盖 |
+| M7 | 新建 `src/engine/__mutation_engine.ts` 静态 import `@server/app` | dependency test | exit 1 → AC-11 引擎部分有覆盖（一旦目录存在） |
+| M8 | ESLint `files` 删掉 `**/*.tsx` | lint meta test | **exit 0 → 缺口** |
+| M9 | `scripts/test-e2e.mjs` 的 `skipped` 改成 `done` | lint meta test | **exit 0 → 缺口** |
+| M10 | `scripts/selfplay.ts` 只打印 `RFC-015` | selfplay test | **exit 0 → 缺口** |
+| M11 | 新建 `EventEnvelope` 对象，`type: 'NOT_A_REAL_EVENT'` | `pnpm typecheck` | **exit 0 → 缺口** |
+| M12 | 把 Vite proxy 的 `/api` 改成 `/api2` | dev-proxy test | exit 1（Vite 返回 HTML，JSON 断言失败）→ AC-12 有覆盖 |
+| M13 | `vite.server.config.ts` 改 `outDir` 并删 `dist/server` | build test | exit 1（缺少 `dist/server/index.js`）→ AC-13 有覆盖 |
+
+---
+
+## 3. 评审维度
+
+### 3.1 RFC 遵循 · **NEEDS WORK**
+
+已批准的偏离 C-9 / C-10 / C-11 / C-12 都确实记在 RFC §8.2 与 `RFCS.md` §8.1，且理由成立：
+
+- C-9（Vite SSR 打包）有实证：`dist/server/index.js` 中 `@shared/` 计数为 0，`pnpm start` 能起。
+- C-10（`schemas.ts` 只做信封 + `ActionSchema`）是合理的范围收窄，但**没有覆盖“事件 type 必须是 `GameEventMap` 成员”这一条**。
+- C-11（两向夹具）确实比原文的“关闭 → 报错”更强；测试日志里的五个夹具都实际跑过并通过，五个严格开关各自有“开启必失败、关闭必通过”的证据。
+- C-12（四个 order 区间）正确，且测试断言了 0/100/200/900。
+
+**F1（阻塞）· 事件类型/载荷没有静态绑定，DATA-2 实际未强制**
+
+`src/shared/events.ts:23` 的 `EventEnvelope<T extends string = string, P = unknown>` 默认接受任意字符串与任意 payload；`src/shared/events.ts:71` 的 `GameEventMap` 与 `:91` 的 `GameEventType` 在 `src/`、`tests/` 里没有任何引用。`src/shared/schemas.ts:109-122` 的 `EventSchema` 也只校验 `type: z.string().min(1)`。结果是：
+
+```ts
+const bogus: EventEnvelope = {
+  gameId: 'g', seq: 1, ts: 0,
+  type: 'NOT_A_REAL_EVENT',   // 编译通过
+  visibleTo: 'public', payload: {},
+};
+```
+
+探针 M11 证明 `pnpm typecheck` 仍为 0。RFC §2.3 正文要求“事件 `type` 必须是下面这个联合的成员（DATA-2），payload 形状由 `GameEventMap` 约束”，但实现只满足了同一节代码块里的宽泛默认值。这是 RFC 内部“代码块 vs 正文”的矛盾（已登记为 `RFCS.md` C-15）；不能静默按代码块裁决。建议至少补：
+
+```ts
+export type GameEvent = {
+  [K in GameEventType]: EventEnvelope<K, GameEventMap[K]>;
+}[GameEventType];
+```
+
+并加一条 `@ts-expect-error`（未知 type / 错误 payload）夹具；如果 `EventSchema` 要承担出站校验，再补一个运行时可枚举的 type 列表。C-10 只批准“payload schema 延后”，没有批准“type 成员资格延后”。
+
+**F2（阻塞）· `ActionSchema` 没有实现 §2.3 的 potion/target 约束**
+
+`src/shared/schemas.ts:65-71` 把 `WITCH_ACT` 写成 `potion` 与可选 `target` 的扁平对象。以下都被接受：
+
+```
+WITCH_ACT potion=none target=2  => true   // §2.3 要求 none 与省略 target 配套
+WITCH_ACT potion=heal 无 target => true   // heal 需要目标
+WITCH_ACT potion=poison 无 target => true
+```
+
+`Action` 类型本身（`src/shared/actions.ts:24`）也没有把这两个分支区分开。`tests/shared/contracts.test.ts:138-146` 只测了非法 potion、非法座位、缺 ts，没有测 potion/target 组合。C-10 明确把 `ActionSchema` 纳入本 RFC，因此这是契约未完成，而不是“等引擎再管”。
+
+**F3（阻塞）· AC-5 / AC-6 的类型层要求没有测试**
+
+- M1 证明 `Phase` 加第 15 个类型成员后，运行时 14 项断言与 `@ts-expect-error 'NIGHT_MOON'` 都仍然通过。
+- M2 证明删掉 `EFFECT_ORDER` 的 `as const` 后，四个数字断言仍然通过。
+
+AC-5/AC-6 的要求是类型层的；当前测试主要是运行时数组断言。建议用 `expectTypeOf`（Vitest）或类型层夹具把 `Phase` 与 `(typeof EXPECTED_PHASES)[number]` 做等值断言，并对 `EFFECT_ORDER` 加“必须是字面量 0/100/200/900”的 `@ts-expect-error` 夹具。
+
+**F4（阻塞）· AC-15 没有断言 `skipped` 文案**
+
+`tests/meta/lint.test.ts:51-55` 只断言 `pnpm test:e2e` 退出 0。M9 把 `scripts/test-e2e.mjs:38` 的输出改成 `done` 后测试仍全绿。AC-15 的核心正是“零用例时打印 skipped，而不是静默成功”；应断言 stdout 含 `skipped`。
+
+**F5（阻塞）· 依赖方向检查可被动态 import 绕过**
+
+`tests/dependency-direction.test.ts:67-77` 只匹配 `from '…'` 和行首 `import '…'`，不匹配 `import('…')`。M5 在 `src/shared/` 放入 `return import('@server/app')` 后，5 个断言全部通过。ARCH-2 / AC-10/11 要求“静态检查断言依赖方向”，动态 import 仍是 import。建议用 TypeScript AST（或至少补 `import\s*\(` 与 `require\s*\(` 的扫描），并加一条夹具。
+
+**F6（记录/流程，阻塞到 Reviewed 前）· ARCH-2 与 STYLE-2 的冲突没有登记到 `RFCS.md`**
+
+- `RULES.md:127` 的 ARCH-2 说 `src/shared/` “只放类型与纯常量”，但 `src/shared/visibility.ts` 有运行时逻辑、`src/shared/schemas.ts` 还构造 Zod schema。RFC-001 的 Q-001-2 只对 `visibility.ts` 作了 assumption；`schemas.ts` 是第二处运行时逻辑，RFC §2.3/§4“唯一带逻辑的文件”这句话与实现不符。
+- `RULES.md:210` 的 STYLE-2 要求常量 SCREAMING_SNAKE_CASE，而 RFC §2.3 指定 `TERMS` / `ROLE_LABELS` / `ActionSchema` / `EventSchema`。实现按 RFC 保留这些名字（这是正确的工程选择，本 RFC 的测试与实现都使用它们），但只写在 RFC §8.3，**没有登记到 `RFCS.md` 的 `## Open conflicts`**。
+- **小事实错误**：RFC §8.3 的 `316` 行说“后 15 个 RFC 的正文都在引用它们”，实际只有 RFC-012 与 RFC-010 引用 `terms.ts`；没有任何 RFC 按名字引用 `ActionSchema` / `EventSchema` / `TERMS` / `ROLE_LABELS`。保留这四类名字的理由是“RFC 指定 + 本 RFC 测试使用”，不是“所有 RFC 都按名字引用”。Implementation Notes 应改正这句，否则是为命名偏离提供了一个不成立的论据。
+
+按 `AGENTS.md` 硬规则 7，这两项必须在 `RFCS.md` 里登记，并说明“实现跟了哪个、另一个怎么修”。F6 的两项已补为 C-13 / C-14；F1 已补为 C-15。
+
+**F7（非阻塞）· `GameEventMap` 之外的共享常量没有直接断言**
+
+`FACTION_OF`（`src/shared/domain.ts:32-38`）、`SEAT_IDS`（`:12`）、`WIN_MODES`（`:23-24`）、`FACTIONS`（`:19-20`）、`EFFECT_SOURCES`（`src/shared/effects.ts:3-4`）、`SELF_VISIBILITY_PREFIX`（`src/shared/events.ts:21`）没有专门的断言。尤其 `FACTION_OF` 的 value 写错（例如 `seer: 'wolf'`）仍然满足 `satisfies Record<Role, Faction>`，当前没有测试会红。建议为这些契约常量各加一行断言。
+
+**F8（非阻塞）· F43 的“全部术语”只守了 5 个身份名**
+
+`tests/security/no-hardcoded-terms.test.ts:18-19` 的 `ROLE_WORDS` 只来自 `ROLE_LABELS`。`FEATURES.md` F43 要求“全部术语与 PRD 术语表一致”“术语表是唯一来源，代码中不重复定义字符串”；当前测试挡不住组件里硬编码“屠边”“悍跳”等 `TERMS` 的其余 13 个术语（以及 5 个身份名之外的文案）。RFC 的 AC-9 只要求五个身份名，所以这是 RFC 与更高层 FEATURES 的覆盖差，不是 AC-9 的字面失败。建议把扫描集合扩展为 `TERMS` 的 label + `ROLE_LABELS`（排除 `terms.ts`），或在 RFC-012 的 UI 落地前补上。
+
+### 3.2 RULES 遵循 · **NEEDS WORK**
+
+| 规则 | 结论 |
+|---|---|
+| ARCH-1（engine 不 import UI/网络/DOM） | engine 尚不存在；`tsconfig.server.json` 的 `lib: ["ES2022"]` 会在 engine 出现后守住 DOM，依赖测试会守住 alias（M7）。**当前无法完全验证**，与 §8.6 一致 |
+| ARCH-2（shared 只放类型/纯常量） | **冲突**，见 F6；`schemas.ts` 是运行时逻辑，`visibility.ts` 也是 |
+| ARCH-3 / ARCH-4 | 本 RFC 不涉及状态转移；`GameState` 是纯数据接口；没有时钟读取。**N/A** |
+| ARCH-5 ~ ARCH-11 | 规则引擎未实现，**N/A**（ARCH-8 的签名冲突已由 C-7 登记，另案） |
+| AI-1 ~ AI-9 | 无 LLM 代码，**N/A** |
+| SEC-1 | `DEEPSEEK_API_KEY` 不在源码/客户端产物；`dist/client` 扫描 0。**PASS** |
+| SEC-2 | 只扫了密钥字符串与 `@fastify/static`；完整服务端模块泄漏检查按 §8.6 留给 RFC-016。**部分** |
+| SEC-3 / SEC-4 | 无玩家输入端点；`ActionSchema` 的语义校验缺口见 F2。**N/A（当前表面）/ 契约需修** |
+| SEC-5 / SEC-6 | 无对局视图、无真相视图，**N/A** |
+| SEC-7 | 无 LLM 错误响应，**N/A** |
+| DATA-1 / DATA-2 | `EventEnvelope` 有 `seq`/`ts`；DATA-2 未强制，见 F1。**FAIL（DATA-2）** |
+| DATA-3 ~ DATA-6 | 重放、PRNG、释放均未实现，**N/A**（RFC-002 起） |
+| API-1 | `ActionSchema` / `EventSchema` 存在，但 action 语义与 event type 未校验；见 F1/F2。**部分** |
+| API-2 / API-3 | 无 SSE、无状态变更端点，**N/A** |
+| UI-1 ~ UI-5 | 只有占位页，**N/A**（TEST-6 从 RFC-012 起） |
+| A11Y-1 ~ A11Y-4 | 占位页有 `<main>`，但没有交互元素可测；**N/A** |
+| TEST-1 | 7 条 AC 的测试存在“不会红”路径（§2），**部分** |
+| TEST-2 | engine 未实现，覆盖率门槛尚不适用；**N/A** |
+| TEST-3 ~ TEST-4 | engine 未实现；当前测试不发起模型网络请求，**N/A** |
+| TEST-5 | 四条门禁实跑通过；**PASS** |
+| TEST-6 | 从 RFC-012 起（T-1）；当前 `test:e2e` 正确 skipped；**按计划延后** |
+| OPS-1 / OPS-2 / OPS-4 / OPS-5 | 包管理器、脚本名、生产构建、Node 版本均符合；OPS-4 的“完整服务端模块扫描”见 SEC-2 部分。**PASS（部分 OPS-4）** |
+| OPS-3 | `selfplay` 仍以 1 退出，是已批准的 C-5 临时偏离；**待 RFC-015 消除** |
+| STYLE-1 ~ STYLE-7 | 文件 kebab-case、无 `any` / 非空断言、无 TODO、文件均 < 400 行；`ActionSchema` 等命名与 STYLE-2 的冲突见 F6。**PASS（F6 例外）** |
+| DOC-1 | C-9 ~ C-12 已记录；F1/F2/F6 的偏离/冲突没有完整记录。**部分** |
+| DOC-2 | `package.json` 依赖与 RULES §2 的版本一致；未提前安装 `openai` / `@fastify/cookie` / `jsdom` 等，符合 RFC §8.3 的延后安排。**PASS** |
+
+### 3.3 安全 · **PASS（当前表面）/ 契约有风险**
+
+- 密钥：源码与 `dist/client` 均无 `DEEPSEEK_API_KEY`；SEC-1 当前通过。
+- 静态托管：`@fastify/static` 只托管 `dist/client`，`GET /` 返回 index.html，未见路径穿越配置错误；本 RFC 只有健康检查，未暴露对局状态。
+- 输入校验：没有 HTTP action 端点，所以没有当前可利用面；但 `ActionSchema` 的语义缺口（F2）会让未来的入站校验接受 `potion:'none'` 带目标、`heal` 无目标。按 SEC-4 / AI-4 的意图，应在契约层拒掉。
+- 数据泄露：健康检查只返回 `{ok:true}`；无 LLM、无日志中的密钥。SEC-7 仍 N/A。
+- 依赖：`pnpm-lock.yaml` 存在，版本与 RULES §2 对齐；未做 `pnpm audit`（不在本次要求内）。
+
+**结论**：当前可运行表面没有安全漏洞；F2 是契约层安全/校验风险，已在 3.1 标为阻塞。
+
+### 3.4 性能 · **PASS / 大部分 N/A**
+
+本 RFC 没有游戏循环、没有 LLM、没有数据查询。可测量的只有构建与启动：
+
+- `pnpm build` 0.46s；客户端 219.65 kB（gzip 68.71 kB）；服务端 1.25 kB。
+- 生产 `start` 后健康检查 200；静态首页 200。
+- 没有缓存、N+1、无界抓取等可评审代码。
+
+**结论**：PASS；游戏延迟与首屏预算分别在 RFC-010/012/016 验收。
+
+### 3.5 可维护性 · **NEEDS WORK**
+
+**做得好的地方**：
+
+- 共享类型集中、命名清楚，`as const satisfies` 的用法正确。
+- 文件都在 400 行以内；无 `any`、无非空断言、无被注释掉的代码。
+- 测试组织成 `unit` / `meta` 两个 project，递归问题（T-4）有意识地被隔离。
+- 构建配置有单一 alias 来源（`configs/alias.ts`），C-9 的 Vite SSR 方案有实证。
+
+**问题**：
+
+1. **`configs/alias.ts:10-11` 的注释不实**：它说 `tests/meta/tsconfig.test.ts` 会断言 alias 与 tsconfig `paths` 一致；实际没有任何测试做这件事。§8.6 也承认这是手工核对。当前两边值确实一致（我逐项比对过 `@shared/@engine/@server/@client`），但注释会误导后来者。**非阻塞，修注释或补一行测试。**
+2. **`playwright.config.ts:13` 的 `baseURL` 用 `127.0.0.1`，而 `tests/meta/dev-proxy.test.ts:16-19` 明确记录 Vite 在 macOS 上默认只监听 `::1`，所以本仓库自己的代理测试用 `localhost`。RFC-012 一旦加 Playwright 用例，`127.0.0.1:5173` 可能连不上。建议统一为 `localhost`，或在 `vite.config.ts` 设 `host: '127.0.0.1'`。**非阻塞（RFC-001），但会在 RFC-012 爆。**
+3. **`TEST-STRATEGY.md` 已明显滞后**：§0 仍写“当前不存在任何测试套件”“0 条已实现”，RFC-001 小节所有 `Exists?` 仍是 `proposed`；该小节的 AC-4 仍写“关闭 strict 断言报错”（C-11 已推翻）、AC-6 仍写“三个分区”（C-12 改为四个）、AC-10/11 仍写 `tests/meta/dependency-direction.test.ts`（T-6 改为 `tests/`）、AC-12 仍写 Playwright（T-5 改为 HTTP）。实现 Notes 说“TEST-STRATEGY §7 T-4~T-7”已更新，但表格本身没有回填。**非阻塞文档缺口，但会误导下一次实现。**
+4. **`tests/meta/tsconfig.test.ts:162` 的用例名“子配置只覆盖 include / lib / types”过强**：它只检查 `extends`、`moduleResolution` / `target` 未覆盖、`lib` / `types` 的取值，**`include` 根本没有断言**，也没有检查子配置不能覆盖 `strict` 等。由于根 `tsconfig.json` 包含 `src/**`，实际门禁仍由根配置守住；但测试名与 RFC §8.5 AC-3 的“子配置只覆盖 include/lib/types”都让读者以为边界被完整验证。**非阻塞。**
+5. **注释小错**：`tests/meta/commands.test.ts:9` 把递归问题写成 `TEST-STRATEGY.md §7 T-2`（实际是 T-4）；同段说“完整套件的结果由实现会话在 VERIFICATION 里贴”，仓库里没有 `VERIFICATION` 段，实际在 RFC §8.5。`playwright.config.ts:4` 说 e2e 用 `--passWithNoTests` 退出 0，但真正无用例路径是 `scripts/test-e2e.mjs` 直接打印 skipped，未调用 Playwright。**非阻塞，建议一起清掉。**
+6. **`README.md:11,36` 的状态在评审后过期**：它原写 “RFC-001 `Implemented`，等待评审” 与“下一步 /review-rfc 001”。评审把 RFC 状态改为 `Changes requested` 后，README 已同步更新，否则下一个人看到的是旧状态。
+
+---
+
+## 4. RFC §8.6 作者列出的已知缺口：逐条判断
+
+| §8.6 缺口 | 判断 | 理由 / 残留风险 |
+|---|---|---|
+| **别名一致性无自动化断言** | **可接受（非阻塞），但必须修注释** | 当前 `tsconfig.json` 的 `paths` 与 `configs/alias.ts` 的四个键逐项一致（我实际比对过）。缺测试的风险是“改一处忘另一处”；`pnpm build` / `typecheck` 在使用到别名时会暴露大部分漂移，未使用的别名漂移无影响。`configs/alias.ts:10-11` 的注释却声称有测试，必须改成“手工核对/待补测试”，否则是错误信息。建议在 RFC-002 前补一条 3 行断言。 |
+| **`src/engine/` 尚不存在** | **可接受** | 目录由 RFC-002 创建；M7 证明一旦有 engine 文件，现有依赖测试会立刻检查 `engine → server` 并变红。AC-11 的 engine 部分当前恒真是 RFC 范围的合理结果，不是隐瞒。 |
+| **`isVisibleTo` 行为矩阵在 RFC-005** | **可接受（按 RFC §6），但风险最高的一条** | RFC-001 §6 明确只定义/实现，行为验收在 RFC-005。当前 `isVisibleTo` 没有任何 RFC-001 测试；我用一次手动探针验证了 public/server/wolves/seer/self/diedSeq 的主路径，结果符合 §2.3。风险是这 57 个用例全绿并不代表这个共享函数正确；好在 RFC-005 会补矩阵，且它是纯函数、没有 IO。可接受，但建议 RFC-005 的第一个提交就补矩阵，不要拖到集成阶段。 |
+| **TEST-6 的 Playwright 从 RFC-012 起** | **可接受** | RFC-001 没有任何用户可见功能，当前 `test:e2e` 的 skipped 行为正确（AC-15 的文案断言问题见 F4，是测试质量问题，不是这条缺口本身）。T-1 已解释。 |
+| **SEC-2 完整产物扫描在 RFC-016** | **可接受（本 RFC 范围）** | AC-13 只要求 `DEEPSEEK_API_KEY`；实现额外扫了 `@fastify/static`。完整服务端模块泄漏检查确实需要 RFC-016 的产物清单。当前 `dist/client` 无密钥、无 fastify 静态模块，符合本 RFC 的最小保证。 |
+| **zod 输出与 `Action` 的类型桥接在 RFC-011** | **可接受（但 F2 不在此豁免）** | C-10 / §8.6 允许暂不做“schema 输出类型 = `Action`”的静态桥接，理由是 `exactOptionalPropertyTypes` 与 `.optional()` 的冲突；这个理由成立，且 `@ts-expect-error` 夹具证明了 `Action` 的严格性。**但“potion 与 target 的语义约束”不是输出类型桥接问题，不能用这条缺口豁免**；见 F2。 |
+
+**结论**：六条已知缺口没有一条本身构成阻塞；F1~F6 是作者没有列进 §8.6 的新发现，其中 F1/F2/F5 直接关系共享契约的强度。
+
+---
+
+## 5. 总体结论
+
+### 5.1 风险与摘要
+
+**Overall Risk: Medium。** 工程骨架能装、能跑、能构建、能启动；16 条 AC 的运行时主路径大多有真实测试，C-9 ~ C-12 的偏离也都记录且理由成立。问题集中在两处：**共享契约的静态约束没有闭合**（事件 type/payload、action 语义、依赖方向的动态 import），以及**若干 AC 的测试只验证了较弱的版本**（Phase 类型、`as const`、skipped 文案、`.tsx` 规则）。这些不是“代码跑不起来”，而是“以后改坏了可能没人发现”，对 foundation RFC 来说值得在合并前修。
+
+### 5.2 阻塞项（合并前必须处理）
+
+1. **F1 · 事件类型/载荷没有绑定到 `GameEventMap`**：补 `GameEvent` 映射类型（或等价静态绑定），加负向类型夹具；`EventSchema` 至少不应接受任意 type，或把“type 成员校验”明确登记为带 owner 的偏离。对应 DATA-2、RFC §2.3 正文。
+2. **F2 · `ActionSchema` 未实现 `WITCH_ACT` 的 potion/target 约束**：`none` 不得带 target；`heal`/`poison` 必须带 target。类型与 Zod 至少一处要能拒绝，测试要覆盖三种非法组合。
+3. **F3 · AC-5 / AC-6 的类型层测试**：M1/M2 证明当前会漏；加 `expectTypeOf` 或 `@ts-expect-error` 夹具，确保 `Phase` 恰好 14 个成员、`EFFECT_ORDER` 保持字面量。
+4. **F4 · AC-15 断言 `skipped`**：M9 证明当前只看退出码；断言 stdout 含 `skipped`（以及无 spec 时不调用 Playwright 的事实）。
+5. **F5 · 依赖方向测试补动态 import**：M5 证明 `import('@server/app')` 能穿过 shared/engine 边界；补扫描与夹具。
+6. **F6 · 登记 ARCH-2 / STYLE-2 冲突并修正 RFC 正文**：已在 `RFCS.md` 补 C-13 / C-14；RFC §2.3/§4 中“`visibility.ts` 是 shared 唯一带逻辑的文件”与 `schemas.ts` 的存在不符，需要改正（或在 §8.3 明确 `schemas.ts` 也是受批准的运行时例外）。§8.3 的“后 15 个 RFC 的正文都在引用它们”也不成立，应改成“RFC 指定 + 本 RFC 测试使用”。若用户认为 ARCH-2 的 zod 子句已经隐含允许 `schemas.ts`，也应把这条解释写进 `RFCS.md`，而不是只留在实现者脑子里。
+
+### 5.3 非阻塞改进
+
+- **F8**：把 `no-hardcoded-terms` 的扫描集合扩展到 `TERMS` 的全部 label（F43）。
+- **AC-14 `.tsx`**：在 `tests/meta/lint.test.ts` 对 `src/client/main.tsx` 也调用 `calculateConfigForFile`，防止配置只覆盖 `.ts`（M8）。
+- **AC-16 文案**：断言 stderr 含「未实现」或完整「未实现（RFC-015）」（M10）。
+- **`playwright.config.ts` 的 baseURL**：改 `localhost` 或固定 Vite host，避免 RFC-012 的 `127.0.0.1` 连不上 `::1`。
+- **`TEST-STRATEGY.md` 回填**：§0 的“0 条已实现”、RFC-001 的 `proposed`、AC-4/6/10/12 的旧描述都要按 C-11/C-12/T-5/T-6 更新。
+- **`configs/alias.ts` 注释**：删掉“测试会断言”的假声明，或补上断言。
+- **`FACTION_OF` / `SEAT_IDS` / `WIN_MODES`**：各补一行契约断言。
+- **注释小错**：`commands.test.ts` 的 T-2 → T-4、`VERIFICATION` → RFC §8.5；`playwright.config.ts` 的 `--passWithNoTests` 描述。
+- **`README` 状态**：本次评审已同步为 `Changes requested`。
+- **`pnpm install` 可复现性**：`--frozen-lockfile --offline` 因 pnpm 的 purge 提示没有执行成功；本会话的结论基于现有 `node_modules`。建议在 CI 或干净目录里补一次 `CI=true pnpm install --frozen-lockfile` 验证。
+
+---
+
+## 6. 没有发现问题的部分（避免只列负面）
+
+- C-9 的 Vite SSR 方案是正确取舍：`tsc` + `paths` + `node dist/server/index.js` 三者确实不能共存；产物中 `@shared/` 为 0 是硬证据。
+- C-11 的两向夹具比原文更强；每个严格开关都有“开启必失败、关闭必通过”的实证。
+- `src/shared/visibility.ts` 的 `isVisibleTo` 主路径与 §2.3 一致（手动探针：public 真、server 对所有席位假、wolves 只对狼真、seer 只对预言家真、`self:<n>` 只对本人真、`diedSeq <= event.seq` 后不可见）。
+- 构建产物、健康检查、Vite 代理、静态托管、`pnpm start` 的端到端链路都实际跑通。
+- 引擎/共享契约测试没有联网、没有读真实时钟；`tests/meta/` 的门禁测试只把真实时钟用于子进程与端口等待，不进入规则引擎。`selfplay` 明确失败而不是假装成功；这两点符合项目基调。
+
+---
+
+## 7. 评审结论
+
+**Changes requested。** 工程骨架本身可用，C-9 ~ C-12 的偏离有据；但共享契约的 DATA-2 / action 语义没有闭合，且 7 条 AC 的测试存在“回退不会红”的路径。修完 5.2 的六项后，建议在新一轮评审里重点复跑 M1/M2/M5/M8/M9/M10/M11 的对照，确认缺口真的被补上。
