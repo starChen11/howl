@@ -35,7 +35,8 @@ tests/       跨模块测试与 Playwright 用例
 
 - 模块格式 **ESM**（`"type": "module"`），`moduleResolution: "bundler"`，`target: ES2022`。
 - 路径别名 `@shared/*`、`@engine/*`、`@server/*`、`@client/*`，映射到 `src/*`；tsconfig 与 Vite 各配一份，必须一致。
-- 三份 tsconfig 的边界：根 `tsconfig.json` 覆盖 `src/**` 与 `tests/**`（供 `pnpm typecheck`）；`tsconfig.server.json` 只含 `src/server`、`src/engine`、`src/shared`，`rootDir: src`、`outDir: dist`（因此产物是 `dist/server/index.js`，不是 `dist/server/server/index.js`）；`tsconfig.client.json` 只含 `src/client`、`src/shared`，供编辑器。
+- 三份 tsconfig 的边界（**只用于类型检查，不产出 JS**）：根 `tsconfig.json` 覆盖 `src/**` 与 `tests/**`（供 `pnpm typecheck`）；`tsconfig.server.json` 只含 `src/server`、`src/engine`、`src/shared`；`tsconfig.client.json` 只含 `src/client`、`src/shared`。三份都用 `extends` 继承根的编译选项，子配置只覆盖 `include` / `lib` / `types`，且**不覆盖** `moduleResolution` / `target` 与五个严格开关。
+- **产物的生产方式**：服务端由 `vite.server.config.ts` 打包成单文件 `dist/server/index.js`，前端由 `vite.config.ts` 产出 `dist/client`。三份 tsconfig 里**没有** `rootDir` / `outDir` 字段——`tsc` 不重写 `paths`，用 `tsc` 直出会让产物里留着 `@shared/*` 说明符、`node dist/server/index.js` 直接 `ERR_MODULE_NOT_FOUND`（C-9）。
 - 根配置开启：`strict`、`noUncheckedIndexedAccess`、`exactOptionalPropertyTypes`、`noImplicitOverride`、`verbatimModuleSyntax`。
 
 ### 2.3 共享契约（本 RFC 的核心交付物）
@@ -368,8 +369,8 @@ export const ROLE_LABELS = { wolf: '狼人', ... } as const;
 | 服务端 | `src/server/app.ts`、`src/server/index.ts` |
 | 前端 | `src/client/main.tsx`、`tests/e2e/.gitkeep` |
 | 脚本 | `scripts/selfplay.ts`、`scripts/test-e2e.mjs` |
-| 测试 | `tests/shared/domain.test.ts`、`tests/shared/actions.test.ts`、`tests/shared/events.test.ts`、`tests/shared/effects.test.ts`、`tests/shared/terms.test.ts`、`tests/shared/terms.test.ts`、`tests/dependency-direction.test.ts`、`tests/security/no-hardcoded-terms.test.ts`、`tests/server/health.test.ts`、`tests/meta/commands.test.ts`、`tests/meta/tsconfig.test.ts`、`tests/meta/build.test.ts`、`tests/meta/lint.test.ts`、`tests/meta/dev-proxy.test.ts`、`tests/meta/selfplay-placeholder.test.ts`、`tests/meta/helpers/run.ts`、`tests/meta/fixtures/{strict,no-unchecked-indexed-access,exact-optional-property-types,no-implicit-override,verbatim-module-syntax,dep}.ts` |
-| 文档 | 本文件 §8、`RFCS.md`（状态 + C-9~C-12）、`TEST-STRATEGY.md` §7（T-4~T-7）、`README.md` |
+| 测试 | `tests/shared/domain.test.ts`、`tests/shared/actions.test.ts`、`tests/shared/events.test.ts`、`tests/shared/effects.test.ts`、`tests/shared/terms.test.ts`、`tests/dependency-direction.test.ts`、`tests/helpers/import-scan.ts`、`tests/helpers/import-scan.test.ts`、`tests/security/no-hardcoded-terms.test.ts`、`tests/server/health.test.ts`、`tests/meta/commands.test.ts`、`tests/meta/tsconfig.test.ts`、`tests/meta/build.test.ts`、`tests/meta/lint.test.ts`、`tests/meta/dev-proxy.test.ts`、`tests/meta/selfplay-placeholder.test.ts`、`tests/meta/helpers/run.ts`、`tests/meta/fixtures/{strict,no-unchecked-indexed-access,exact-optional-property-types,no-implicit-override,verbatim-module-syntax,dep}.ts` |
+| 文档 | 本文件 §8、`RFCS.md`（状态 + C-9 ~ C-20）、`TEST-STRATEGY.md` §7（T-4~T-7）、`README.md` |
 
 §3 的交付物表没列、但实际必须存在的 8 个文件：`index.html`（Vite 入口）、`vite.server.config.ts`（C-9）、`vitest.config.ts`、`playwright.config.ts`、`.prettierignore`、`configs/alias.ts`、`scripts/selfplay.ts`、`scripts/test-e2e.mjs`。
 
