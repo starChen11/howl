@@ -8,7 +8,7 @@ Howl 是狼在夜里的长嚎，也是玩家在白天的"喊话"——两个词�
 
 ## 状态
 
-v0.2 · 产品需求已谈定（[`PRD.md`](PRD.md)，41 条需求：28 FR + 13 NFR）。规则与架构方案仍在制定中，尚未有代码。
+v0.3 · 产品需求已谈定并通过校验：[`PRD.md`](PRD.md) 53 条需求（36 FR + 17 NFR），[`PRD-REVIEW.md`](PRD-REVIEW.md) 记录 21 项评审发现。规则与架构方案仍在制定中，尚未有代码。
 
 开发流程与 agent 协作方式已先行固化，见下节。
 
@@ -27,7 +27,7 @@ v0.2 · 产品需求已谈定（[`PRD.md`](PRD.md)，41 条需求：28 FR + 13 N
 当前进度：
 
 ```
-/verify-prd      ← 下一步：校验 PRD.md，产出 PRD-REVIEW.md
+/extract-features   ← 下一步：把 PRD 拆成带优先级与验收标准的 FEATURES.md
 ```
 
 随时查看全局进度：`/workflow-status`。
