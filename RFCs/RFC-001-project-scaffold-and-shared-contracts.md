@@ -399,6 +399,17 @@ $ grep -c '@shared/' dist/server/index.js    → 0        (C-9：别名已在构
 $ grep -rl DEEPSEEK_API_KEY dist/client | wc -l → 0
 ```
 
+**全新安装验证**（评审 §0.4 列为 `unverified`，本轮补上）：
+
+```
+$ D=$(mktemp -d) && git archive b5285a0 | tar -x -C "$D" && cd "$D"
+$ CI=true pnpm install --frozen-lockfile   → exit 0（1.1s）
+$ pnpm typecheck → 0   $ pnpm lint → 0   $ pnpm format:check → 0
+$ pnpm build     → 0   $ pnpm test → 0   Test Files 13 passed / Tests 78 passed
+```
+
+不是只验证锁文件完整，而是从**提交树**（不是当前工作目录）重装一遍再跑全部门禁。
+
 ### 8.6 已知缺口（交给后续 RFC，不隐藏）
 
 | 缺口 | 说明 | 归属 |
