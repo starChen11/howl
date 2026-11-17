@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.5 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.11 · 最后更新 2026-11-17
+> 版本 v1.6 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.11 · 最后更新 2026-11-17
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -29,8 +29,8 @@ RFC-001 已实现并通过评审修复，`Exists?` 按实际落地情况回填�
 
 ```
 $ pnpm test
- Test Files  28 passed (28)     # unit 21 个 + meta 7 个
-      Tests  186 passed (186)
+ Test Files  29 passed (29)     # unit 22 个 + meta 7 个
+      Tests  209 passed (209)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -433,6 +433,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-17 | v1.0 | 初次生成：16 个 RFC 小节、222 条验收标准的逐条落表、126 条计划测试、6 项人工检查 |
+| 2026-11-17 | v1.6 | RFC-002 Round 1/2 评审修复后回填：基线用例数 186 → 206；AC-13 的扫描改为递归且接线可注入；补 `tests/helpers/source-scan.ts` 一行 |
 | 2026-11-17 | v1.5 | RFC-002 实现后回填：10 行全部 `existing`，文件数从计划的 10 改为实际 12（覆盖率门禁移入 `tests/meta/`）；基线用例数 87 → 186 |
 | 2026-11-17 | v1.4 | RFC-001 Round 4 后同步：用例数 86 → 87，`RFCS.md` 引用由 v2.7 更新为 v2.10（C-20） |
 | 2026-11-17 | v1.3 | RFC-001 Round 2 修复后回填：`contracts.test.ts` 拆成 domain / actions / events 三个文件；补 B3（`EventEnvelope` 夹具）、N1（五个严格开关）、N2（构建前清 `dist`）、N3（`EFFECT_SOURCES` / `SELF_VISIBILITY_PREFIX`）与 CR-003 一行 |

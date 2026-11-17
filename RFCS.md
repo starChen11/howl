@@ -38,7 +38,7 @@
 | RFC | 标题 | 功能 | 复杂度 | Status |
 |---|---|---|---|---|
 | [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Reviewed |
-| [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Changes requested |
+| [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Implemented |
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Not started |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Not started |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
@@ -239,6 +239,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-17 | v2.15 | RFC-002 Round 2 评审修复：`source-scan` 的 `relativePath` 归一化为 POSIX（Windows 上必红，B-R2-1）；`engineSources(root)` 可注入并加临时目录用例，让「递归接线」本身被锁住（B-R2-2，反向探针现在变红）；N9 改成真的经 `step` 入口、`playerSeat` 补反方向断言、§8.4/§8.5 的分支数字与 §8.3 文件清单同步 |
 | 2026-11-17 | v2.14 | RFC-002 Round 2 评审完成（Status → `Changes requested`）：Round 1 的 B1/B2 在运行时已修好，P4（重新发牌）/ P13（嵌套 `Math.random()`）/ P19（删掉 `mode` 分支）本轮均实红，206 用例全绿；但新增测试在 Windows 上因 `/` vs `\` 必红（B-R2-1），且 AC-13 的递归锁只测 helper、没锁 `rng.test.ts` 的 wiring——一层扫描 + 嵌套违规仍 11/11 绿（B-R2-2）。证据见 `reviews/REVIEW-RFC-002.md` Round 2 |
 | 2026-11-17 | v2.13 | RFC-002 Round 1 评审修复：AC-13 的 `Math.random` 扫描与 TEST-2 的忽略注释扫描改为**递归**（抽 `tests/helpers/source-scan.ts`，并用临时目录自测）；AC-4 补合成 `GAME_STARTED` 用例锁住「事件是唯一权威」（P4 现在变红）；D-15~D-17 记录 `nextInt` 签名、额外导出与封闭 `WinCondition`；N1/N2/N3/N5/N8/N9/N10/N11/N12 逐项补测 |
 | 2026-11-17 | v2.12 | RFC-002 Round 1 评审完成（Status → `Changes requested`）：16 条 AC 的运行时主路径大多有真实测试，但 AC-13 的 `src/engine/` 扫描不递归（RFC-003 计划新增的子目录会静默逃逸），AC-4 / §2.2 的「`GAME_STARTED.roles` 是唯一权威」没有被测试锁住（重新发牌的实现也能全绿）；另有 D-12 的 `mode` 分支、post-START `phase`/`day` 等未测或未记录。新增 C-21（modifier 注册表与 `GAME_STARTED` payload 的冲突，v1 无 modifier，非阻塞）。证据见 `reviews/REVIEW-RFC-002.md` Round 1 |

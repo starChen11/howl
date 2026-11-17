@@ -237,6 +237,9 @@ function checkWin(state: GameState): { result: 'wolf' | 'good'; condition: strin
 | **D-16** | 额外导出（§3 未列）：`createEmptyState`、`orderEffects`、`RANDOM_CONSUMING_EVENTS`、`WinCondition`、`PAYLOAD_SCHEMAS`、`ACTION_TYPES` | `createEmptyState` 是 `replay` 的起点；`orderEffects` 被 AC-10/12 的测试直接引用；`RANDOM_CONSUMING_EVENTS` 是「哪些事件必须带 `rngAfter`」的单一声明处；`WinCondition` 是 `GAME_ENDED.condition` 的封闭枚举（RFC-014 会消费它，见 D-17） | 评审 N6 |
 | **D-17** | `WinCondition` 是封闭联合（`'all-wolves-dead'` / `'all-gods-dead'` / `'all-villagers-dead'` / `'all-good-dead'`），不是任意字符串 | §2.7 的例子 `'all-seers-and-witches-and-hunters-dead'` 是**示意**，不是精确文案。封闭枚举让 RFC-014 的复盘文案可以穷举映射，也让拼写漂移变成编译错误；`condition` 仍满足 §2.7 的 `string` | 评审 N7 |
 
+| **D-18** | `source-scan.ts` 的 `relativePath` 一律归一化为 POSIX（`/`），并兼容两种分隔符 | `path.relative` 在 Windows 返回 `nested\\violation.ts`，而断言与失败消息写的是 `/`——不归一化，同一份测试在 Windows 上必红（评审 B-R2-1）。归一化兼容两种分隔符而不是只处理 `path.sep`，是为了让这条逻辑**在 macOS 上也能被测到**（喂 Windows 风格字符串），不必等 Windows 实跑才发现它写错 | 评审 B-R2-1 |
+| **D-19** | `rng.test.ts` 的 `engineSources(root = ENGINE_DIR)` 根目录可注入，并加一条用临时目录造嵌套违规的用例 | 评审 B-R2-2：原来的「扫描器是递归的」只断言返回数组的形状；把接线换回一层 `readdirSync`、同时在 `src/engine/nested/` 放违规文件，11/11 仍绿。helper 自己的递归测试**不会**因为接线的退化而红，所以必须有一条测试守接线本身 | 评审 B-R2-2 |
+
 ### 8.3 文件清单（FILES CHANGED）
 
 全部在分支 `rfc/001-project-scaffold-and-shared-contracts` 上。
@@ -246,7 +249,7 @@ function checkWin(state: GameState): { result: 'wolf' | 'good'; condition: strin
 | 引擎核心 | `src/engine/errors.ts`、`rng.ts`、`init.ts`、`apply.ts`、`transitions.ts`、`effects.ts`、`win.ts`、`step.ts`、`replay.ts` |
 | 共享契约（追加） | `src/shared/actions.ts`（+`ACTION_TYPES`）、`src/shared/schemas.ts`（+`GAME_STARTED` / `REJECTED` payload schema、`PAYLOAD_SCHEMAS`） |
 | 引擎测试 | `tests/engine/step.test.ts`、`serialization.test.ts`、`replay.test.ts`、`determinism.test.ts`、`events.test.ts`、`reject.test.ts`、`transitions.test.ts`、`effects.test.ts`、`rng.test.ts`、`win.test.ts`、`replay-parity.test.ts`、`no-network.test.ts` |
-| 测试基建 | `tests/fixtures/states.ts`、`tests/setup/no-network.ts` |
+| 测试基建 | `tests/fixtures/states.ts`、`tests/setup/no-network.ts`、`tests/helpers/source-scan.ts`（递归源码扫描）、`tests/helpers/source-scan.test.ts`（含 `toPosixPath` 的跨平台归一化测试） |
 | 门禁 | `tests/meta/coverage.test.ts`、`vitest.config.ts`（`setupFiles` + `coverage`）、`package.json`（+`@vitest/coverage-v8@5.1.0`） |
 | 文档 | 本文件 §8、`RFCS.md`、`TEST-STRATEGY.md`、`README.md` |
 
@@ -268,8 +271,8 @@ function checkWin(state: GameState): { result: 'wolf' | 'good'; condition: strin
 | 10 | `tests/engine/effects.test.ts` · 顺序为 `order` 升序 + 同级 `id` 字典序；应用顺序与规范化一致且不改入参；两次应用结果相等；未注册 applier 抛 `UnknownEffectError` | PASS |
 | 11 | 同上 · 注册到 `VOTE_RESOLVE` 的假 modifier 注入效果后最终状态改变；modifier 只在它关心的结算点注入；多 modifier 依次折叠 | PASS |
 | 12 | 同上 · 不注册 modifier 时结果 = 输入的顺序规范化；已排好序的输入深度相等 | PASS |
-| 13 | `tests/engine/rng.test.ts` + `tests/helpers/source-scan.ts` · **递归**扫描 `src/engine` 全部 `.ts`（含子目录）；反空转断言列出九个交付文件；扫描器的递归能力由 `source-scan.test.ts` 用临时目录证明。评审 P13（在 `src/engine/nested/` 放 `Math.random()`）现在变红 | PASS |
-| 14 | `tests/meta/coverage.test.ts` · `--coverage` 退出码 0；报告数字行 98.01% / 分支 94.04%（阈值 90 / 85）；引擎源码无 `c8 ignore` / `v8 ignore` / `istanbul ignore` | PASS |
+| 13 | `tests/engine/rng.test.ts` + `tests/helpers/source-scan.ts` · **递归**扫描 `src/engine` 全部 `.ts`（含子目录）；反空转断言列出九个交付文件；扫描器的递归能力由 `source-scan.test.ts` 用临时目录证明。评审 P13（在 `src/engine/nested/` 放 `Math.random()`）现在变红。**接线也是递归的**：`engineSources(root)` 可注入根目录，用临时目录造嵌套违规并断言命中——把接线换回一层 `readdirSync` 会让这条红（评审 B-R2-2） | PASS |
+| 14 | `tests/meta/coverage.test.ts` · `--coverage` 退出码 0；报告数字行 98.01% / 分支 95.23%（阈值 90 / 85）；引擎源码无 `c8 ignore` / `v8 ignore` / `istanbul ignore` | PASS |
 | 15 | `tests/engine/win.test.ts` · 屠边三种条件各一例、屠城两种；「神全灭但民还活着」在屠城下**不**判狼胜；RUL-5 只数存活；调用前后状态深度相等 | PASS |
 | 16 | `tests/engine/no-network.test.ts` · `fetch` 已被替换为抛错桩（并断言它不是原生实现） | PASS |
 | **N 项** | `mode` 不一致拒绝（N8 / P19）、post-START 的 `phase === 'NIGHT_WOLF_CHAT'` 与 `day === 1`（N5 / P22）、`ACTION_TYPES` 双向等值（N2）、两个 payload schema 的 `safeParse`（N3）、真分段重放（N1）、整体推进比较（N10）、modifier 经 `step` 的入口到达 handler（N9）、一个 action 产出 3 条事件时 seq 连续（N11）、忽略注释扫描改为递归（N12） | PASS |
@@ -282,7 +285,7 @@ $ pnpm typecheck    → exit 0
 $ pnpm lint         → exit 0
 $ pnpm format:check → "All matched files use Prettier code style!"   exit 0
 $ pnpm build        → dist/client/index.html + dist/server/index.js  exit 0
-$ pnpm test         → Test Files 29 passed (29) · Tests 206 passed (206)  exit 0
+$ pnpm test         → Test Files 29 passed (29) · Tests 209 passed (209)  exit 0
 $ pnpm test:e2e     → "skipped：tests/e2e/ 下没有用例"                exit 0
 $ pnpm selfplay     → "pnpm selfplay 未实现（RFC-015）"               exit 1
 
@@ -292,7 +295,7 @@ $ pnpm exec vitest run --project unit --coverage
   replay.ts 100/100 · rng.ts 96.15/90 · step.ts 100/100 · transitions.ts 100/100 · win.ts 100/100
 ```
 
-`init.ts` 的分支覆盖 80% 是已知的：`role === undefined` 那条在「板子长度已校验」之后不可达，是 `noUncheckedIndexedAccess` 逼出来的防御分支。聚合分支 94.04% 达标，未用忽略注释遮掩（TEST-2 明令禁止，且门禁测试会扫）。
+`init.ts` 的分支覆盖 80% 是已知的：`role === undefined` 那条在「板子长度已校验」之后不可达，是 `noUncheckedIndexedAccess` 逼出来的防御分支。聚合分支 95.23% 达标，未用忽略注释遮掩（TEST-2 明令禁止，且门禁测试会扫）。
 
 ### 8.6 已知缺口（交给后续 RFC，不隐藏）
 
