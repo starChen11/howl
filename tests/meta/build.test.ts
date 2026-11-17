@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -27,6 +27,11 @@ function walk(dir: string): string[] {
 
 describe('AC-13 · 构建产物', () => {
   it('pnpm build 退出 0', async () => {
+    // 先删产物再构建（评审 N2）：P18 把 server 的 outDir 改成 dist/server2 后，上一轮留下的
+    // dist/server/index.js 让「产物存在」这条断言仍然通过——脏工作树会掩盖构建回归。
+    rmSync(join(REPO_ROOT, 'dist'), { recursive: true, force: true });
+    expect(existsSync(join(REPO_ROOT, 'dist'))).toBe(false);
+
     const result = await pnpm(['build']);
 
     expect(result.code, result.stderr).toBe(0);

@@ -89,6 +89,8 @@ type RejectedPayload = {
 };
 ```
 
+> CR-003 C1：RFC-001 的 `GameEventMap.REJECTED` 最初把 `actionType` 写成 `string`，与本节不一致。裁决采纳本节的 `Action['type']`，两边现已一致。
+
 `Rejected` **消耗 `seq`**、进入事件流（复盘要能看到「有人提交了非法动作」），可见性为 `self:<提交者席位>`；无法确定席位（如 `START`）时用 `'public'`。被拒绝时**状态除 `seq` 外不变**。
 
 ### 2.4 效果管道

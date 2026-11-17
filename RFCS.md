@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.5 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 · 最后更新 2026-11-17
+> 版本 v2.7 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 · 最后更新 2026-11-17
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -174,9 +174,9 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 | C-14 | `RULES STYLE-2` 要求常量 SCREAMING_SNAKE_CASE，RFC-001 §2.3 却点名 `TERMS` / `ROLE_LABELS` / `ActionSchema` / `EventSchema`；本 RFC 的实现、测试与 RFC-012 的 `terms.ts` 引用依赖这些名字 | **按 RFC 保留契约名**；`STYLE-2` 的常量规则应明确排除这些跨层契约标识符（或把它们定义为契约导出例外），待 `/manage-changes` 修正。注：RFC §8.3 说“后 15 个 RFC 的正文都在引用它们”并不成立，只有 RFC-012/RFC-010 引用 `terms.ts`；保留名字的理由是 RFC 指定 + 本 RFC 测试使用，不是“所有 RFC 都按名字引用” | RFC-001 §8.3、RULES STYLE-2；待规则修正 |
 | C-15 | RFC-001 §2.3 的代码块把 `EventEnvelope` 的 `type` 默认成 `string`、payload 默认成 `unknown`，同一节正文却要求 `type` 必须是 `GameEventMap` 的成员、payload 由 map 约束；实现只满足代码块，`GameEventMap` / `GameEventType` 未被任何代码引用，`EventSchema` 接受任意非空 type | **已修**：新增 `GameEvent` 映射类型把 `type` 与 `payload` 静态绑定到 `GameEventMap`；`EventEnvelope` 的默认 `type` 由 `string` 收紧为 `GameEventType`（连「只知道是事件」的位置也写不出假类型）；`EventSchema` 的 `type` 改为 `z.enum(GAME_EVENT_TYPES)`；`GAME_EVENT_TYPES` 与 `keyof GameEventMap` 用 `toEqualTypeOf` 双向锁定。评审的 M11 探针现在编译失败 | RFC-001 §2.3、§8.7、RULES DATA-2 |
 | C-16 | RFC-001 §2.3 的 `Action` 代码块把 `WITCH_ACT` 写成 `potion: 'heal' \| 'poison' \| 'none'; target?: SeatId`，同一节的约束句却要求「`potion: 'none'` 与省略 `target` 配套」——一条可选字段表达不出这个语义，评审 F2 证明实现两侧都没拒绝（`none` 带 target、`heal` 无 target 都能通过） | **按约束句实现，改写 §2.3 的代码块**：`Action` 拆成两条分支（`potion: 'none'` 无 `target`；`'heal'` / `'poison'` 必须有 `target`），`ActionSchema` 用 `.refine` 表达同一语义，类型与 Zod 两侧都拒绝非法组合 | RFC-001 §2.3、§8.7；`reviews/REVIEW-RFC-001.md` F2 |
-| C-17 | RFC-001 §2.3 的 `GameEventMap` 与下游 RFC 的 payload 不一致：`REJECTED.actionType` 是 `string`（RFC-002 §2.3 要求 `Action['type']`）；`VOTE_CAST` 含 `seat`（RFC-004 §2.3 写 `{ target }`）；`AI_THOUGHT` 是 `{ reason; claim?: unknown; decisionSeq }`（RFC-007 §2.5 要求顶层 `claimedRole?` / `claimedChecks?` / `accuses?`，RFC-006 §2.2 的 `claim` 又是嵌套 `{ role?, checks?, accuses? }`，RFC-009 §2.2 / RFC-014 §2.3 按顶层字段消费） | **按 RFC-001 实现**：本 RFC 的代码与测试只依赖当前 map；这是跨 RFC 契约冲突，必须在 RFC-002 开工前由 `/manage-changes` 统一为一种 payload 形状，不能由下游各自改写既有成员（RFC-001 §2.3 明文禁止）。评审证据：`REJECTED.actionType: 'NOT_AN_ACTION'` 可编译（P21）；RFC-007 的 `AI_THOUGHT` 顶层字段被 `GameEvent` 拒绝（P22）；RFC-004 的 `VOTE_CAST { target }` 被拒绝（P23） | RFC-001 §2.3、RFC-002 §2.3、RFC-004 §2.3、RFC-006 §2.2、RFC-007 §2.5、RFC-009 §2.2、RFC-014 §2.3；`reviews/REVIEW-RFC-001.md` Round 2 B1 |
+| C-17 | RFC-001 §2.3 的 `GameEventMap` 与下游 RFC 的 payload 不一致：`REJECTED.actionType` 是 `string`（RFC-002 §2.3 要求 `Action['type']`）；`VOTE_CAST` 含 `seat`（RFC-004 §2.3 写 `{ target }`）；`AI_THOUGHT` 是 `{ reason; claim?: unknown; decisionSeq }`（RFC-007 §2.5 要求顶层 `claimedRole?` / `claimedChecks?` / `accuses?`，RFC-006 §2.2 的 `claim` 又是嵌套 `{ role?, checks?, accuses? }`，RFC-009 §2.2 / RFC-014 §2.3 按顶层字段消费） | **按 RFC-001 实现**：本 RFC 的代码与测试只依赖当前 map；这是跨 RFC 契约冲突，必须在 RFC-002 开工前由 `/manage-changes` 统一为一种 payload 形状，不能由下游各自改写既有成员（RFC-001 §2.3 明文禁止）。评审证据：`REJECTED.actionType: 'NOT_AN_ACTION'` 可编译（P21）；RFC-007 的 `AI_THOUGHT` 顶层字段被 `GameEvent` 拒绝（P22）；RFC-004 的 `VOTE_CAST { target }` 被拒绝（P23）。**已由 `CHANGE-REQUEST-003` 裁决并落地**：C1 `REJECTED.actionType` 按 RFC-002 收窄为 `Action['type']`；C2 `VOTE_CAST` 按 RFC-001 保留 `{ seat, target }`、改 RFC-004 的简写；C3 `AI_THOUGHT` 统一为**嵌套** `claim`（改 RFC-007/009/014 的字段路径，RFC-006 不动形状）。下游 RFC 全部 `Not started`，无需置 `Spec changed` | RFC-001 §2.3、RFC-002 §2.3、RFC-004 §2.3、RFC-006 §2.2、RFC-007 §2.5、RFC-009 §2.2、RFC-014 §2.3、`changes/CHANGE-REQUEST-003.md`；`reviews/REVIEW-RFC-001.md` Round 2 B1 |
 
-> C-13 / C-14 是 RULES 措辞与 RFC 契约的冲突，C-15 / C-16 是 RFC 内部代码块与正文的冲突。C-17 是 Round 2 发现的跨 RFC payload 冲突：代码按 RFC-001 走，形状统一仍归 `/manage-changes`。五条都由 RFC-001 评审发现；C-13 / C-14 / C-17 的最终裁决仍归 `/manage-changes`，C-15 / C-16 已在 RFC-001 的实现里修正。
+> C-13 / C-14 是 RULES 措辞与 RFC 契约的冲突，C-15 / C-16 是 RFC 内部代码块与正文的冲突，C-17 是跨 RFC 的 payload 形状冲突。**C-15 / C-16 / C-17 已在 RFC-001 的实现里修正**（C-17 由 `CHANGE-REQUEST-003` 裁决）；C-13 / C-14 的最终裁决仍归 `/manage-changes`。
 
 ### 8.2 依赖中的开放问题（**阻塞实现，必须由用户确认**）
 
@@ -235,11 +235,12 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
-| 2026-11-17 | v1.0 | 初次拆分：16 个 RFC，覆盖 31 个 Must 功能；F45 延后 |
-| 2026-11-17 | v2.0 | 第 1 轮冷读（16/16 NEEDS-FIX）后的修订：重排 006/007/008 修依赖倒挂；补齐共享契约、拒绝语义、事件驱动的私有信息、`project()` 签名；新增 C-5 / C-6 / OQ-C6；记录冷读轮次与未覆盖范围 |
+| 2026-11-17 | v2.7 | RFC-001 Round 2 评审修复：`CHANGE-REQUEST-003` 统一三个 payload 形状（C-17 关闭）；补 `EventEnvelope` 默认类型的回归夹具（B3）、修正 RFC 正文与注释的不实陈述（B2）、子配置五个严格开关全覆盖（N1）、构建前清 `dist`（N2）、`EFFECT_SOURCES` / `SELF_VISIBILITY_PREFIX` 断言（N3）；`tests/shared/contracts.test.ts` 拆成 domain / actions / events 三个文件 |
+| 2026-11-17 | v2.6 | RFC-001 Round 2 评审完成（Status → `Changes requested`）：新增 C-17（`GameEventMap` 与 RFC-002/004/006/007/009/014 的 payload 形状不一致）；F2/F3/F4/F5 复核通过，F1 缺 `EventEnvelope` 默认类型的回归夹具，F6 的 §2.3 与代码注释仍不实。证据见 `reviews/REVIEW-RFC-001.md` Round 2 的 B1 / B2 / B3。 |
+| 2026-11-17 | v2.5 | RFC-001 按评审修复完成（Status → Implemented）：关掉 C-15（`GameEvent` / `GAME_EVENT_TYPES` / `EventEnvelope` 收紧 / `EventSchema` 枚举）并新增 C-16（`WITCH_ACT` 拆分支 + `.refine`）；补 AC-5/6 的类型层断言、AC-15 的 `skipped` 文案、动态 `import()` 扫描、`.tsx` 规则等级、别名一致性测试。评审的 M1/M2/M5/M8/M9/M10/M11 探针现在全部变红 |
+| 2026-11-17 | v2.4 | RFC-001 评审完成（Status → Changes requested，见 `reviews/REVIEW-RFC-001.md`）：发现 DATA-2 未强制（C-15）、`ActionSchema` 的 potion/target 语义约束缺失、AC-5/6/10/11/14/15/16 存在“回退不会红”的测试缺口、动态 `import()` 可绕过依赖方向检查；登记 C-13（ARCH-2 与 shared 运行时逻辑的冲突）、C-14（STYLE-2 与契约名的冲突）。 |
+| 2026-11-17 | v2.3 | RFC-001 实现完成（Status → Implemented）。新增 C-9（服务端构建改 Vite SSR）、C-10（`schemas.ts` 范围收窄）、C-11（AC-4 改为两向夹具）、C-12（`order` 四区间）；§10 的前置条件已满足 |
 | 2026-11-17 | v2.2 | 按 `CHANGE-REQUEST-002` 修订规则裁决：RUL-1 反转为「胜负先于死亡触发技能」（关闭 C-6 / OQ-C6）；RUL-2 收窄为重投仅可投并列者；RUL-10 移除。同步改 RULES、FEATURES F6、RFC-001~004 |
 | 2026-11-17 | v2.1 | 第 2 轮冷读（001 / 002 / 007）后的修订：修 `order` 分区违反 RUL-8 的 bug；补 `rngAfter` 使重放精确；`GAME_STARTED` 改为 `server` 可见性；补 `GameEventMap` / Zod 归属 / `diedSeq` / `FACTION_OF`；新增 C-7（`ARCH-8` 签名偏差）与 C-8（复盘直读事件流）；合并超限的验收标准 |
-| 2026-11-17 | v2.3 | RFC-001 实现完成（Status → Implemented）。新增 C-9（服务端构建改 Vite SSR）、C-10（`schemas.ts` 范围收窄）、C-11（AC-4 改为两向夹具）、C-12（`order` 四区间）；§10 的前置条件已满足 |
-| 2026-11-17 | v2.5 | RFC-001 按评审修复完成（Status → Implemented）：关掉 C-15（`GameEvent` / `GAME_EVENT_TYPES` / `EventEnvelope` 收紧 / `EventSchema` 枚举）并新增 C-16（`WITCH_ACT` 拆分支 + `.refine`）；补 AC-5/6 的类型层断言、AC-15 的 `skipped` 文案、动态 `import()` 扫描、`.tsx` 规则等级、别名一致性测试。评审的 M1/M2/M5/M8/M9/M10/M11 探针现在全部变红 |
-| 2026-11-17 | v2.6 | RFC-001 Round 2 评审完成（Status → `Changes requested`）：新增 C-17（`GameEventMap` 与 RFC-002/004/006/007/009/014 的 payload 形状不一致）；F2/F3/F4/F5 复核通过，F1 缺 `EventEnvelope` 默认类型的回归夹具，F6 的 §2.3 与代码注释仍不实。证据见 `reviews/REVIEW-RFC-001.md` Round 2 的 B1 / B2 / B3。 |
-| 2026-11-17 | v2.4 | RFC-001 评审完成（Status → Changes requested，见 `reviews/REVIEW-RFC-001.md`）：发现 DATA-2 未强制（C-15）、`ActionSchema` 的 potion/target 语义约束缺失、AC-5/6/10/11/14/15/16 存在“回退不会红”的测试缺口、动态 `import()` 可绕过依赖方向检查；登记 C-13（ARCH-2 与 shared 运行时逻辑的冲突）、C-14（STYLE-2 与契约名的冲突）。 |
+| 2026-11-17 | v2.0 | 第 1 轮冷读（16/16 NEEDS-FIX）后的修订：重排 006/007/008 修依赖倒挂；补齐共享契约、拒绝语义、事件驱动的私有信息、`project()` 签名；新增 C-5 / C-6 / OQ-C6；记录冷读轮次与未覆盖范围 |
+| 2026-11-17 | v1.0 | 初次拆分：16 个 RFC，覆盖 31 个 Must 功能；F45 延后 |

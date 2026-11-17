@@ -15,7 +15,7 @@ v0.9 · **工程骨架已落地；RFC-001 Round 2 评审结论为 `Changes reque
 ```bash
 pnpm install
 pnpm dev        # http://localhost:5173
-pnpm test       # 78 个用例，含五条命令的门禁测试
+pnpm test       # 86 个用例，含五条命令的门禁测试
 ```
 
 ## 怎么参与开发

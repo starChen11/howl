@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.2 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.5 · 最后更新 2026-11-17
+> 版本 v1.3 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.7 · 最后更新 2026-11-17
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -29,8 +29,8 @@ RFC-001 已实现并通过评审修复，`Exists?` 按实际落地情况回填�
 
 ```
 $ pnpm test
- Test Files  13 passed (13)     # unit 7 个 + meta 6 个
-      Tests  78 passed (78)
+ Test Files  15 passed (15)     # unit 9 个 + meta 6 个
+      Tests  86 passed (86)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -122,7 +122,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 |---|---|---|---|---|
 | 1 | `tests/meta/commands.test.ts`（5 例）：跑 `typecheck` / `lint` / `vitest --project unit` / `build`，再用 3999 端口起 `pnpm start` 探活并关掉。内层用 `--project unit` 避免递归（T-4） | integration | existing: tests/meta/commands.test.ts | Must |
 | 2、3、4 | `tests/meta/tsconfig.test.ts`：`package.json` 三个字段、三份配置存在与 `moduleResolution`/`target`、`include` 边界、别名与 `configs/alias.ts` 一致；五个严格开关用**两向夹具**证明（开启必失败、关闭必通过，C-11 已推翻原文方向） | unit | existing: tests/meta/tsconfig.test.ts + tests/meta/fixtures/ | Must |
-| 5、7 | `tests/shared/contracts.test.ts`：`PHASES` 恰 14 且逐项相等、`expectTypeOf<Phase>()` 等值；`EventEnvelope` 三字段缺失夹具（`@ts-expect-error`） | unit | existing: tests/shared/contracts.test.ts | Must |
+| 5、7 | `tests/shared/domain.test.ts`（`PHASES` 恰 14 且逐项相等、`expectTypeOf<Phase>()` 等值）+ `tests/shared/events.test.ts`（`EventEnvelope` 三字段缺失夹具） | unit | existing: domain.test.ts, events.test.ts | Must |
 | 6 | `tests/shared/effects.test.ts`：省略 `target` 编译失败、`target: null` 合法、四个分区边界（C-12 由三改四）+ `expectTypeOf<typeof EFFECT_ORDER>()` 字面量断言 | unit | existing: tests/shared/effects.test.ts | Must |
 | 8 | `tests/shared/terms.test.ts`：13 条键与标签逐项等于 PRD 术语表、`ROLE_LABELS` 5 项顺序等于 `ROLES` | unit | existing: tests/shared/terms.test.ts | Must |
 | 9 | `tests/security/no-hardcoded-terms.test.ts`：扫 `src/**/*.{ts,tsx}`（排除 `terms.ts`），身份名集合从 `ROLE_LABELS` 反查 | security | existing: tests/security/no-hardcoded-terms.test.ts | Must |
@@ -131,9 +131,10 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 13 | `tests/meta/build.test.ts`：跑 `pnpm build` 后断言 `dist/client/index.html` 与 `dist/server/index.js` 存在；递归扫 `dist/client` 无 `DEEPSEEK_API_KEY`、无 `@fastify/static` | integration | existing: tests/meta/build.test.ts | Must |
 | 14、15 | `tests/meta/lint.test.ts`：用 ESLint API 问 `.ts` 与 `.tsx` 的**生效**等级（M8 的缺口）、`pnpm lint` / `format:check` / `test:e2e` 退出 0，且 `test:e2e` 的 stdout 含 `skipped`（M9） | integration | existing: tests/meta/lint.test.ts | Must |
 | 16 | `tests/meta/selfplay-placeholder.test.ts`：退出码 1，stderr 同时含「未实现」与 `RFC-015`（M10） | integration | existing: tests/meta/selfplay-placeholder.test.ts | Must |
-| F1（评审新增） | `tests/shared/contracts.test.ts`：`GameEvent` 的未知 type / 错误 payload 负向夹具、`GAME_EVENT_TYPES` 与 `keyof GameEventMap` 双向等值、`EventSchema` 拒绝假 type | unit | existing: tests/shared/contracts.test.ts | Must |
-| F2（评审新增） | `tests/shared/contracts.test.ts`：`WITCH_ACT` 三种非法组合在类型与 Zod 两侧都被拒、三种合法组合通过 | unit | existing: tests/shared/contracts.test.ts | Must |
-| F7（评审新增） | `tests/shared/contracts.test.ts`：`SEAT_IDS` / `FACTION_OF` / `FACTIONS` / `WIN_MODES` 的取值断言 | unit | existing: tests/shared/contracts.test.ts | Should |
+| F1（评审新增） | `tests/shared/events.test.ts`：`GameEvent` 的未知 type / 错误 payload 负向夹具、`GameEvent` 与 `EventEnvelope` 各一份（B3）、`GAME_EVENT_TYPES` 与 `keyof GameEventMap` 双向等值、`EventSchema` 拒绝假 type | unit | existing: tests/shared/events.test.ts | Must |
+| F2（评审新增） | `tests/shared/actions.test.ts`：`WITCH_ACT` 三种非法组合在类型与 Zod 两侧都被拒、三种合法组合通过 | unit | existing: tests/shared/actions.test.ts | Must |
+| F7（评审新增） | `domain.test.ts`（`SEAT_IDS` / `ROLES` / `FACTION_OF` / `FACTIONS` / `WIN_MODES`）、`effects.test.ts`（`EFFECT_SOURCES`）、`events.test.ts`（`SELF_VISIBILITY_PREFIX`） | unit | existing: 三个文件 | Should |
+| CR-003（变更） | `tests/shared/events.test.ts`：三个 payload 形状——`REJECTED.actionType` 非法值编译失败、`VOTE_CAST` 缺 `seat` 编译失败、`AI_THOUGHT` 顶层 `claimedRole` 编译失败、嵌套 `claim` 通过 | unit | existing: tests/shared/events.test.ts | Must |
 
 **依赖与夹具**：无前置。`tests/meta/` 会起子进程，两个 wait 超时分别是 30s（`start`）与 60s（`dev`），单例上限 180s。
 
@@ -427,4 +428,5 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-17 | v1.0 | 初次生成：16 个 RFC 小节、222 条验收标准的逐条落表、126 条计划测试、6 项人工检查 |
+| 2026-11-17 | v1.3 | RFC-001 Round 2 修复后回填：`contracts.test.ts` 拆成 domain / actions / events 三个文件；补 B3（`EventEnvelope` 夹具）、N1（五个严格开关）、N2（构建前清 `dist`）、N3（`EFFECT_SOURCES` / `SELF_VISIBILITY_PREFIX`）与 CR-003 一行 |
 | 2026-11-17 | v1.1 | RFC-001 实现后按实际落地的测试回填：新增 T-4（自递归）、T-5（代理改用 HTTP）、T-6（路径按 RFC）、T-7（构建测试不跳过）；RFC-001 小节的实际用例数以 `RFCs/RFC-001-*.md` §8.5 为准 |

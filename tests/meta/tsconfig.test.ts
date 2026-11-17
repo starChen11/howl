@@ -167,8 +167,11 @@ describe('AC-3 · 三份 tsconfig', () => {
       expect(config.extends).toBe('./tsconfig.json');
       expect(config.compilerOptions?.moduleResolution).toBeUndefined();
       expect(config.compilerOptions?.target).toBeUndefined();
-      // strict 等严格开关也只能来自根配置，否则两个边界会各说各话
-      expect(config.compilerOptions?.strict).toBeUndefined();
+      // 五个严格开关也只能来自根配置：任何一个在子配置里被关掉，那条边界就静默失守
+      // （评审 N1：原来只断言了 `strict`，P14 给 client 加 noUncheckedIndexedAccess: false 时全绿）。
+      for (const flag of STRICT_FLAGS) {
+        expect(config.compilerOptions?.[flag], `${file} 覆盖了 ${flag}`).toBeUndefined();
+      }
     }
   });
 

@@ -38,13 +38,17 @@ interface Persona {
 
 ### 2.2 结构化打法字段
 
-RFC-007 的 `DecisionSchema` 在本 RFC 扩展两个**可选**字段（向后兼容）：
+RFC-006 §2.2 的 `DecisionSchema.claim` 在 RFC-001 §2.3 已有类型 `Claim`（`src/shared/events.ts`），本 RFC 的判定直接读它，**不新增字段**：
 
 ```ts
-claimedRole: 'seer' | 'witch' | 'hunter' | 'villager' | 'wolf',   // 已在 RFC-007 定义
-claimedChecks: { target: number; result: 'wolf' | 'not-wolf' }[],  // 新增
-accuses: { target: number; asRole: 'wolf' | 'seer' }[],            // 新增
+claim?: {
+  role?: Role;                                        // 声称自己是什么
+  checks?: { target: SeatId; result: 'wolf' | 'not-wolf' }[];
+  accuses?: { target: SeatId; as: 'wolf' | 'seer' }[]; // 字段名以 RFC-006 为准
+}
 ```
+
+> CR-003 之前这里有三种形状（RFC-001 的 `unknown`、RFC-006 的嵌套、RFC-007 的顶层 `claimedRole` / `claimedChecks` / `accuses`）。现统一为嵌套 `claim`；本 RFC 早期写的 `claimedRole` / `claimedChecks` / `asRole` 已按 CR-003 C3 改名。
 
 ### 2.3 事件判定
 
@@ -52,8 +56,8 @@ accuses: { target: number; asRole: 'wolf' | 'seer' }[],            // 新增
 
 | 事件 | 判定条件 |
 |---|---|
-| **悍跳事件** | 发言者 `role === 'wolf'` 且 `claimedRole === 'seer'` 且 `claimedChecks.length >= 1` |
-| **狼查杀狼事件** | 发言者 `role === 'wolf'` 且 `accuses` 中存在 `{ target: 另一名狼, asRole: 'wolf' }` |
+| **悍跳事件** | 发言者 `role === 'wolf'` 且 `claim?.role === 'seer'` 且 `claim.checks.length >= 1` |
+| **狼查杀狼事件** | 发言者 `role === 'wolf'` 且 `claim?.accuses` 中存在 `{ target: 另一名狼, as: 'wolf' }` |
 | **自曝事件** | 复用 RFC-005 的 `SELF_EXPOSE` 事件 |
 
 **判定不得使用自然语言匹配**：把同一段 `speech` 换个措辞，判定结果必须不变。
@@ -63,7 +67,7 @@ accuses: { target: number; asRole: 'wolf' | 'seer' }[],            // 新增
 | 文件 | 内容 |
 |---|---|
 | `src/engine/personas.ts` | 人格库与分配 |
-| `src/server/llm/schema.ts` | 扩展 `claimedChecks` / `accuses` |
+| `src/server/llm/schema.ts` | `claim` 的 Zod schema（形状见 RFC-006 §2.2 / RFC-001 §2.3） |
 | `src/engine/annotate.ts` | 三类事件的判定与标注 |
 | `tests/engine/personas.test.ts` | 分配稳定性与正交性 |
 | `tests/engine/annotate.test.ts` | 判定矩阵 |
@@ -100,4 +104,4 @@ accuses: { target: number; asRole: 'wolf' | 'seer' }[],            // 新增
 | ID | 问题 | 假设 |
 |---|---|---|
 | Q-009-1 | 人格库最终放几个 | **(assumption)** 至少 12 个，具体条目属于实现者选择 |
-| Q-009-2 | `claimedChecks` / `accuses` 由模型生成还是由服务端推断 | **(assumption)** 由模型在结构化输出中生成；服务端只校验，不做语义推断 |
+| Q-009-2 | `claim.checks` / `claim.accuses` 由模型生成还是由服务端推断 | **(assumption)** 由模型在结构化输出中生成；服务端只校验，不做语义推断 |

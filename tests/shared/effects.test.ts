@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { Effect } from '@shared/effects';
-import { EFFECT_ORDER } from '@shared/effects';
+import { EFFECT_ORDER, EFFECT_SOURCES } from '@shared/effects';
 
 /**
  * RFC-001 AC-6：`Effect.target` 必填，且 `order` 的分区常量以 `as const` 导出。
@@ -35,6 +35,12 @@ describe('AC-6 · Effect.target 必填', () => {
     };
 
     expect(nullTarget.target).toBeNull();
+  });
+});
+
+describe('F7 · EffectSource 的三个取值', () => {
+  it('EFFECT_SOURCES 恰为 role / system / extension（ARCH-6）', () => {
+    expect([...EFFECT_SOURCES]).toEqual(['role', 'system', 'extension']);
   });
 });
 

@@ -1,3 +1,4 @@
+import type { Action } from './actions';
 import type { Role, RngState, SeatId, WinMode } from './domain';
 
 /**
@@ -25,7 +26,10 @@ export const SELF_VISIBILITY_PREFIX = 'self:';
  *
  * 默认类型参数刻意收紧：`type` 只能是 `GameEventMap` 的成员（DATA-2），`payload` 仍是
  * `unknown`（具体形状由 `GameEvent` 绑定）。这样连「只知道是事件」的位置也写不出假类型——
- * 评审的 M11 探针正是从 `EventEnvelope` 的 `type: string` 默认值溜过去的。
+ * 评审的 M11 探针正是从 `EventEnvelope` 早期的 `type: string` 默认值溜过去的。
+ *
+ * 两侧的回归夹具都在 `tests/shared/events.test.ts`：一处守 `type`（B3），一处守
+ * `payload` 必须走 `GameEvent`。
  */
 export interface EventEnvelope<T extends GameEventType = GameEventType, P = unknown> {
   gameId: string;
@@ -70,6 +74,29 @@ export interface DayStartedPayload {
 }
 
 /**
+ * AI 在结构化输出里「声称自己是什么、验过谁、指认谁」（RFC-006 §2.2 / RFC-009 §2.2）。
+ *
+ * 三个字段是同一个东西的三面：这次发言**对外声称了什么**。所以它们作为一个可选对象
+ * 存在，而不是摊平成三个互不相干的顶层字段——这就是 CR-003 的 C3 裁决。
+ */
+export interface ClaimedCheck {
+  target: SeatId;
+  result: 'wolf' | 'not-wolf';
+}
+
+export interface ClaimedAccusation {
+  target: SeatId;
+  /** 指认对方是什么身份。字段名以 RFC-006 为准（RFC-009 早期写作 `asRole`，已统一）。 */
+  as: 'wolf' | 'seer';
+}
+
+export interface Claim {
+  role?: Role;
+  checks?: ClaimedCheck[];
+  accuses?: ClaimedAccusation[];
+}
+
+/**
  * 事件全集的信封约束（DATA-2）。
  *
  * 本 RFC 定义全集与扩展规则：**各 RFC 只增加成员，不得改写既有成员的 payload**。
@@ -77,7 +104,8 @@ export interface DayStartedPayload {
  */
 export interface GameEventMap {
   GAME_STARTED: GameStartedPayload;
-  REJECTED: { actionType: string; code: string; message: string };
+  /** `actionType` 是 `Action['type']` 而不是 `string`：`DATA-2` 的「不得用裸字符串」同样适用于载荷（CR-003 C1，与 RFC-002 §2.3 一致）。 */
+  REJECTED: { actionType: Action['type']; code: string; message: string };
   WOLF_KILL_CHOSEN: { target: SeatId };
   SEER_CHECKED: { target: SeatId; result: 'wolf' | 'not-wolf' };
   WITCH_POTION_USED: { potion: 'heal' | 'poison'; target: SeatId };
@@ -90,7 +118,8 @@ export interface GameEventMap {
   VOTE_REVEALED: { votes: { seat: SeatId; target: SeatId | 'abstain' }[] };
   WOLF_CHAT_POSTED: { seat: SeatId; text: string; round: 'night-chat' };
   SELF_EXPOSE: { seat: SeatId };
-  AI_THOUGHT: { reason: string; claim?: unknown; decisionSeq: number };
+  /** `claim` 是结构化载荷而非 `unknown`：复盘与判定都要在编译期知道该读什么（AI-5 / CR-003 C3）。 */
+  AI_THOUGHT: { reason: string; claim?: Claim; decisionSeq: number };
   GAME_ENDED: { result: 'wolf' | 'good'; condition: string };
   DEGRADED: { seat: SeatId };
 }

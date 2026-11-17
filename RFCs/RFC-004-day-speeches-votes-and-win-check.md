@@ -42,7 +42,7 @@ type DayStartedPayload = {
 ### 2.3 投票
 
 - 阶段 `DAY_VOTE`，所有存活玩家提交 `VOTE`。
-- **每张票以私有事件记录**：`VOTE_CAST`（`visibleTo: 'self:<seat>'`，payload `{ target }`）。这样既保住投票保密，又能被 `replay` 重建。
+- **每张票以私有事件记录**：`VOTE_CAST`（`visibleTo: 'self:<seat>'`，payload `{ seat, target }`）。这样既保住投票保密，又能被 `replay` 重建。payload **必须显式带 `seat`**：`replay` 重建票型时没有观察者，从 `visibleTo` 字符串反解投票者等于拿可见性字段当数据用（CR-003 C2）；也与同节的 `VOTE_REVEALED.votes[]` 保持同一形状。
 - 全部提交后进入 `DAY_VOTE_RESOLVE`，产出一条公开的 `VOTE_REVEALED` 事件（payload 为完整票型），随后：
 
 | 结果 | 处理 |
