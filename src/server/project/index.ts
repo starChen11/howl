@@ -1,6 +1,6 @@
-import type { GameState, SeatId } from '@shared/domain';
+import type { GameState, Phase, SeatId } from '@shared/domain';
 import { isVisibleTo } from '@shared/visibility';
-import type { ProjectedContext, ProjectInput } from '@shared/project';
+import type { ProjectedContext, ProjectedPhase, ProjectInput } from '@shared/project';
 import type { EventEnvelope } from '@shared/events';
 
 import { applyEvent } from '@engine/apply';
@@ -47,6 +47,24 @@ export function project(input: ProjectInput): ProjectedContext {
   const self = seatAt(state, observer);
   const visible = [...publicEvents, ...privateEvents];
 
+  // 观察者「知道死了谁」的来源只有两种：公开的 `PLAYER_DIED`（放逐 / 开枪），
+  // 以及天亮时公布的 `DAY_STARTED.diedLastNight`。夜间的 `PLAYER_DIED` 是 server 可见的，
+  // 不会进这里——所以当夜死者不会提前泄漏（C-28）。
+  const knownDead = new Set<SeatId>();
+  for (const event of visible) {
+    if (event.type === 'PLAYER_DIED') {
+      knownDead.add((event.payload as { seat: SeatId }).seat);
+    }
+    if (event.type === 'DAY_STARTED') {
+      const payload = event.payload as { diedLastNight: SeatId[] };
+      for (const seat of payload.diedLastNight) knownDead.add(seat);
+    }
+  }
+
+  const aliveSeats = state.seats
+    .filter((seat) => !knownDead.has(seat.seat))
+    .map((seat) => seat.seat);
+
   return {
     self: {
       seat: observer,
@@ -54,16 +72,29 @@ export function project(input: ProjectInput): ProjectedContext {
       alive: self.alive,
       personaId: self.personaId ?? null,
     },
-    phase: state.phase,
+    phase: projectedPhaseOf(state.phase),
     day: state.day,
-    aliveSeats: state.seats.filter((seat) => seat.alive).map((seat) => seat.seat),
-    deadSeats: state.seats.filter((seat) => !seat.alive).map((seat) => seat.seat),
+    aliveSeats,
+    deadSeats: [...knownDead].sort((a, b) => a - b),
     publicEvents,
     privateEvents,
     knowledge: knowledgeOf(state, observer, visible, pending),
-    legalTargets: legalTargetsOf(state, pending),
+    legalTargets: legalTargetsOf(state, pending, aliveSeats),
     pending,
   };
+}
+
+/**
+ * 阶段折叠（C-28）：夜间的子阶段会泄漏身份存活状态——
+ *
+ * - 看到 `NIGHT_SEER` 说明 seer 还活着；
+ * - 看到 `NIGHT_WITCH` 说明 witch 还活着；
+ * - 看到 `NIGHT_HUNTER_SHOOT` 说明 hunter 今夜被 wolf 刀杀（被毒杀不会开枪）。
+ *
+ * 所以夜里一律告诉观察者「天黑了」。白天的不需要折叠：那些阶段全场都醒着。
+ */
+function projectedPhaseOf(phase: Phase): ProjectedPhase {
+  return phase.startsWith('NIGHT_') ? 'NIGHT' : phase;
 }
 
 /** 观察者是否能看到这条事件（投影用的便捷包装，语义与 `isVisibleTo` 一致）。 */

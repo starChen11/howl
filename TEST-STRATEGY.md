@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.18 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.37 · 最后更新 2026-11-18
+> 版本 v1.19 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.38 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -29,8 +29,8 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  46 passed (46)     # unit 39 个 + meta 7 个
-      Tests  389 passed (389)
+ Test Files  48 passed (48)     # unit 41 个 + meta 7 个
+      Tests  400 passed (400)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -261,6 +261,8 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 16 | `tests/server/inject/current-speech.test.ts`：传 `excludeSeq` 后该 `SPEECH` 不在 `publicEvents`，封装槽位使用其文本 | unit | existing: tests/server/project + tests/server/inject | Must |
 | C-28（评审） | `tests/server/project/night-visibility.test.ts`：死 seer / 死 witch 的跳过夜与 hunter 开枪夜，断言非相关观察者拿到的 `phase` 是公共阶段、`aliveSeats` / `deadSeats` 不含当夜未公开死亡；`state.phase` 的内部子阶段不出现在投影里 | unit | existing: tests/server/project + tests/server/inject | Must |
 
+> **RFC-007 Round 1 评审（2026-11-18）**：上表多行标 `existing`，实际只有 `tests/server/project/project.test.ts` 与 `tests/server/inject/injection.test.ts`；1000 局面属性测试、C-28 的 `tests/server/project/night-visibility.test.ts`、AC-4 / AC-5 / AC-6 / AC-7 / AC-15 等断言缺失或不能变红（M1~M5、M7 全绿）。补齐前不要把对应行改回 `existing`。详见 `reviews/REVIEW-RFC-007.md` §2.3 / §8。
+
 ## RFC-008: 会话、状态存储与刷新恢复
 
 | Criterion | Test | Level | Exists? | Priority |
@@ -448,6 +450,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.19 | RFC-007 Round 1 评审回填：C-28 / 1000 属性 / AC-4 / AC-5 / AC-6 / AC-7 / AC-15 等计划行并非 `existing`；C-28 仍 Open，阻塞 RFC-007。详见 `reviews/REVIEW-RFC-007.md` |
 | 2026-11-18 | v1.18 | RFC-007 实现后回填：16 条 AC 全部 `existing`（`tests/server/project` + `tests/server/inject`）；基线 369 → 389 |
 | 2026-11-18 | v1.17 | RFC-005 实现后回填：14 条 AC 全部 `existing`；基线 342 → 366 |
 | 2026-11-18 | v1.16 | RFC-004 Round 2 回填：补 AC-4b 行（C-31 的第二条路径）、同步版本引用 |

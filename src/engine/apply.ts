@@ -81,6 +81,10 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'SPEECH':
     case 'SPEECH_SKIPPED':
       return appendSpoken(base, event.payload.seat);
+    case 'AI_THOUGHT':
+      // AI 的内心独白：只以事件存在（`visibleTo: 'self:<seat>'`），不写进状态。
+      // 复盘直接读事件流，因此不需要在状态里留副本（RFC-007 §2.5）。
+      return base;
     case 'WOLF_CHAT_POSTED':
       return { ...base, wolfChat: [...(base.wolfChat ?? []), event.payload] };
     case 'SELF_EXPOSE':

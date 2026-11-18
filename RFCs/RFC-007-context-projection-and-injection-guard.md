@@ -259,3 +259,13 @@ $ pnpm test → Test Files 46 passed (46) · Tests 389 passed (389)
 | 对抗样本没有真调模型 | Q-007-2 的假设：判定看 `events` / `state` 是否被改，模型输出只人工抽查 | RFC-012 之后 |
 | `checks[].day` 是序号不是天数 | 见 D-5 | 若需要，改 payload |
 | `ARCH-8` 的签名描述待修正 | C-7 | `/manage-changes` |
+
+### 8.7 Round 1 回应（Changes requested · High）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **B1 / C-28** 夜间投影泄漏 | 投影直接把引擎的 `phase` 与 `deadSeats` 透出去：看到 `NIGHT_SEER` 说明 seer 还活着、看到 `NIGHT_HUNTER_SHOOT` 说明 hunter 今夜被 wolf 刀杀；当夜死者也在天亮前就出现在名单里 | 用户裁决：**夜里一律告诉观察者「天黑了」**。`ProjectedPhase` 把夜间子阶段折成 `'NIGHT'`；`deadSeats` 只统计**已公布**的死讯（可见的 `PLAYER_DIED` 与 `DAY_STARTED.diedLastNight`）；`legalTargets` 改用观察者已知的存活集合。反向探针：把折叠去掉、把 `deadSeats` 改回引擎真值，各自的用例都会红 |
+| **B2 / C-41** `AI_THOUGHT` 无法折叠 | `applyEvent` 对它抛 `UnknownEventError`，而 `project()` 每条事件都要先折叠——等于任何带 `AI_THOUGHT` 的事件流都会让投影崩掉 | `applyEvent` 增加一个空折叠（它只以事件存在，复盘直接读事件流）；`replay.test.ts` 里拿它当「未实现事件」的样本换成 `DEGRADED` |
+| **B3 /** 多条 AC 的测试不会红 | AC-4/5/6/7/8/9/11/14/15/16 只有弱断言或同义反复；`TEST-STRATEGY` 声称的 `tests/server/project/night-visibility.test.ts` 并不存在 | 新增 `knowledge.test.ts`（每个角色造出**有内容**的局面，断言具体值）与 `night-visibility.test.ts`（C-28 三条泄漏路径）；每条都能被对应的反向探针打红 |
+
+**另**：`RFCS.md` 的 §1 关键路径 / §1.1 映射表 / §3 依赖表在 C-40 那次只改了抬头与两处，剩下三处由本轮评审核对后补齐（依赖翻转的痕迹现在完整）。

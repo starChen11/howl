@@ -7,8 +7,14 @@ import type { PendingDecision } from '@shared/project';
  * 它是**投影的一部分**：AI 只能从这份清单里选，otherwise 引擎会拒绝。清单本身也是信息——
  * 比如投票阶段多一个「弃权」，重投阶段只有并列者（RUL-2）。
  */
-export function legalTargetsOf(state: GameState, pending: PendingDecision): (SeatId | 'abstain')[] {
-  const alive = state.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+export function legalTargetsOf(
+  state: GameState,
+  pending: PendingDecision,
+  aliveSeats: readonly SeatId[],
+): (SeatId | 'abstain')[] {
+  // 用**观察者已知的**存活席位，而不是引擎真值：否则「某个目标突然消失」本身就泄漏了
+  // 「他死了」，而这件事还没公布（C-28）。
+  const alive = [...aliveSeats];
 
   switch (pending) {
     case null:

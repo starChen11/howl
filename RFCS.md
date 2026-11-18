@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.37 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
+> 版本 v2.38 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -17,7 +17,7 @@
 5. **服务化**（008）—— 会话、多局、刷新恢复、状态释放。
 6. **玩家体验与收尾**（009–016）—— 人格与打法、流式、通道与输入、界面、面板与观战、复盘、headless、浏览器与首屏。
 
-**关键路径**：`001 → 002 → 003 → 004 → 006 → 007 → 008 → 009 → 014`。
+**关键路径**：`001 → 002 → 003 → 004 → 005 → 007 → 006 → 008 → 009 → 014`（006 依赖 007，010 从 006 分支）。
 
 ### 1.1 v1.0 → v2.0 的结构修正
 
@@ -26,8 +26,8 @@
 | 原编号 | 新编号 | 内容 |
 |---|---|---|
 | RFC-006（会话） | **RFC-008** | 会话、存储与刷新恢复 |
-| RFC-007（LLM） | **RFC-007** | 上下文投影与注入隔离 |
-| RFC-008（投影） | **RFC-006** | LLM 接入与结构化决策 |
+| RFC-007（LLM） | **RFC-006** | LLM 接入与结构化决策 |
+| RFC-008（投影） | **RFC-007** | 上下文投影与注入隔离 |
 
 功能归属、标题与验收标准随文件一并迁移，没有内容丢失。
 
@@ -68,7 +68,7 @@
 | RFC-004 | 003 | 005, 006 |
 | RFC-005 | 004 | 007, 011 |
 | RFC-006 | 004, 007 | 010 |
-| RFC-007 | 005, 006 | 008, 009, 011, 014, 015 |
+| RFC-007 | 005 | 008, 009, 011, 014, 015 |
 | RFC-008 | 004, 007 | 014, 015 |
 | RFC-009 | 007 | 014, 015 |
 | RFC-010 | 006 | — |
@@ -226,7 +226,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 | # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
 |---|---|---|---|
 | **C-27** | 夜间**同一结算点**可以同时满足两个阵营的胜利条件：最后一个神被狼刀、最后一只狼被女巫毒杀（`makeNightState` 残局，两个 action 都合法）。`RULES.md` §6 的 RUL-1 与 `RFCS.md` C-6 的「同时达成不可能」只论证了**猎人开枪**这一种来源，没有覆盖**狼刀 + 女巫毒药**。`src/engine/win.ts:31-33,38-53` 先判「狼是否灭绝」→ 好人胜，注释自称「防御性」。这是合法输入上的**静默裁决**，违反 `ARCH-11` / `FEATURES.md` F8 AC-4 | **Closed（Round 4 复核）**（原为阻塞 RFC-003）。由用户裁决后写入 `RULES.md` §6（新 RUL 或修订 RUL-1）；裁决前至少让 `checkWin` 抛专用的「未裁决」错误，而不是静默选一个。补 `win.test.ts` / `death-resolve.test.ts` 的「两种屠边条件同时成立」用例（两种模式），并同步 RFC-003 §2.3、`TEST-STRATEGY` 与 `win.ts` 注释 | **Closed（Round 4 复核）** · `RULES.md:233`（RUL-1）、`RFCS.md` C-6、`src/engine/win.ts:31-33,38-53`、`src/engine/phases/night.ts:89-95`、`tests/engine/win.test.ts`（无同时条件用例）、`reviews/REVIEW-RFC-003.md` Round 3 §6 | **已落榜为规则（Round 3 修复）**：`RULES.md` §6 新增 **RUL-12「狼刀在先」**（`CHANGE-REQUEST-006`）——夜间同时满足两阵营胜利条件时判 wolf 胜；`checkWin` 的判定次序已反转，判定时机（RUL-1）不变。真实规则依据见 RFC-003 §11.1 的两条引用；**Round 4 复核：Closed**（复现 + 反向探针 M1 / M1b 见 §8.6）
-| **C-28** | C-23 的事件通道已修，但**投影通道**仍暴露同样的隐藏信息：RFC-007 §2.2 的 `ProjectedContext` 直接输出 `phase: Phase`、`aliveSeats` / `deadSeats`。夜间 `state.phase` 是 `NIGHT_SEER` / `NIGHT_WITCH` / `NIGHT_HUNTER_SHOOT`（跳过或开枪阶段可直接推断身份存活 / 死因）；`state.seats` 在 `NIGHT_HUNTER_SHOOT` 时已含当夜全部死亡（探针：`deadSeats === [6,7]`）。RFC-003 §9.1 说「玩家端仍能看到天黑/天亮——它来自投影后的 `state.phase`」；按 RFC-007 的字段定义，玩家会看到内部子阶段，而不是「天黑」 | **非阻塞 RFC-003 的代码**（投影归 RFC-007），**但 RFC-007 开工前必须裁决**：把 `phase` 改成公共阶段（night / day / finished）或新增 `publicPhase`；`aliveSeats` / `deadSeats` 按公开事件（或上一次 `DAY_STARTED`）推导，夜间当夜死亡不进公共字段；RFC-007 的测试计划补死 seer / 死 witch / hunter 开枪夜三条；修正 RFC-003 §9.1 的表述 | **Open（非阻塞 RFC-003；阻塞 RFC-007）** · RFC-007 §2.2 `ProjectedContext`、RFC-003 §9.1、`src/engine/apply.ts:89-101`、`src/engine/phases/night.ts:97-106`、`reviews/REVIEW-RFC-003.md` Round 3 §7.2 |
+| **C-28** | C-23 的事件通道已修，但**投影通道**仍暴露同样的隐藏信息：RFC-007 §2.2 的 `ProjectedContext` 直接输出 `phase: Phase`、`aliveSeats` / `deadSeats`。夜间 `state.phase` 是 `NIGHT_SEER` / `NIGHT_WITCH` / `NIGHT_HUNTER_SHOOT`（跳过或开枪阶段可直接推断身份存活 / 死因）；`state.seats` 在 `NIGHT_HUNTER_SHOOT` 时已含当夜全部死亡（探针：`deadSeats === [6,7]`）。RFC-003 §9.1 说「玩家端仍能看到天黑/天亮——它来自投影后的 `state.phase`」；按 RFC-007 的字段定义，玩家会看到内部子阶段，而不是「天黑」 | **非阻塞 RFC-003 的代码**（投影归 RFC-007），**但 RFC-007 开工前必须裁决**：把 `phase` 改成公共阶段（night / day / finished）或新增 `publicPhase`；`aliveSeats` / `deadSeats` 按公开事件（或上一次 `DAY_STARTED`）推导，夜间当夜死亡不进公共字段；RFC-007 的测试计划补死 seer / 死 witch / hunter 开枪夜三条；修正 RFC-003 §9.1 的表述 | **Open（非阻塞 RFC-003；阻塞 RFC-007）** · RFC-007 §2.2 `ProjectedContext`、RFC-003 §9.1、`src/engine/apply.ts:89-101`、`src/engine/phases/night.ts:97-106`、`reviews/REVIEW-RFC-003.md` Round 3 §7.2；**RFC-007 Round 1 复核（2026-11-18）**：仍 **Open**。真实路径探针（狼刀 hunter → 查验 → 女巫 `none`）得到普通观察者的 `phase=NIGHT_HUNTER_SHOOT`、`deadSeats=[5]`，此时 `publicEvents` 还没有 `DAY_STARTED`；死 seer / 死 witch 的夜分别得到 `NIGHT_SEER` / `NIGHT_WITCH`。`TEST-STRATEGY.md:262` 计划的 `tests/server/project/night-visibility.test.ts` 在仓库中不存在。**阻塞 RFC-007**。详见 `reviews/REVIEW-RFC-007.md` §2.1 | **已修复（RFC-007 Round 1 修复）**：夜间阶段在投影里折成 `'NIGHT'`、当夜死者等天亮才进 `deadSeats`；`AI_THOUGHT` 在 `applyEvent` 里有了空折叠，投影不再崩。两条都配了会红的用例
 
 ### 8.6 RFC-003 Round 4 复核登记的冲突（2026-11-18）
 
@@ -316,7 +316,17 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | # | 冲突 | 处理 | 状态与痕迹 |
 |---|---|---|---|
-| **C-40** | 索引表与两份 RFC 的抬头都写「007 依赖 006」。但按正文，**实际是 006 依赖 007**：RFC-006 §2.4 的 `buildUserMessage(ctx: ProjectedContext)` 要用 RFC-007 的类型；RFC-007 的 `INJECTION_NOTICE` 常量由 006 的 `buildSystemPrompt` 引入；连「AI 发言超长由谁截断」也写在 006。RFC-007 自身是纯函数，不调 LLM、不依赖 006 的任何东西 | 按用户裁决改顺序：**RFC-007 只依赖 RFC-005；RFC-006 依赖 RFC-004 + RFC-007**。同步改 `RFCS.md` §1 的依赖图与 §2 的状态表 | **已修** · `RFCs/RFC-006` 抬头、`RFCs/RFC-007` 抬头、`RFCS.md` §1/§2 |
+| **C-40** | 索引表与两份 RFC 的抬头都写「007 依赖 006」。但按正文，**实际是 006 依赖 007**：RFC-006 §2.4 的 `buildUserMessage(ctx: ProjectedContext)` 要用 RFC-007 的类型；RFC-007 的 `INJECTION_NOTICE` 常量由 006 的 `buildSystemPrompt` 引入；连「AI 发言超长由谁截断」也写在 006。RFC-007 自身是纯函数，不调 LLM、不依赖 006 的任何东西 | 按用户裁决改顺序：**RFC-007 只依赖 RFC-005；RFC-006 依赖 RFC-004 + RFC-007**。同步改 `RFCS.md` §1 的依赖图与 §3 的依赖表 | **已修（RFC-007 Round 1 复核补全）** · `RFCs/RFC-006` 抬头、`RFCs/RFC-007` 抬头、`RFCS.md` §1/§3；评审时发现 §3 依赖表、§1 关键路径与 §1.1 映射表仍是错的，已同步修正。`RFCs/RFC-006` §1 的「此时还没有上下文投影」也已去掉。证据见 `reviews/REVIEW-RFC-007.md` §1.2 |
+
+### 8.13 RFC-007 Round 1 评审登记的冲突（2026-11-18）
+
+> 由第一轮 `/review-rfc 007` 登记；完整证据见 `reviews/REVIEW-RFC-007.md`。C-41 阻塞 RFC-007 / RFC-006；C-42 / C-43 非阻塞 RFC-007。
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-41** | `AI_THOUGHT` 是 RFC-007 §2.5 定义的私有事件，要求进事件流并可重放；但 `applyEvent` 没有折叠它，`default` 抛 `UnknownEventError`。`project()` 对每条事件都调用 `applyEvent`，因此事件流里一出现 `AI_THOUGHT`，投影就抛错。`tests/engine/replay.test.ts:288-301` 还把 `AI_THOUGHT` 当作「未实现事件」断言抛错，与 RFC-007 AC-15 直接冲突 | **阻塞 RFC-007 / RFC-006**。按 RFC-007 实现：给 `AI_THOUGHT` 加 no-op 折叠（不写 state，只推进 `seq`），把 RFC-002 的「未实现事件」用例换成真正未知的类型，补 `project()` 的 AC-15 用例（本人 `privateEvents` 有、其余 8 人没有） | **Open** · `src/shared/events.ts:132`、`src/engine/apply.ts:95-97`、`src/server/project/index.ts:35`、`tests/engine/replay.test.ts:288-301`、`RFCs/RFC-007...:97-107,172-173,242`、`reviews/REVIEW-RFC-007.md` §2.2 | **已修复（RFC-007 Round 1 修复）**：夜间阶段在投影里折成 `'NIGHT'`、当夜死者等天亮才进 `deadSeats`；`AI_THOUGHT` 在 `applyEvent` 里有了空折叠，投影不再崩。两条都配了会红的用例
+| **C-42** | RFC-007 §3 的交付物写 `src/server/llm/inject.ts`，实现落在 `src/server/project/inject.ts`（D-1 已记录）；但 `escapeAngleBrackets` 被放进 `src/shared/injection.ts`，使 `src/shared/` 出现第三处运行时逻辑。`ARCH-2` 只允许类型与纯常量，C-13 的例外只列了 `visibility.ts` 与 `schemas.ts`；D-2 的「纯函数符合 ARCH-2」理由不成立 | **非阻塞 RFC-007，阻塞一次规则同步**：把 `escapeAngleBrackets` 移到 `src/server/project/inject.ts`，或由 `/manage-changes` 把 C-13 的例外扩为「类型、纯常量、`visibility.ts`、`schemas.ts`、`injection.ts`」 | **Open（非阻塞）** · `src/shared/injection.ts:20-22`、`src/server/project/inject.ts:26`、`RULES.md:127`、`RFCS.md` C-13、`RFCs/RFC-007...:210`、`reviews/REVIEW-RFC-007.md` §2.4 / §7 N1 |
+| **C-43** | RFC-007 §2.6 把 `wrapPublicUtterance` 的签名写成 `: string`，但 AC-13 又要求超长输入「返回错误码」；实现返回 `{ ok: true; text } \| { ok: false; code }`。两者不能同时成立，§8 的 Implementation Notes 也没有记录这个偏离 | **非阻塞**：按 AC-13 的可用性要求改 §2.6 的签名为 `WrapResult`，并在 §8.2 记一条；不要改成抛异常或截断 | **Open（非阻塞）** · `RFCs/RFC-007...:112,169-174`、`src/server/project/inject.ts:12-28`、`reviews/REVIEW-RFC-007.md` §2.4 / §7 N2 |
 
 ---
 
@@ -324,6 +334,8 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.39 | RFC-007 Round 1 修复（Status → Implemented）：C-28 夜间投影折叠 + 死者按已公布（含 `ProjectedPhase` 类型与 `legalTargets` 改口径）；C-41 `AI_THOUGHT` 空折叠；B3 的弱断言换成精确用例（`knowledge.test.ts` / `night-visibility.test.ts`） |
+| 2026-11-18 | v2.38 | RFC-007 Round 1 评审（Status → `Changes requested`）：门禁 46 files / 389 tests，覆盖率行 96.96% / 分支 93.31%；新增 **C-41**（`AI_THOUGHT` 不能折叠 / AC-15）、**C-42**（`src/shared/injection.ts` 的 ARCH-2 例外）与 **C-43**（`wrapPublicUtterance` 返回类型与 §2.6 不一致）；**C-28** 保持 Open（真实 hunter 夜探针：`phase=NIGHT_HUNTER_SHOOT`、`deadSeats=[5]`）；C-7 记录与实现核对通过；C-40 的索引残留已补全。详见 `reviews/REVIEW-RFC-007.md` |
 | 2026-11-18 | v2.37 | RFC-007 实现完成（Status → Implemented）：`project()` 按序折叠 + 9 观察者矩阵 + 角色私货矩阵；注入封装与固定声明句；红队 10 样本。用户确认 Q-007-1（带全量历史）与 Q-007-3（内心独白不计入公开时间线）；C-7 先按五参数实现 |
 | 2026-11-18 | v2.36 | RFC-005 Round 2 复核（Status → `Reviewed`）：Round 1 的四项全部通过——第二夜夜聊（M-R2-1 改回两条 → 6 红，另做端到端探针走完夜聊接狼刀）、入夜清票（M-R2-2 删 `delete next.votes` → 1 红；完整崩溃序列不再崩）、四处正文回写（§2.1 / §2.4 / Q-005-1 / AC-3 与 `shared/visibility.ts` 一致）、500 字截断（M-R2-4 删截断 → 1 红）。门禁 44 files / 369 tests、覆盖率行 96.96% / 分支 93.31%。C-35 / C-36 / C-37 关闭；C-38 仅 ③ 关闭；新登记 C-39（非阻塞文档 / 测试残留）。详见 `reviews/REVIEW-RFC-005.md` Round 2 |
 | 2026-11-18 | v2.35 | RFC-005 Round 1 修复（Status → Implemented）：C-35 第二夜夜聊缺失（含测试锁住错误行为）、C-36 自曝未清票箱导致崩溃、C-37 正文未回写裁决、C-38 截断无测试——全部修复并各自做反向探针 |

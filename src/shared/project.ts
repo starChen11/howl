@@ -30,9 +30,13 @@ export interface RoleKnowledge {
   knownKillTarget: SeatId | null;
 }
 
+/** 观察者能知道的阶段：夜间一律折成 `'NIGHT'`（C-28）。 */
+export type ProjectedPhase = 'LOBBY' | 'NIGHT' | Exclude<Phase, 'LOBBY' | 'FINISHED'> | 'FINISHED';
+
 export interface ProjectedContext {
   self: { seat: SeatId; role: Role; alive: boolean; personaId: string | null };
-  phase: Phase;
+  /** 投影后的阶段：夜间的子阶段（seer / witch / hunter 开枪）全部折成 `'NIGHT'`。 */
+  phase: ProjectedPhase;
   day: number;
   aliveSeats: SeatId[];
   deadSeats: SeatId[];
