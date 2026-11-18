@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.22 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.1 · 最后更新 2026-11-18
+> 版本 v2.22 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.2 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -39,7 +39,7 @@
 |---|---|---|---|---|
 | [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Reviewed |
 | [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
-| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Changes requested |
+| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Implemented |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Not started |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Not started |
@@ -225,7 +225,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
 |---|---|---|---|
-| **C-27** | 夜间**同一结算点**可以同时满足两个阵营的胜利条件：最后一个神被狼刀、最后一只狼被女巫毒杀（`makeNightState` 残局，两个 action 都合法）。`RULES.md` §6 的 RUL-1 与 `RFCS.md` C-6 的「同时达成不可能」只论证了**猎人开枪**这一种来源，没有覆盖**狼刀 + 女巫毒药**。`src/engine/win.ts:31-33,38-53` 先判「狼是否灭绝」→ 好人胜，注释自称「防御性」。这是合法输入上的**静默裁决**，违反 `ARCH-11` / `FEATURES.md` F8 AC-4 | **Open / 阻塞 RFC-003**。由用户裁决后写入 `RULES.md` §6（新 RUL 或修订 RUL-1）；裁决前至少让 `checkWin` 抛专用的「未裁决」错误，而不是静默选一个。补 `win.test.ts` / `death-resolve.test.ts` 的「两种屠边条件同时成立」用例（两种模式），并同步 RFC-003 §2.3、`TEST-STRATEGY` 与 `win.ts` 注释 | **Open · 阻塞** · `RULES.md:233`（RUL-1）、`RFCS.md` C-6、`src/engine/win.ts:31-33,38-53`、`src/engine/phases/night.ts:89-95`、`tests/engine/win.test.ts`（无同时条件用例）、`reviews/REVIEW-RFC-003.md` Round 3 §6 |
+| **C-27** | 夜间**同一结算点**可以同时满足两个阵营的胜利条件：最后一个神被狼刀、最后一只狼被女巫毒杀（`makeNightState` 残局，两个 action 都合法）。`RULES.md` §6 的 RUL-1 与 `RFCS.md` C-6 的「同时达成不可能」只论证了**猎人开枪**这一种来源，没有覆盖**狼刀 + 女巫毒药**。`src/engine/win.ts:31-33,38-53` 先判「狼是否灭绝」→ 好人胜，注释自称「防御性」。这是合法输入上的**静默裁决**，违反 `ARCH-11` / `FEATURES.md` F8 AC-4 | **Open / 阻塞 RFC-003**。由用户裁决后写入 `RULES.md` §6（新 RUL 或修订 RUL-1）；裁决前至少让 `checkWin` 抛专用的「未裁决」错误，而不是静默选一个。补 `win.test.ts` / `death-resolve.test.ts` 的「两种屠边条件同时成立」用例（两种模式），并同步 RFC-003 §2.3、`TEST-STRATEGY` 与 `win.ts` 注释 | **Open · 阻塞** · `RULES.md:233`（RUL-1）、`RFCS.md` C-6、`src/engine/win.ts:31-33,38-53`、`src/engine/phases/night.ts:89-95`、`tests/engine/win.test.ts`（无同时条件用例）、`reviews/REVIEW-RFC-003.md` Round 3 §6 | **已落榜为规则（Round 3 修复）**：`RULES.md` §6 新增 **RUL-12「狼刀在先」**（`CHANGE-REQUEST-006`）——夜间同时满足两阵营胜利条件时判 wolf 胜；`checkWin` 的判定次序已反转，判定时机（RUL-1）不变。真实规则依据见 RFC-003 §11.1 的两条引用
 | **C-28** | C-23 的事件通道已修，但**投影通道**仍暴露同样的隐藏信息：RFC-007 §2.2 的 `ProjectedContext` 直接输出 `phase: Phase`、`aliveSeats` / `deadSeats`。夜间 `state.phase` 是 `NIGHT_SEER` / `NIGHT_WITCH` / `NIGHT_HUNTER_SHOOT`（跳过或开枪阶段可直接推断身份存活 / 死因）；`state.seats` 在 `NIGHT_HUNTER_SHOOT` 时已含当夜全部死亡（探针：`deadSeats === [6,7]`）。RFC-003 §9.1 说「玩家端仍能看到天黑/天亮——它来自投影后的 `state.phase`」；按 RFC-007 的字段定义，玩家会看到内部子阶段，而不是「天黑」 | **非阻塞 RFC-003 的代码**（投影归 RFC-007），**但 RFC-007 开工前必须裁决**：把 `phase` 改成公共阶段（night / day / finished）或新增 `publicPhase`；`aliveSeats` / `deadSeats` 按公开事件（或上一次 `DAY_STARTED`）推导，夜间当夜死亡不进公共字段；RFC-007 的测试计划补死 seer / 死 witch / hunter 开枪夜三条；修正 RFC-003 §9.1 的表述 | **Open（非阻塞 RFC-003；阻塞 RFC-007）** · RFC-007 §2.2 `ProjectedContext`、RFC-003 §9.1、`src/engine/apply.ts:89-101`、`src/engine/phases/night.ts:97-106`、`reviews/REVIEW-RFC-003.md` Round 3 §7.2 |
 
 ---
@@ -269,6 +269,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.23 | RFC-003 Round 3 修复（Status → Implemented）：C-27 落榜为 **RUL-12「狼刀在先」**（CR-006），`checkWin` 改为先算 wolf 侧条件；补同时达成的谓词用例与真实夜间路径用例（反向探针 4 条变红）；顺带核对「witch 被刀仍可开毒」与真实规则一致；B3 真实事件覆盖、AC-6 / AC-15 断言补强 |
 | 2026-11-18 | v2.22 | RFC-003 Round 3 评审（Status → `Changes requested`）：Round 2 的 B-R2-1 / B-R2-2 / C-26 复核通过（hunter 真实路径、RUL-11、结算顺序）；16 条 AC 与门禁全绿（295 用例、覆盖率 98.15 / 96.63）。新登记 **C-27**（夜间同一结算点同时满足两阵营胜利条件，`checkWin` 静默判好人胜；阻塞）与 **C-28**（`ProjectedContext.phase` / `aliveSeats` / `deadSeats` 在夜间泄漏内部子阶段与死亡；非阻塞 RFC-003、阻塞 RFC-007）。C-23 / C-24 / C-26 关闭。详见 `reviews/REVIEW-RFC-003.md` Round 3 |
 | 2026-11-18 | v2.21 | RFC-003 Round 2 修复（Status → Implemented）：C-23 的 hunter 路径改走 `phaseChangedDraft` + 真实路径测试（反向探针变红）；C-24 落榜为 **RUL-11**（CR-005）；C-26 删除死亡排序、恢复结算顺序；补 `PAYLOAD_SCHEMAS` 键集合与真实事件集成校验；删掉 `deathCauseOf` / `NIGHT_PHASE_EVENTS` 两处死代码 |
 | 2026-11-18 | v2.20 | RFC-003 Round 2 评审（Status → `Changes requested`）：B1 崩溃已修且双向验证通过；B3 schema 本体已补且真实载荷可校验；但 B2 的 hunter 路径仍公开泄漏（`night.ts:102-109` 未走 `phaseChangedDraft`），新增 hunter 测试只锁 helper，`leaksOf` 会误报合法 `HUNTER_SHOOT`。C-24 的「毒药优先」仍未进 `RULES.md` §6；新登记 C-26（`resolveNight` 座位排序改变死亡事件顺序）。详见 `reviews/REVIEW-RFC-003.md` Round 2 |

@@ -51,7 +51,7 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 4. 若女巫本夜用了 `poison`，其目标出局。
 
 **同一席位既被刀又被毒**（第 3、4 步指向同一人）：按 **RUL-11** 只出局一次、死因记为**毒药**，因此若该席位是 hunter 则**不开枪**。顺序上它仍排在「狼刀」的位置（`diedLastNight` 依赖结算顺序，见 RFC-004）。
-5. 全部出局者应用完毕后，**先调用 `checkWin`（RFC-002 §2.7）判一次胜负**（RUL-1）。
+5. 全部出局者应用完毕后，**先调用 `checkWin`（RFC-002 §2.7）判一次胜负**（RUL-1）。若这一批死亡**同时**满足两阵营的胜利条件（例如最后一名神被刀、最后一只狼被毒），按 **RUL-12「狼刀在先」判 wolf 胜**。
    - 已分出胜负 → 对局结束，**不进入开枪阶段**。
    - 未分出胜负 → 继续下一步。
 6. **猎人**：若出局方式是「被狼刀」则进入 `NIGHT_HUNTER_SHOOT`；若是「被毒杀」则**不进入**（FR-17）。
@@ -252,7 +252,7 @@ $ pnpm exec vitest run --project unit --coverage
 | 项 | 问题 | 处理 | 复验 |
 |---|---|---|---|
 | **B1 / C-24** 合法输入崩溃 | 女巫毒「狼刀目标」时，`resolveNight` 产出两条 `Death` → 两条 `PLAYER_DIED` → `applyPlayerDied` 把第二次出局当数据损坏抛 `InvalidEventStreamError`。**一个正常操作把引擎打崩** | ①按座位归并死亡（必须）；②**毒药优先**，且**已落榜为 `RULES.md` 的 RUL-11**（`CHANGE-REQUEST-005`）——RFC 的实现说明不是规则依据 | `resolveNight({killTarget:7, poisonTarget:7})` 只产出 `[{seat:7, cause:'poison'}]` 与一条 kill 效果；目标是 hunter 时不进 `NIGHT_HUNTER_SHOOT`；多死时顺序是结算顺序（狼刀先、毒药后） |
-| **B2 / C-23** 夜间相位公开泄漏 | `PHASE_CHANGED` 全是 `public`：跳过 `NIGHT_SEER`/`NIGHT_WITCH` 等于告诉全场「seer / witch 已出局」；`→NIGHT_HUNTER_SHOOT` 泄漏 hunter 死于狼刀而非毒杀。RFC-007 的 `publicEvents` 会把它原样放进每个 AI 的上下文（FR-9） | **夜间相位一律 `server`**，白天相位仍 `public`。规则收敛在 `src/engine/phases/visibility.ts` 的 `phaseVisibility(to)`：`to.startsWith('NIGHT_') ? 'server' : 'public'`。**所有相位草稿都必须经 `phaseChangedDraft()` 产出**——Round 2 抓到 `NIGHT_RESOLVE → NIGHT_HUNTER_SHOOT` 这一条漏改、仍硬编码 `public`。玩家端仍能看到「天黑/天亮」——它来自投影后的 `state.phase`，不是事件流；天亮广播由 RFC-004 的 `DAY_STARTED` 承担 | `tests/engine/night-visibility.test.ts`：一整夜的公开事件只允许「天亮的相位推进」与 `GAME_ENDED`；死 seer / 死 witch 两条跳过路径的相位事件都是 `server` |
+| **B2 / C-23** 夜间相位公开泄漏 | `PHASE_CHANGED` 全是 `public`：跳过 `NIGHT_SEER`/`NIGHT_WITCH` 等于告诉全场「seer / witch 已出局」；`→NIGHT_HUNTER_SHOOT` 泄漏 hunter 死于狼刀而非毒杀。RFC-007 的 `publicEvents` 会把它原样放进每个 AI 的上下文（FR-9） | **夜间相位一律 `server`**，白天相位仍 `public`。规则收敛在 `src/engine/phases/visibility.ts` 的 `phaseVisibility(to)`：`to.startsWith('NIGHT_') ? 'server' : 'public'`。**所有相位草稿都必须经 `phaseChangedDraft()` 产出**——Round 2 抓到 `NIGHT_RESOLVE → NIGHT_HUNTER_SHOOT` 这一条漏改、仍硬编码 `public`。玩家端仍能看到「天黑/天亮」——**但 `state.phase` 本身会把夜间子阶段漏出去**（`NIGHT_SEER`/`NIGHT_WITCH`/`NIGHT_HUNTER_SHOOT` 都在名字里），所以投影（RFC-007）不能直接透出原始 `phase`，要折叠成「夜晚 / 白天」两态；这是 C-28，留给 RFC-007。天亮广播由 RFC-004 的 `DAY_STARTED` 承担 | `tests/engine/night-visibility.test.ts`：一整夜的公开事件只允许「天亮的相位推进」与 `GAME_ENDED`；死 seer / 死 witch 两条跳过路径的相位事件都是 `server` |
 | **B3** payload schema 缺失 | RFC-003 接管的 6 个事件没有 Zod schema，违反 RFC-001 §2.3 的「每个 payload」 | 在 `src/shared/schemas.ts` 补 `WOLF_KILL_CHOSEN` / `SEER_CHECKED` / `WITCH_POTION_USED` / `PLAYER_DIED` / `HUNTER_SHOOT` / `PHASE_CHANGED` 六个 schema，并登记进 `PAYLOAD_SCHEMAS`。**`GAME_ENDED` 的归属**：它第一次由 RFC-003 产出（夜间即可终局），schema 定义在这里，RFC-004 复用 | `tests/shared/schemas.test.ts`：每个 schema 一对正反例 |
 
 ### 9.2 非阻塞项
@@ -339,3 +339,66 @@ $ pnpm exec vitest run --project unit --coverage
 Round 1 我修了「夜间相位可见性」，但只改了**我先想到的那一处**，没做全局搜索；新测试又只断言了 helper 的规则，于是「修了一半」被两层掩盖：代码漏一处、测试也不覆盖那一处。
 
 **以后的纪律**：换一条语义（例如「所有相位草稿走同一个函数」）之后，先 `grep` 该语义的所有产出点，再写一条走**真实路径**的测试，最后用反向探针确认它会红。
+
+---
+
+## 11. Round 3 评审回应（Changes requested → 本轮修复）
+
+Round 3 的结论是 **Changes requested / High**，只有一个阻塞项，但它是**规则层的缺口**，不是代码 bug。
+
+### 11.1 唯一阻塞：C-27 · 同时满足两阵营胜利条件
+
+**场景**（完全合法）：场上只剩 1 名神、若干村民、1 只狼。那一夜 wolf 刀最后一名神，witch 毒最后一只狼。同一批死亡后：
+
+- wolf 侧胜利条件成立（屠边达成）；
+- 好人侧胜利条件成立（wolf 全部出局）。
+
+`checkWin` 当时**先判「wolf 是否全灭」**，于是静默判好人胜。
+
+**为什么这是阻塞**：`RULES.md` §6 没有这条裁决，`RFCS.md` 的 C-6 只论证过「猎人开枪」那一种同时达成（且结论是它不可能发生），**没有覆盖「同一批死亡」**。按 `ARCH-11`，未裁决的分支必须抛错，不许默认选一个 —— 而它默认选了。
+
+**处理**：
+1. 走 `/manage-changes`（[`changes/CHANGE-REQUEST-006.md`](../changes/CHANGE-REQUEST-006.md)）→ **RUL-12「狼刀在先」**：夜间同时满足时**判 wolf 胜**。依据是真实规则（[百度百科·女巫](https://baike.baidu.com/item/%E5%A5%B3%E5%B7%AB/20587689)、[知乎·结算问题](https://zhuanlan.zhihu.com/p/625739586)），不是实现便利。
+2. `checkWin` 的判定次序反过来：**先算 wolf 侧条件**，再算「wolf 是否灭绝」。
+3. `RUL-1` 与判定时机**不变**：仍是一批死亡后判一次。RUL-12 **不是**「技能顺序在先」。
+
+**我在这一步差点搞错**：初稿的 CR 推荐「好人胜」，理由写得挺顺（狼全灭即失败、界面好解释）——那是从直觉推的。你要求先查真实规则，查完发现**推荐反了**，真实规则判 wolf 胜。教训记进 §11.4。
+
+**验证**：`win.test.ts` 直接构造三种同时达成（屠边的神/民、屠城）断言 wolf 胜；`death-resolve.test.ts` 走**真实夜间路径**（残局 + `WOLF_KILL` + `WITCH_ACT(poison)`）断言 `GAME_ENDED { result: 'wolf' }`。反向探针：把次序改回「先判 wolf 全灭」→ 4 条用例变红。
+
+### 11.2 顺带核对的一条真实规则（用户提问引出）
+
+你问「女巫被刀之后、且她是最后一神，能不能开毒」。查证结论：**能**。
+
+- [狼人杀规则站](https://langrensha.net/strategy/2023041701.html)：女巫被 wolf 刀了还能用毒，因为**她的死亡是在白天宣布的，夜间仍可行动**。
+- [另一篇](https://www.langrensha.net/strategy/2022060801.html)：**白天出局**（被放逐 / 被 hunter 带走）才不能用毒。
+
+本 RFC 的实现正好如此：死亡在 `NIGHT_RESOLVE` 才应用，witch 在 `NIGHT_WITCH` 行动时仍存活；她在更早的夜晚或白天出局后，`findAliveByRole` 会跳过 `NIGHT_WITCH` 阶段。**无需改动**，但这条行为从此有出处，不是「碰巧如此」。
+
+### 11.3 非阻塞项
+
+| # | 处理 |
+|---|---|
+| **C-28**（阻塞 RFC-007） | 不在本 RFC 的代码范围。已修正 §9.1 里「玩家端从 `state.phase` 看到天黑」的说法——`phase` 的取值本身会漏出夜间子阶段，所以投影必须把它折叠成两态。留给 RFC-007，`TEST-STRATEGY` 有对应计划行 |
+| **B3 真实事件覆盖** | `events.test.ts` 新增「枪夜」与「终局夜」两段：`HUNTER_SHOOT` / `PLAYER_DIED(cause=shoot)` / `GAME_ENDED` 的 payload 现在由**真实事件**驱动校验，不再只有手写 fixture |
+| **AC-6 / AC-15 断言补强** | AC-6 增「查好人得 `not-wolf`」+ 断言状态里没有承载查验结果的字段；AC-15 增「毒药夜 / 开枪夜的效果集、死亡集与 `PLAYER_DIED` 事件集三者一致」 |
+| **测试名与注释** | `night-visibility.test.ts` 的「公开事件数为 0」改名（实际是泄漏检查）；`replay.test.ts` 的 `NIGHT_VOTES`（不是 14 个阶段之一）改为 `NIGHT_WITCH`；`RULES.md` 版本头补「最后更新」 |
+| **C-25** | F1 / F3 / F8 的功能映射仍待 `/manage-changes`；非阻塞 |
+
+### 11.4 教训
+
+C-27 让我发现自己的一个坏习惯：**遇到规则问题先想「怎么实现最省事」，再给它编一个说得通的理由**。CR-006 初稿推荐「好人胜」就是产物——理由三条都很顺，但没有一条来自真实规则。
+
+以后遇到规则缺口的顺序应当是：**先查真实规则 → 再问用户 → 最后才考虑实现成本**。查证发现业界已有定论时，实现成本不再是理由。
+
+### 11.5 本轮验证输出
+
+```
+$ pnpm typecheck    → exit 0
+$ pnpm lint         → exit 0
+$ pnpm format:check → exit 0
+$ pnpm build        → exit 0
+$ pnpm test         → Test Files 37 passed (37) · Tests 307 passed (307)  exit 0
+$ pnpm exec vitest run --project unit --coverage
+  All files | % Stmts 98.14 | % Branch 96.66 | % Funcs 100 | % Lines 98.00
+```

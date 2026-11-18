@@ -8,14 +8,14 @@ Howl 是狼在夜里的长嚎，也是玩家在白天的"喊话"——两个词�
 
 ## 状态
 
-v0.12 · **工程骨架 + 引擎内核 + 第一夜可跑完。** RFC-001 四轮评审后 `Reviewed`（[`CHANGE-REQUEST-003`](changes/CHANGE-REQUEST-003.md) 统一 payload、[`CHANGE-REQUEST-004`](changes/CHANGE-REQUEST-004.md) 定派生状态）；RFC-002 三轮评审后 `Reviewed`；RFC-003 的 Round 1/2 阻塞项已修（[`CHANGE-REQUEST-005`](changes/CHANGE-REQUEST-005.md) 把「毒药优先」落榜为 RUL-11），**Round 3 评审为 `Changes requested`（`C-27`：合法夜间结算同时满足两阵营胜利条件，`checkWin` 静默判好人胜；`C-28`：投影通道泄漏，归 RFC-007）**，见 [`reviews/REVIEW-RFC-003.md`](reviews/REVIEW-RFC-003.md)。295 个用例全绿，引擎覆盖率行 98.0% / 分支 96.6%。[`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC（2 个 `Reviewed`、1 个 `Changes requested`、13 个 `Not started`），[`TEST-STRATEGY.md`](TEST-STRATEGY.md) 覆盖全部 222 条验收标准，[`RULES.md`](RULES.md) 76 条工程规则（含 `RUL-1`~`RUL-11` 裁决），[`FEATURES.md`](FEATURES.md) 57 个功能，[`PRD.md`](PRD.md) 58 条需求。
+v0.12 · **工程骨架 + 引擎内核 + 第一夜可跑完。** RFC-001 四轮评审后 `Reviewed`（[`CHANGE-REQUEST-003`](changes/CHANGE-REQUEST-003.md) 统一 payload、[`CHANGE-REQUEST-004`](changes/CHANGE-REQUEST-004.md) 定派生状态）；RFC-002 三轮评审后 `Reviewed`；RFC-003 的 Round 1/2 阻塞项已修（[`CHANGE-REQUEST-005`](changes/CHANGE-REQUEST-005.md) 把「毒药优先」落榜为 RUL-11），**Round 3 评审为 `Changes requested`（`C-27`：合法夜间结算同时满足两阵营胜利条件，`checkWin` 静默判好人胜；`C-28`：投影通道泄漏，归 RFC-007）**，见 [`reviews/REVIEW-RFC-003.md`](reviews/REVIEW-RFC-003.md)。307 个用例全绿，引擎覆盖率行 98.0% / 分支 96.7%。[`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC（2 个 `Reviewed`、1 个 `Changes requested`、13 个 `Not started`），[`TEST-STRATEGY.md`](TEST-STRATEGY.md) 覆盖全部 222 条验收标准，[`RULES.md`](RULES.md) 77 条工程规则（含 `RUL-1`~`RUL-12` 裁决），[`FEATURES.md`](FEATURES.md) 57 个功能，[`PRD.md`](PRD.md) 58 条需求。
 
 已有代码：`src/shared/`（跨层类型契约）、`src/engine/`（纯函数状态机、事件流折叠、种子、效果管道、胜负谓词）、`src/server/`（Fastify 骨架 + `/api/health`）、`src/client/`（占位页）。引擎现在能跑完**第一夜**：发牌 → 狼刀 → 查验 → 用药 → 死亡结算 →（猎人开枪）→ 天亮。白天与投票是 RFC-004 的活。
 
 ```bash
 pnpm install
 pnpm dev        # http://localhost:5173
-pnpm test       # 295 个用例，含五条命令与覆盖率门禁
+pnpm test       # 307 个用例，含五条命令与覆盖率门禁
 ```
 
 ## 怎么参与开发
