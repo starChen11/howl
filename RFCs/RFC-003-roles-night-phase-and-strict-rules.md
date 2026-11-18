@@ -131,3 +131,110 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 | Q-003-2 | 预言家能否查已出局玩家 | **(assumption)** 不能，同上 |
 | Q-003-3 | 预言家能否选择不查验 | **(assumption)** 不能；每夜必须查一人（FR-4「查验一人」） |
 | Q-003-4 | 女巫能否毒自己 | **(assumption)** 可以——RUL-3 与 FR-17 只禁止「解药自救」，未禁止毒自己 |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。评审在**新会话**里只凭仓库文件判断。分支 `rfc/001-project-scaffold-and-shared-contracts`（RFC-001/002 的代码也在其上，尚未合并回 `main`）。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| 整体计划（含 Q-003-1~4、RUL-3/5/8 按 RULES §6） | 批准 |
+| 相位推进机制（D-1） | 选**新增 `PHASE_CHANGED` 事件** |
+| AC-16 与 RFC-002 §2.3 的冲突 | 选**改成 REJECTED，修正 AC-16** |
+
+**C-21（modifier 注册表进 `GAME_STARTED`）不阻塞本 RFC**：RFC-003 不注册任何 modifier，`step` 的 `modifiers` 入参原样传给 handler，留给遗物系统。
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 | 批准 |
+|---|---|---|---|
+| **D-1** | `GameEventMap` 新增 `PHASE_CHANGED { from, to }`（`visibleTo: 'public'`） | 相位推进需要一个事件来承载：`NIGHT_WITCH` 收到 `potion: 'none'` 时**什么也没发生**，没有别的事件能表示「这一阶段结束了」。没有它只能靠隐式推导，而「无事发生」的转移无处安放。RFC-001 §2.3 明文允许后续 RFC 增加成员 | 用户批准 |
+| **D-2** | `NIGHT_RESOLVE` 是**瞬态**：最后一个夜间 action 的 handler 一次产出 `PHASE_CHANGED(→RESOLVE)` + 死亡事件 + `PHASE_CHANGED(→终点)` 或 `GAME_ENDED` | 无 action 的阶段无法被 `step` 驱动；把它做成瞬态既保留了阶段图的可观测性，又不需要额外的「推进」action | 计划内 |
+| **D-3** | `PLAYER_DIED` 的可见性是 **`server`** | 死因（刀 / 毒）在真实规则里**不公开**，天亮只公布「谁死了」。若 `PLAYER_DIED` 走 `public`，`cause` 会随公开事件泄漏给玩家。公开广播由 RFC-004 的 `DAY_STARTED.diedLastNight` 承担，那里没有 `cause` | 计划内的安全决定，见下 |
+| **D-4** | `GameState` 新增两个派生字段：`night?: { killTarget?, healTarget?, poisonTarget? }`、`potionsUsed?: { heal, poison }` | C-18 的规则：派生字段合法，但只能由 `applyEvent` 写、必须可完整重建。药水位整局累计（RUL-3 / FR-17），`night` 每次进入新的一夜清空 | 计划内 |
+| **D-5** | `NOT_YOUR_TURN` 的机械含义是「**阶段对，但提交者不是该阶段的行动者**」；**阶段不对**一律由 `step` 判成 `PHASE_MISMATCH` | 见 §8.3 的 AC-8 修正：AC 原文把「同一夜第二次用药」写成 `NOT_YOUR_TURN`，但那时阶段已经不是 `NIGHT_WITCH`，按 RFC-002 §2.3 的判据是 `PHASE_MISMATCH` | 用户批准（AC 修正） |
+| **D-6** | 第一只提交 `WOLF_KILL` 的存活狼决定刀口，随后阶段立刻推进 | RFC-003 没有定义多狼共识（夜聊在 RFC-005）。先到先得，**不做多数表决**；若要表决，属 RFC-005 的变更 | 计划内 |
+| **D-7** | `DECK` 与发牌从 `init.ts` 移到新的 `deal.ts`；`createInitialState` 增加可选 `deck` 参数 | §3 已把 `deal.ts` 列为交付物；`deck` 参数让「板子规模与座位数不一致」这条防御分支可测，也为 F45 留缝 | 计划内 |
+| **D-8** | 新增 `src/engine/reject.ts`（拒绝草稿构造）与 `src/engine/queries.ts`（只读查询） | §3 列了 `queries.ts`；`reject.ts` 是 §3 之外的拆分——`step` 与四个夜间 handler 都要产出 `REJECTED`，各写一份迟早出现两种 `code` 拼写 | 计划内 |
+| **D-9** | 测试文件按 `TEST-STRATEGY` 拆成 6 个（`deal` / `night` / `seer` / `witch` / `death-resolve` / `queries`），不是 §3 的 3 个 | 计划与 RFC 的差异，按更细的计划走 | 计划内 |
+
+### 8.3 验收标准的修正（三处）
+
+实现时发现三条 AC 与 RFC-002 §2.3 的机械判据矛盾。**按判据实现，修改 AC 措辞**，并在此记录——不静默按其中一方裁决。
+
+| AC | 原文 | 问题 | 改为 |
+|---|---|---|---|
+| **AC-8** | 「同一夜第二次提交 `WITCH_ACT` → `NOT_YOUR_TURN`（该阶段已结束）」 | 那时阶段已不是 `NIGHT_WITCH`，按判据是 `PHASE_MISMATCH`。要让它是 `NOT_YOUR_TURN`，就得给「阶段已结束」开特例，而这会破坏「判据是机械的」 | 第二次用药 → `PHASE_MISMATCH`；`NOT_YOUR_TURN` 保留给「阶段对但行动者不对」（如非狼提交 `WOLF_KILL`） |
+| **AC-16** | 「对本 phase 提交任何 action 均抛 `UnhandledTransitionError`」 | 抛错的条件是「action **在**允许集合内却没有 handler」。`DAY_ANNOUNCE` 的允许集为空，所以任何 action 都是 `PHASE_MISMATCH`；要让它抛错就得给空阶段声明允许 action，而那会破坏 RFC-002 AC-9（每个允许对必须有 handler） | `DAY_ANNOUNCE` 的允许集为空，任何 action → `Rejected`（`PHASE_MISMATCH`） |
+| **AC-14** | 「刀杀的猎人正是最后一个神 → 对局在第一次 `checkWin` 处结束」 | 判据正确，但**没有任何 AC 要求 `phase === 'FINISHED'`**。实现里 `GAME_ENDED` 会把相位设成 `FINISHED`，这是新增行为 | 已在测试中断言「同一步内结束、无开枪阶段、无 `HUNTER_SHOOT` 事件」 |
+
+### 8.4 补充决定
+
+- **`SEER_CHECKED` 不写进 `state`**：查验结果是私有信息，只以事件存在。写进状态就成了第二份来源，而投影（RFC-007）读事件。
+- **`applyPhaseChanged` 校验 `from === state.phase`**：不一致说明事件流被拼错了；静默接受会让重放走进一个从未存在过的阶段。
+- **解药通过「不产生击杀效果」抵消狼刀**，而不是「先杀后救」。后者会产生「死了又活」的中间态，与 RUL-8 的语义不符。
+- **`finishNight` 的刀口可以由调用方覆盖**：狼刀可能直接触发结算（seer 与 witch 都已出局），而那条 `WOLF_KILL_CHOSEN` 此刻还是草稿、尚未折叠。这个坑在 AC-14 的测试里被抓到过一次。
+- **`PLAYER_DIED` 重复或指向不存在的座位 → 抛 `InvalidEventStreamError`**：数据损坏要炸出来。
+
+### 8.5 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 引擎新增 | `src/engine/deal.ts`、`src/engine/queries.ts`、`src/engine/reject.ts`、`src/engine/phases/night.ts`、`src/engine/resolve/deaths.ts` |
+| 引擎修改 | `src/engine/init.ts`（改用 `deal.ts`）、`src/engine/apply.ts`（6 个事件的折叠）、`src/engine/step.ts`（并入夜间 handler、START 之后推进相位）、`src/engine/transitions.ts`（填五个夜晚阶段） |
+| 共享修改 | `src/shared/events.ts`（+`PHASE_CHANGED`、运行时清单）、`src/shared/domain.ts`（+`NightContext` / `PotionUsage` 与两个派生字段） |
+| 测试新增 | `tests/engine/deal.test.ts`、`night.test.ts`、`seer.test.ts`、`witch.test.ts`、`death-resolve.test.ts`、`queries.test.ts`；夹具 `tests/fixtures/night.ts` |
+| 测试修改 | `tests/engine/{reject,replay,events,transitions}.test.ts`（RFC-002 时代的边界断言，随阶段表扩张更新） |
+| 文档 | 本文件 §8、`RFCS.md`、`TEST-STRATEGY.md`、`README.md` |
+
+### 8.6 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `deal.test.ts` · 50 个固定种子各发一次，计数恒为 3/1/1/1/3 | PASS |
+| 2 | 同上 · 同 seed 两次发牌一致；`roles` 与 `GAME_STARTED` payload 同源 | PASS |
+| 3 | 同上 · 50 个种子里玩家席位拿到过狼 / 神 / 民三类 | PASS |
+| 4 | `night.test.ts` · `WOLF_KILL_CHOSEN` 的 `visibleTo === 'wolves'`，且状态里记下刀口 | PASS |
+| 5 | 同上 · `TARGET_NOT_ALIVE` / `WOLF_KILL_WOLF`，状态除 `seq` 外不变 | PASS |
+| 6 | `seer.test.ts` · 三种目标各查一次，`visibleTo === 'seer'`，`result` 与真实阵营一致 | PASS |
+| 7 | `witch.test.ts` · 自救 → `WITCH_SELF_SAVE`；毒自己合法（Q-003-4） | PASS |
+| 8 | 同上 · 第二次用药 → `PHASE_MISMATCH`（**AC 已修正**）；非女巫 → `NOT_YOUR_TURN` | PASS |
+| 9 | 同上 · 次夜复用已用药 → `POTION_ALREADY_USED`（构造的第二夜状态） | PASS |
+| 10 | 同上 · 解药命中刀口：无 `PLAYER_DIED`，刀口存活 | PASS |
+| 11 | 同上 · 解药未命中：只有刀口出局；毒药另加一条且两人都死 | PASS |
+| 12 | `death-resolve.test.ts` · 被刀出局的 hunter 进入 `NIGHT_HUNTER_SHOOT`；开枪效果 `source: 'role'`、`order` 在 200 区；带走最后一狼 → 第二次判定好人胜 | PASS |
+| 13 | 同上 · 被毒杀的 hunter 不进开枪阶段，事件流无 `HUNTER_SHOOT` | PASS |
+| 14 | 同上 · 「被刀的 hunter 是最后一个神」→ 同一 action 内 `GAME_ENDED(all-gods-dead)`、相位 `FINISHED`、无开枪阶段（**AC 已补断言**） | PASS |
+| 15 | 同上 · 解药 `order` < 击杀 `order` < 开枪 `order`；夜晚效果 `source` 全为 `role`；解药命中时不产生击杀效果；效果应用后的存活集与 `PLAYER_DIED` 事件集一致 | PASS |
+| 16 | `night.test.ts` · 夜晚结束进 `DAY_ANNOUNCE`；对该阶段提交任何 action 都是 `Rejected`（**AC 已修正**） | PASS |
+
+### 8.7 验证输出（实跑，非转述）
+
+```
+$ pnpm typecheck    → exit 0
+$ pnpm lint         → exit 0
+$ pnpm format:check → "All matched files use Prettier code style!"   exit 0
+$ pnpm build        → dist/client/index.html + dist/server/index.js  exit 0
+$ pnpm test         → Test Files 35 passed (35) · Tests 270 passed (270)  exit 0
+$ pnpm test:e2e     → "skipped：tests/e2e/ 下没有用例"                exit 0
+$ pnpm selfplay     → "pnpm selfplay 未实现（RFC-015）"               exit 1
+
+$ pnpm exec vitest run --project unit --coverage
+  All files | % Stmts 97.24 | % Branch 94.36 | % Funcs 100 | % Lines 97.05
+  deal.ts 100/100 · queries.ts 100/100 · resolve/deaths.ts 100/100
+  phases/night.ts 97.64/94.73 · apply.ts 90.56/88.63
+```
+
+### 8.8 已知缺口（交给后续 RFC）
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| `NIGHT_WOLF_CHAT` 只占位跳过 | 阶段图里有它、允许集为空，`START` 直接推进到 `NIGHT_WOLVES` | RFC-005 |
+| 白天阶段 | `DAY_ANNOUNCE` 及之后全部未实现（允许集为空 → 拒绝） | RFC-004 |
+| 多狼共识 | 第一只提交的狼决定刀口，不做表决（D-6） | 若需要，走 RFC-005 的变更 |
+| 女巫「看到刀口」 | `WOLF_KILL_CHOSEN` 的 `visibleTo` 是 `wolves`，女巫要靠投影额外注入（§2.5）。**本 RFC 未实现投影**，所以这条只停留在状态里有 `night.killTarget` | RFC-007 |
+| `PHASE_CHANGED` 的事件量 | 每夜约 4–6 条相位事件，事件流比原来长。RFC-008 的存储策略会看到这个量级 | RFC-008 参考 |

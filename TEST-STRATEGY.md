@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.7 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.16 · 最后更新 2026-11-18
+> 版本 v1.8 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.17 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -29,8 +29,8 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  29 passed (29)     # unit 22 个 + meta 7 个
-      Tests  209 passed (209)
+ Test Files  35 passed (35)     # unit 28 个 + meta 7 个
+      Tests  270 passed (270)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -167,20 +167,30 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 ## RFC-003: 板子分配、夜晚阶段与严格规则
 
+> v1.7 回填：已实现，`Exists?` 全部 `existing`。计划 5 个文件，实际 6 个（多 `queries.test.ts`）。
+> AC-8 / AC-16 的措辞已按 RFC-002 §2.3 的机械判据修正，见 RFC-003 §8.3。
+
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2、3 | `tests/engine/deal.test.ts`：50 个固定种子逐个 `createInitialState`，断言角色计数恒为 3/1/1/1/3；同 seed 两次 `roles` 相同；统计玩家席位三类身份各出现 ≥1 次 | unit | proposed | Must |
-| 4 | `tests/engine/night.test.ts`：`WOLF_KILL` 后断言产出 `WOLF_KILL_CHOSEN` 且 `visibleTo === 'wolves'` | unit | proposed | Must |
-| 5 | 同上：指向已出局席位断言 `REJECTED` + `TARGET_NOT_ALIVE`，状态除 `seq` 外不变 | unit | proposed | Must |
-| 6 | 同上：指向狼队友断言 `REJECTED` + `WOLF_KILL_WOLF` | unit | proposed | Must |
-| 7 | `tests/engine/seer.test.ts`：三种目标（狼/神/民）各一次，断言 `SEER_CHECKED.visibleTo === 'seer'` 且 `result` 只取两值、与真实阵营一致 | unit | proposed | Must |
-| 8、9、10 | `tests/engine/witch.test.ts`：自救 → `WITCH_SELF_SAVE`；同夜第二次提交 → `NOT_YOUR_TURN`；次夜复用已用药 → `POTION_ALREADY_USED`（药水位从事件流推导） | unit | proposed | Must |
-| 11 | 同上：解药目标 === 刀口，断言当夜无 `PLAYER_DIED` 事件 | unit | proposed | Must |
-| 12 | 同上：解药目标 ≠ 刀口，断言仅刀口出局 | unit | proposed | Must |
-| 13、14、15 | `tests/engine/death-resolve.test.ts`：刀杀猎人 → 进 `NIGHT_HUNTER_SHOOT` 且 `HUNTER_SHOOT` 带 `source:'role'`；毒杀猎人 → 无该阶段、无事件；断言解药 `order` < 击杀 `order` < 开枪 `order` | unit | proposed | Must |
-| 16 | `tests/engine/night.test.ts`：未分胜负时夜晚结束 `phase === 'DAY_ANNOUNCE'`，对该 phase 提交 action 抛 `UnhandledTransitionError`；刀杀的猎人正好是最后一个神时断言对局在第一次 `checkWin` 结束为狼胜且无 `HUNTER_SHOOT` | unit | proposed | Must |
+| 1 | `tests/engine/deal.test.ts`：50 个固定种子，角色计数恒为 3/1/1/1/3 | unit | existing: tests/engine/deal.test.ts | Must |
+| 2 | 同上：同 seed 两次发牌一致；`roles` 与 `GAME_STARTED` payload 同源 | unit | existing: tests/engine/deal.test.ts | Must |
+| 3 | 同上：玩家席位三类身份各出现 ≥1 次 | unit | existing: tests/engine/deal.test.ts | Must |
+| 4 | `tests/engine/night.test.ts`：`WOLF_KILL_CHOSEN` 的 `visibleTo === 'wolves'` | unit | existing: tests/engine/night.test.ts | Must |
+| 5 | 同上：`TARGET_NOT_ALIVE` / `WOLF_KILL_WOLF`，状态除 `seq` 外不变；非狼提交 → `NOT_YOUR_TURN` | unit | existing: tests/engine/night.test.ts | Must |
+| 6 | `tests/engine/seer.test.ts`：三种目标、`visibleTo === 'seer'`、`result` 与阵营一致 | unit | existing: tests/engine/seer.test.ts | Must |
+| 7 | `tests/engine/witch.test.ts`：自救 → `WITCH_SELF_SAVE`；毒自己合法 | unit | existing: tests/engine/witch.test.ts | Must |
+| 8 | 同上：第二次用药 → `PHASE_MISMATCH`（**AC 已修正**）；非女巫 → `NOT_YOUR_TURN` | unit | existing: tests/engine/witch.test.ts | Must |
+| 9 | 同上：次夜复用已用药 → `POTION_ALREADY_USED`（构造的第二夜状态） | unit | existing: tests/engine/witch.test.ts | Must |
+| 10 | 同上：解药命中刀口 → 无 `PLAYER_DIED` | unit | existing: tests/engine/witch.test.ts | Must |
+| 11 | 同上：解药未命中 → 只有刀口出局；毒药另加一条 | unit | existing: tests/engine/witch.test.ts | Must |
+| 12 | `tests/engine/death-resolve.test.ts`：被刀出局的 hunter 进 `NIGHT_HUNTER_SHOOT`；开枪效果 `source: 'role'`、order 在 200 区；带走最后一狼 → 好人胜 | unit | existing: tests/engine/death-resolve.test.ts | Must |
+| 13 | 同上：被毒杀的 hunter 不进开枪阶段、无 `HUNTER_SHOOT` 事件 | unit | existing: tests/engine/death-resolve.test.ts | Must |
+| 14 | 同上：hunter 是最后一个神 → 同一步内 `GAME_ENDED`、相位 `FINISHED`、无开枪（RUL-1） | unit | existing: tests/engine/death-resolve.test.ts | Must |
+| 15 | 同上：解药 < 击杀 < 开枪的 order；夜晚效果 `source` 全为 `role`；效果存活集与事件集一致 | unit | existing: tests/engine/death-resolve.test.ts | Must |
+| 16 | `tests/engine/night.test.ts`：夜晚结束进 `DAY_ANNOUNCE`；该阶段任何 action → `Rejected`（**AC 已修正**） | unit | existing: tests/engine/night.test.ts | Must |
+| 查询（§3 交付物） | `tests/engine/queries.test.ts`：`aliveSeats` / `countAliveByFaction` / `findAliveByRole` / `seatAt` 的语义 | unit | existing: tests/engine/queries.test.ts | Should |
 
-**依赖与夹具**：RFC-002 的 `step`/`applyEvent`/`checkWin`。夹具需能构造「只剩一神」的残局。
+**依赖与夹具**：`tests/fixtures/night.ts`（沿真实路径推进到女巫阶段 + `makeNightState` 构造残局）。
 
 ---
 
@@ -432,10 +442,11 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
-| 2026-11-17 | v1.0 | 初次生成：16 个 RFC 小节、222 条验收标准的逐条落表、126 条计划测试、6 项人工检查 |
+| 2026-11-18 | v1.8 | RFC-003 实现后回填：16 行 + 查询一行全部 `existing`；AC-8 / AC-16 措辞按 RFC-002 §2.3 修正；基线用例数 209 → 270 |
 | 2026-11-18 | v1.7 | RFC-002 Round 3 评审同步：基线用例数 206 → 209；AC-13 行补递归扫描与接线可注入；`RFCS.md` 引用更新为 v2.16 |
 | 2026-11-17 | v1.6 | RFC-002 Round 1/2 评审修复后回填：基线用例数 186 → 206；AC-13 的扫描改为递归且接线可注入；补 `tests/helpers/source-scan.ts` 一行 |
 | 2026-11-17 | v1.5 | RFC-002 实现后回填：10 行全部 `existing`，文件数从计划的 10 改为实际 12（覆盖率门禁移入 `tests/meta/`）；基线用例数 87 → 186 |
 | 2026-11-17 | v1.4 | RFC-001 Round 4 后同步：用例数 86 → 87，`RFCS.md` 引用由 v2.7 更新为 v2.10（C-20） |
 | 2026-11-17 | v1.3 | RFC-001 Round 2 修复后回填：`contracts.test.ts` 拆成 domain / actions / events 三个文件；补 B3（`EventEnvelope` 夹具）、N1（五个严格开关）、N2（构建前清 `dist`）、N3（`EFFECT_SOURCES` / `SELF_VISIBILITY_PREFIX`）与 CR-003 一行 |
 | 2026-11-17 | v1.1 | RFC-001 实现后按实际落地的测试回填：新增 T-4（自递归）、T-5（代理改用 HTTP）、T-6（路径按 RFC）、T-7（构建测试不跳过）；RFC-001 小节的实际用例数以 `RFCs/RFC-001-*.md` §8.5 为准 |
+| 2026-11-17 | v1.0 | 初次生成：16 个 RFC 小节、222 条验收标准的逐条落表、126 条计划测试、6 项人工检查 |
