@@ -6,6 +6,7 @@ import { phaseChangedDraft } from './visibility';
 import { resolveHunterShot, resolveNight } from '../resolve/deaths';
 import { aliveSeats, findAliveByRole, isAlive, seatAt } from '../queries';
 import { rejectionDraft } from '../reject';
+import { enterNight } from './vote';
 import { checkWin } from '../win';
 
 /**
@@ -312,7 +313,9 @@ const hunterShoot: ActionHandlerFor<'HUNTER_SHOOT'> = (state, action, context) =
   for (const death of shot.deaths) {
     drafts.push({
       type: 'PLAYER_DIED',
-      visibleTo: 'server',
+      // 夜里开枪的死因不公开（天亮一并公布，见 RFC-003 §9.1）；白天开枪是公开动作，
+      // 连带死亡也公开（RFC-004 §2.4 / C-29 的 N9 提醒）。
+      visibleTo: state.phase === 'DAY_HUNTER_SHOOT' ? 'public' : 'server',
       payload: { seat: death.seat, cause: death.cause },
     });
   }
@@ -322,6 +325,13 @@ const hunterShoot: ActionHandlerFor<'HUNTER_SHOOT'> = (state, action, context) =
   const win = checkWin(afterShot);
   if (win !== null) {
     drafts.push({ type: 'GAME_ENDED', visibleTo: 'public', payload: win });
+    return drafts;
+  }
+
+  // 收尾取决于**开枪发生在哪个阶段**（RFC-004 §2.4 引入白天开枪）：
+  // 夜间开枪 → 天亮；白天开枪（放逐后）→ 入夜。
+  if (state.phase === 'DAY_HUNTER_SHOOT') {
+    drafts.push(...enterNight('DAY_HUNTER_SHOOT'));
     return drafts;
   }
 
