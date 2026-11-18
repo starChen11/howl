@@ -13,7 +13,7 @@
 1. **没有 `PRD.md` 不写产品代码；没有对应 RFC 不开工。** 讨论、调研、写文档不受限。
 2. **前置未完成不开工。** 开工某 RFC 前，它在 `RFCS.md` 里声明的前置 RFC 必须是 `Implemented` 或 `Reviewed`；`Changes requested` / `Spec changed` 不算。
 3. **测试计划早于实现。** `TEST-STRATEGY.md` 中该 RFC 的小节必须已存在，实现阶段按它写测试，而不是写完代码再补计划。
-4. **评审必须换会话。** 写过该 RFC 代码的会话不得自审；`/review-rfc` 要在新会话、只凭仓库文件进行。
+4. **评审必须换上下文。** 写过该 RFC 代码的会话不得自审；`/review-rfc` 要在**新会话**或实现会话起的**全新上下文 `subagent`**（`subagent`，不是 `fork`）里、只凭仓库文件进行，输入用 [`docs/process/REVIEW-PROMPT.md`](docs/process/REVIEW-PROMPT.md)。
 5. **未获用户明确批准，不写代码。** `/implement-rfc` 的第一阶段只出计划，等批准。
 6. **需求变化走 `/manage-changes`。** 不许直接改 `PRD.md` / `FEATURES.md` / `RULES.md` / RFC 来"顺手支持新需求"。
 7. **冲突不许静默裁决。** 权威顺序 `PRD.md > FEATURES.md > RULES.md > RFC > 计划`；按哪个走、为什么，写进 `RFCS.md` 的 `## Open conflicts`。
