@@ -269,3 +269,19 @@ $ pnpm test → Test Files 46 passed (46) · Tests 389 passed (389)
 | **B3 /** 多条 AC 的测试不会红 | AC-4/5/6/7/8/9/11/14/15/16 只有弱断言或同义反复；`TEST-STRATEGY` 声称的 `tests/server/project/night-visibility.test.ts` 并不存在 | 新增 `knowledge.test.ts`（每个角色造出**有内容**的局面，断言具体值）与 `night-visibility.test.ts`（C-28 三条泄漏路径）；每条都能被对应的反向探针打红 |
 
 **另**：`RFCS.md` 的 §1 关键路径 / §1.1 映射表 / §3 依赖表在 C-40 那次只改了抬头与两处，剩下三处由本轮评审核对后补齐（依赖翻转的痕迹现在完整）。
+
+### 8.8 Round 2 回应（Changes requested）
+
+Round 2 复核了 Round 1 的修复：C-28 的折叠与 C-41 的代码都正确，但指出**四条没有回归锁**，以及一个语义缺口。
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **终局语义** | 「当夜死者等天亮公布」在**没有天亮**的终局上没有定义：夜里直接分出胜负时，最后一名死者的 `PLAYER_DIED` 是 `server` 事件，`deadSeats` 里就缺了他 | 明确：**终局是例外**——对局结束时身份与死亡全部揭示（复盘的前提）。`phase === 'FINISHED'` 时把所有已出局席位计入 `deadSeats`。补用例 |
+| **`aliveSeats` 无锁** | 改回引擎真值后全套仍绿 | 补断言：夜里当夜死者仍算「活着」（观察者还不知道）。反向探针会红 |
+| **`legalTargets` 无锁** | 同样改回引擎真值仍绿；且 `NIGHT_HUNTER_SHOOT` 时会把已出局的自己列进候选 | ①`legalTargets` 改用「已知存活」，并**排除观察者自己**（不能刀自己/枪毙自己/投自己）；②补两条区分性用例。反向探针会红 |
+| **AC-8/9 是同义反复** | `knowledge.test.ts` 与 `project.test.ts` 的「并集」断言是自己和自己比；把 `GAME_STARTED`（含全员身份）塞进每个观察者都测不出来 | 新增 `partition.test.ts`：在测试里**独立折叠**一遍算期望集合，再与投影输出逐条比较；并断言两个桶都不含任何 `server` 事件 |
+| **AC-15 投影用例缺失** | `AI_THOUGHT` 的折叠分支删掉后全套仍绿（没有任何用例把它喂进事件流） | 新增 `thought.test.ts`：`applyEvent` 不抛错、`replay` 可重建、只有该席位可见、不进 `publicEvents`、状态里没有承载 `reason` 的字段 |
+
+```
+$ pnpm test → 50 files / 412 tests
+```

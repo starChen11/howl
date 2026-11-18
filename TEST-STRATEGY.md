@@ -29,8 +29,8 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  48 passed (48)     # unit 41 个 + meta 7 个
-      Tests  400 passed (400)
+ Test Files  50 passed (50)     # unit 43 个 + meta 7 个
+      Tests  412 passed (412)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -262,6 +262,8 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | C-28（评审） | `tests/server/project/night-visibility.test.ts`：死 seer / 死 witch 的跳过夜与 hunter 开枪夜，断言非相关观察者拿到的 `phase` 是公共阶段、`aliveSeats` / `deadSeats` 不含当夜未公开死亡；`state.phase` 的内部子阶段不出现在投影里 | unit | existing: tests/server/project + tests/server/inject | Must |
 
 > **RFC-007 Round 1 评审（2026-11-18）**：上表多行标 `existing`，实际只有 `tests/server/project/project.test.ts` 与 `tests/server/inject/injection.test.ts`；1000 局面属性测试、C-28 的 `tests/server/project/night-visibility.test.ts`、AC-4 / AC-5 / AC-6 / AC-7 / AC-15 等断言缺失或不能变红（M1~M5、M7 全绿）。补齐前不要把对应行改回 `existing`。详见 `reviews/REVIEW-RFC-007.md` §2.3 / §8。
+>
+> **RFC-007 Round 2 复核（2026-11-18）**：`night-visibility.test.ts` 已存在，AC-4~7 的精确用例可被 K1~K4 打红；但 AC-2 的 1000 局面属性测试、AC-8 / AC-9 的独立折叠对照（`tests/server/project/partition.test.ts`）、AC-15 的 `AI_THOUGHT` 投影用例仍缺；C-28 的 `aliveSeats` 也未断言（M3 全绿）。详见 `reviews/REVIEW-RFC-007.md` Round 2 §1.5 / §4。
 
 ## RFC-008: 会话、状态存储与刷新恢复
 

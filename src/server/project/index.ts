@@ -61,6 +61,14 @@ export function project(input: ProjectInput): ProjectedContext {
     }
   }
 
+  // 终局是例外：对局结束时身份与死亡全部揭示（复盘的前提）。此时没有「等天亮公布」
+  // 这回事——包括「夜里直接分出胜负、没走到天亮」的终局。
+  if (state.phase === 'FINISHED') {
+    for (const seat of state.seats) {
+      if (!seat.alive) knownDead.add(seat.seat);
+    }
+  }
+
   const aliveSeats = state.seats
     .filter((seat) => !knownDead.has(seat.seat))
     .map((seat) => seat.seat);
@@ -79,7 +87,7 @@ export function project(input: ProjectInput): ProjectedContext {
     publicEvents,
     privateEvents,
     knowledge: knowledgeOf(state, observer, visible, pending),
-    legalTargets: legalTargetsOf(state, pending, aliveSeats),
+    legalTargets: legalTargetsOf(state, pending, aliveSeats, observer),
     pending,
   };
 }

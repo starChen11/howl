@@ -108,3 +108,62 @@ describe('C-28 · 夜里只告诉观察者「天黑了」', () => {
     expect(ctx.deadSeats).toContain(hunter);
   });
 });
+
+describe('C-28 · aliveSeats 与 legalTargets 的口径', () => {
+  it('夜里当夜死者仍算「活着」（观察者还不知道他死了）', () => {
+    const { state, events } = runTo('NIGHT_HUNTER_SHOOT');
+    const hunter = seatOfRole(state, 'hunter');
+    if (state.seats.find((seat) => seat.seat === hunter)?.alive !== false) {
+      throw new Error('夹具前提不成立：hunter 应当已出局');
+    }
+
+    const ctx = project({ state, events, observer: 1, pending: null });
+    expect(ctx.aliveSeats).toContain(hunter);
+  });
+
+  it('夜里 legalTargets 用「已知存活」：当夜死者仍在候选里（否则目标消失=泄漏）', () => {
+    const { state, events } = runTo('NIGHT_HUNTER_SHOOT');
+    const hunter = seatOfRole(state, 'hunter');
+    // 引擎里他已经出局，但观察者还不知道——所以他还应在候选名单里
+    expect(state.seats.find((seat) => seat.seat === hunter)?.alive).toBe(false);
+
+    const ctx = project({ state, events, observer: 1, pending: 'vote' });
+    expect(ctx.legalTargets).toContain(hunter);
+  });
+
+  it('legalTargets 不含观察者自己', () => {
+    const { state, events } = runTo('NIGHT_HUNTER_SHOOT');
+    const hunter = seatOfRole(state, 'hunter');
+
+    const ctx = project({ state, events, observer: hunter, pending: 'shoot' });
+    expect(ctx.legalTargets).not.toContain(hunter);
+  });
+
+  it('投票阶段的 legalTargets 是「已知存活 + 弃权」', () => {
+    const { state, events } = runTo('NIGHT_HUNTER_SHOOT');
+    const hunter = seatOfRole(state, 'hunter');
+    const shot = step(state, { type: 'HUNTER_SHOOT', ts: 6, seat: hunter });
+    const full = [...events, ...shot.events];
+
+    const ctx = project({ state: shot.state, events: full, observer: 1, pending: 'vote' });
+    expect(ctx.legalTargets).toContain('abstain');
+    expect(ctx.legalTargets).not.toContain(1);
+  });
+});
+
+describe('C-28 · 终局视为全部死亡已揭示', () => {
+  it('夜间直接终局时，deadSeats 包含当夜死者', () => {
+    // 用 FIXTURE 构造一个「夜里终局」的状态是不行的（要走真实路径），这里直接改终态：
+    // 终局是「身份与死亡全部揭示」的唯一例外，语义上等价于复盘。
+    const { state, events } = runTo('NIGHT_HUNTER_SHOOT');
+    const hunter = seatOfRole(state, 'hunter');
+    const finished = {
+      ...state,
+      phase: 'FINISHED' as const,
+      seats: state.seats.map((seat) => (seat.seat === hunter ? { ...seat, alive: false } : seat)),
+    };
+
+    const ctx = project({ state: finished, events, observer: 1, pending: null });
+    expect(ctx.deadSeats).toContain(hunter);
+  });
+});

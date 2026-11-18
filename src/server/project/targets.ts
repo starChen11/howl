@@ -11,10 +11,13 @@ export function legalTargetsOf(
   state: GameState,
   pending: PendingDecision,
   aliveSeats: readonly SeatId[],
+  observer: SeatId,
 ): (SeatId | 'abstain')[] {
   // 用**观察者已知的**存活席位，而不是引擎真值：否则「某个目标突然消失」本身就泄漏了
   // 「他死了」，而这件事还没公布（C-28）。
-  const alive = [...aliveSeats];
+  // 排除观察者自己：不能刀自己、枪毙自己、投自己。引擎会拒绝这些，但把它列进选项
+  // 清单会让 AI 选到必然被拒的目标（RFC-006 消费时尤其明显）。
+  const alive = aliveSeats.filter((seat) => seat !== observer);
 
   switch (pending) {
     case null:
