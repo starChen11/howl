@@ -829,3 +829,352 @@ ENGINE-DIED-ORDER [3,7]
 - B3 变异（`deathCauseSchema` 去掉 `lynch` / `shoot`）：`schemas.test.ts` 1 failed / 6 passed；恢复后 7/7。
 - B3 登记变异（删掉 `PAYLOAD_SCHEMAS` 的 7 个条目）：`schemas.test.ts` 仍 7/7，全量套件仍绿。
 - 探针文件删除后 `git status --short` 无源码改动；四个源码文件恢复后的 sha256 与备份一致。
+
+## Round 3 -- 2026-11-18
+
+> **评审会话**：新会话（只读仓库文件、跑命令、做临时探针；未参与 RFC-003 实现）。
+> **HEAD**：`914e4fc`（Round 2 修复 + `CHANGE-REQUEST-005` 文档提交）；评审开始时 `git status --short` 无输出。
+> **结论**：**Changes requested**（新发现 C-27：合法夜间结算可以同时满足两个阵营的胜利条件，`checkWin` 静默判好人胜；ARCH-11 / F8 AC-4）。
+> **整体风险**：**High**。
+
+### 0. STEP 0 · 实际执行输出
+
+环境：Node `v22.22.2`、pnpm `10.33.0`。以下命令在 `914e4fc`、干净工作树上实跑：
+
+```
+$ pnpm typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit
+EXIT 0
+
+$ pnpm lint
+> eslint .
+EXIT 0
+
+$ pnpm format:check
+> prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+EXIT 0
+
+$ pnpm build
+vite v8.3.8 building client environment for production...
+✓ built in 71ms
+dist/client/index.html                  0.42 kB │ gzip:  0.31 kB
+dist/client/assets/index-DTkfWeVY.js  219.65 kB │ gzip: 68.71 kB
+vite v8.3.8 building ssr environment for production...
+✓ built in 11ms
+dist/server/index.js  1.25 kB │ gzip:  0.86 kB
+EXIT 0
+
+$ pnpm test
+ Test Files  37 passed (37)
+      Tests  295 passed (295)
+EXIT 0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+EXIT 0
+
+$ pnpm selfplay
+pnpm selfplay 未实现（RFC-015）
+EXIT 1          # C-5 登记的临时偏离，预期如此
+
+$ pnpm exec vitest run --project unit --coverage
+ Test Files  30 passed (30)
+      Tests  261 passed (261)
+
+ % Coverage report from v8
+-----------------|---------|----------|---------|---------|
+File             | % Stmts | % Branch | % Funcs | % Lines |
+-----------------|---------|----------|---------|---------|
+All files        |   98.15 |    96.63 |     100 |   98.02 |
+ engine          |   98.14 |    95.65 |     100 |   97.97 |
+  apply.ts       |   96.22 |    95.45 |     100 |   96.15 | 98,162
+  deal.ts        |     100 |      100 |     100 |     100 |
+  effects.ts     |     100 |    88.88 |     100 |     100 | 47
+  init.ts        |      90 |       75 |     100 |      90 | 39
+  queries.ts     |     100 |      100 |     100 |     100 |
+  reject.ts      |     100 |      100 |     100 |     100 |
+  replay.ts      |     100 |      100 |     100 |     100 |
+  rng.ts         |   96.15 |       90 |     100 |      96 | 73
+  step.ts        |     100 |      100 |     100 |     100 |
+  transitions.ts |     100 |      100 |     100 |     100 |
+  win.ts         |     100 |      100 |     100 |     100 |
+ engine/phases   |   97.64 |     97.4 |     100 |   97.56 |
+  night.ts       |   97.59 |    97.33 |     100 |    97.5 | 250,281
+  visibility.ts  |     100 |      100 |     100 |     100 |
+ engine/resolve  |     100 |      100 |     100 |     100 |
+  deaths.ts      |     100 |      100 |     100 |     100 |
+COV EXIT 0
+```
+
+**五条门禁全绿，295 个用例全过，覆盖率与 RFC-003 §10.3 的转录一致**（98.15 / 96.63 / 100 / 98.02）。本轮没有在 Windows 上复跑；没有新增路径拼接，跨平台风险与 Round 2 相同。`test:e2e` 的 skipped 与 `selfplay` 的 exit 1 都是既有预期（C-5 / RFC-012）。
+
+**临时探针**：`tests/engine/zz-review-probe*.test.ts` 三个文件，跑完即删；源码以 `/tmp` 备份恢复，恢复后 `git status --short` 为空，`unit` 套件 30 files / 261 tests 重新全绿。评审产物只有本文件与 `RFCS.md` / 文档同步。
+
+### 1. Product Type 与检查范围
+
+`PRD.md` 的 **Product Type** 是 **game（主）+ web app（交付形态）**。RFC-003 只交付规则引擎的夜间部分，没有 UI、HTTP 路由、SSR 或浏览器交互。按 game 的「核心循环 / 状态机 / 确定性 / 隐藏信息边界」检查；显式跳过：
+
+| 跳过的检查 | 原因 |
+|---|---|
+| 响应式布局、无障碍、浏览器兼容、首屏性能 | RFC-003 无 UI；归 RFC-012 / RFC-016 |
+| 认证、CSRF、XSS、注入 | 无 HTTP 端点、无客户端渲染；归 RFC-008 / RFC-011 |
+| 数据库 / 网络 I/O、缓存 | 引擎是纯函数，本 RFC 没有 I/O |
+| 平台认证、帧预算、手柄输入 | PRD Product Type 已声明不适用 |
+
+隐藏信息边界是本 RFC 的适用检查；本轮发现它还有一条**投影通道**，见 §7.2 的 C-28。
+
+### 2. Round 2 两个阻塞项与 C-26 的复核
+
+#### 2.1 B-R2-1 · hunter 路径可见性：**真实路径测试有效，事件通道已修**
+
+`src/engine/phases/night.ts:102-106` 已改走 `phaseChangedDraft`；`tests/engine/night-visibility.test.ts:117-152` 走的是真实路径（狼刀 hunter → 查验 → 女巫 `none`），断言进入 `NIGHT_HUNTER_SHOOT` 的那条 `PHASE_CHANGED` 是 `server`，并且整夜 `leaksOf` 为空。
+
+反向验证（本轮实跑）：把 `night.ts` 的中段改回硬编码 `visibleTo: 'public'`：
+
+```
+FAIL tests/engine/night-visibility.test.ts > C-23 · 三个具体泄漏点 >
+  真实路径：狼刀 hunter → 查验 → 女巫 none，进开枪的相位事件必须是 server（B-R2-1）
+AssertionError: expected 'public' to be 'server'
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+```
+
+恢复后 6/6 绿。**B-R2-1 关闭（事件通道）**。
+
+#### 2.2 B-R2-2 · C-24 的裁决：**RUL-11 已落榜，代码与规则一致**
+
+`RULES.md` §6 有 **RUL-11**（`RULES.md:243`），`CHANGE-REQUEST-005` 记录了来源；`src/engine/resolve/deaths.ts:69-86` 按座位归并、同座位覆盖为毒药；`tests/engine/death-resolve.test.ts:186-249` 覆盖同目标、hunter 同目标、解药 + 毒药同目标、跨座位结算顺序。C-24 的**代码与记录**都已闭环。
+
+非阻塞文档 nit（本轮已顺手修正）：`RULES.md:3` 的文件头仍写 `版本 v1.0`，而 `RULES.md:296` 的变更历史是 v1.1；`TEST-STRATEGY.md:3` 已引用 RULES v1.1。这是版本头没跟上，不影响 RUL-11 的权威性。
+
+#### 2.3 C-26 · 死亡顺序：**已恢复结算顺序，反向探针有效**
+
+`src/engine/resolve/deaths.ts:86` 是 `[...causes.entries()].map(...)`，没有排序；`tests/engine/death-resolve.test.ts:242-248` 断言 `resolveNight({ killTarget: 9, poisonTarget: 3 })` 返回 `[9, 3]`。反向验证（本轮实跑）：把 `.sort((a, b) => a.seat - b.seat)` 加回去：
+
+```
+AssertionError: expected [ 3, 9 ] to deeply equal [ 9, 3 ]
+ Test Files  1 failed (1)
+      Tests  1 failed | 15 passed (16)
+```
+
+恢复后 16/16 绿。**C-26 关闭**。
+
+#### 2.4 B1 / B3 的复核（未重新引入）
+
+- **B1**：`killTarget === poisonTarget` 的合法 action 不再崩；`death-resolve.test.ts:187-240` 覆盖只出局一次、死因毒药、hunter 不开枪。
+- **B3**：`src/shared/schemas.ts:166-209` 的 7 个 schema 与 `PAYLOAD_SCHEMAS` 已在；`tests/shared/schemas.test.ts:96-122` 的键集合断言会捕捉「删掉登记项」。反向验证（本轮实跑）：删掉 `HUNTER_SHOOT` 条目 → 1/9 红，恢复后 9/9 绿。
+- **B3 的剩余测试缺口（非阻塞）**：`tests/engine/events.test.ts:76-118` 的「真实事件」序列是 `potion: 'none'` 的一夜，实际只覆盖 `GAME_STARTED` / `WOLF_KILL_CHOSEN` / `PHASE_CHANGED` / `SEER_CHECKED` / `PLAYER_DIED`；`WITCH_POTION_USED`、`HUNTER_SHOOT`、`GAME_ENDED` 仍只有手写 fixture 的正反例。Round 2 的临时探针证明它们能过，但套件里没有回归锁。建议把 hunter 开枪夜与终局夜也纳入真实事件校验。
+
+### 3. 验收标准逐条核对
+
+> 判定依据：实际跑过的测试 + 读断言。`PASS*` 表示行为正确，但测试没有锁住 AC 的字面要求。
+
+| AC | 证据 | 结果 | 备注 |
+|---|---|---|---|
+| 1 | `tests/engine/deal.test.ts:25-44` · 50 个固定种子，计数恒为 3/1/1/1/3 | **PASS** | 固定种子，无随机失败 |
+| 2 | `deal.test.ts:46-66` 只证明候选状态与 `dealRoles` 同源；`GAME_STARTED.payload.roles` 的断言在 `tests/engine/events.test.ts:167-175` | **PASS\*** | AC 本身通过；`RFC-003 §8.6` 把证据写成 `deal.test.ts` 一个文件，实际是两处 |
+| 3 | `deal.test.ts:68-88` · 50 个种子里玩家拿到狼 / 神 / 民三类 | **PASS** | 与 AC 字面一致 |
+| 4 | `night.test.ts:25-42` · `WOLF_KILL_CHOSEN.visibleTo === 'wolves'`，state 记下刀口 | **PASS** | |
+| 5 | `night.test.ts:57-110` · `TARGET_NOT_ALIVE` / `WOLF_KILL_WOLF` 都断言「除 seq 外不变」；非狼 `NOT_YOUR_TURN` | **PASS** | Round 1 的 N2 已补 |
+| 6 | `tests/engine/seer.test.ts:30-77` · 三种目标、`visibleTo === 'seer'`、result 与阵营一致 | **PASS\*** | 「state 里不存查验结果」在 `seer.test.ts:65-76` 只断言 JSON 不含 `'not-wolf'`；若查验目标恰好是 wolf，这个断言在「把 `result: 'wolf'` 存进 state」时也不会红。建议断言 state 没有承载查验结果的字段，或构造 `not-wolf` 目标 |
+| 7 | `witch.test.ts:16-64` · 自救 `WITCH_SELF_SAVE`；毒自己合法；`POTION_ALREADY_USED` 优先 | **PASS** | |
+| 8 | `witch.test.ts:67-108` · 第二次用药 `PHASE_MISMATCH`（AC 已修正）；非女巫 `NOT_YOUR_TURN` | **PASS** | 修正经 §8.3 记录 |
+| 9 | `witch.test.ts:110-198` · 次夜复用 → `POTION_ALREADY_USED`；整条事件流 `replay` 后药水位仍在 | **PASS** | N3 已修 |
+| 10 | `witch.test.ts:199-217` · 解药命中刀口：无 `PLAYER_DIED` | **PASS** | |
+| 11 | `witch.test.ts:218-292` · 解药未命中；毒药另加一条；`none` 只有刀口 | **PASS** | |
+| 12 | `death-resolve.test.ts:18-101` · 被刀 hunter 进入开枪阶段；效果 `source: 'role'`、order 200；带走最后一狼 → 好人胜 | **PASS** | 「产出效果」由纯函数断言，handler 的接线由 `:69-100` 的胜负用例覆盖 |
+| 13 | `death-resolve.test.ts:103-138` · 被毒 hunter 不进开枪、无 `HUNTER_SHOOT` | **PASS** | |
+| 14 | `death-resolve.test.ts:140-184` · 被刀 hunter 是最后一个神 → 同步 `GAME_ENDED`、`FINISHED`、无开枪 | **PASS** | |
+| 15 | `death-resolve.test.ts:269-325` · 解药 < 击杀 < 开枪的 order；夜晚效果 `source` 全为 `role` | **PASS\*** | 「效果应用后的存活集与事件集一致」只覆盖「无女巫用药、只有狼刀」的路径；毒药 / 开枪 / 解药命中的效果—事件一致性没有回归锁 |
+| 16 | `night.test.ts:120-153` · 夜晚结束进 `DAY_ANNOUNCE`；该阶段任何 action → `Rejected(PHASE_MISMATCH)` | **PASS** | AC 已修正 |
+
+**16/16 按字面通过**，且 Round 1 / Round 2 的测试缺口 N1 / N2 / N3 / N7 都已补上。但 **AC 矩阵全绿不等于没有规则缺口**：本轮新发现的 C-27 落在 AC-14 的「胜负先于开枪」之外，是一个**合法 action 序列**。
+
+### 4. RFC 符合度
+
+**Verdict: NEEDS WORK**
+
+- D-1 ~ D-9 的实现与记录基本成立；D-5（`NOT_YOUR_TURN` 的机械含义）与 §8.3 的 AC-8 / AC-16 修正都有测试。
+- D-1 的 `phaseVisibility` 已统一，所有生产代码的 `PHASE_CHANGED` 都经 `phaseChangedDraft`（`grep "type: 'PHASE_CHANGED'" src` 只剩 `visibility.ts:29` 一处）。
+- D-3（夜间 `PLAYER_DIED` 为 `server`）仍成立；`HUNTER_SHOOT` 与 `GAME_ENDED` 公开是合理的。
+- **C-27 是 RFC-003 §2.3 第 5 步的缺口**：RFC 只说「全部出局者应用完毕后先 `checkWin`」，没有说两个阵营的条件同时成立时判谁。实现选了「先判狼全灭」，但这是**未记录的规则选择**，不是 D-1 ~ D-9 里的任何一条，也不是 AC-14 的「胜负先于开枪」。
+- `src/engine/win.ts:31-33` 的注释自认「理论上不该出现 … 这里的次序是防御性的：真要构造出这种局面，好人胜」——**代码自己承认这是一个兜底选择**。这正是 `ARCH-11` 禁止的「默认选择」。
+
+### 5. RULES COMPLIANCE
+
+| 规则 | 结果 | 证据 |
+|---|---|---|
+| ARCH-1 | **PASS** | `tests/dependency-direction.test.ts` 5/5 |
+| ARCH-3 | **PASS** | `serialization.test.ts` 5/5；`night` / `potionsUsed` 是纯数据 |
+| ARCH-4 | **PASS** | `ts` 来自 action；`events.test.ts:69-74` |
+| ARCH-5 | **PASS（有已知记录）** | 结算先产出 `Effect[]` 再 `applyEffects`；效果只是 `checkWin` 预览，状态仍由 `PLAYER_DIED` 写入。实现注释与 RFC §2.3 能解释，但建议在 RFC 里显式记一句「效果列表不写状态，事件是唯一权威」 |
+| ARCH-6 | **PASS** | 夜晚效果 `source` 全为 `role`；AC-15 |
+| **ARCH-11** | **FAIL（C-27）** | 「狼全灭 + 神全灭」同时成立时，`checkWin` 静默返回好人胜；RULES §6 没有这条裁决，代码也没有抛错 |
+| DATA-1 / DATA-2 | **PASS** | `seq` 严格递增；`GAME_EVENT_TYPES` 与 `GameEventMap` 双向锁 |
+| DATA-3 | **PASS** | `replay-parity.test.ts:96-121` 覆盖真实一整夜；`replay` 后 `night` / `potionsUsed` 仍在 |
+| DATA-4 / DATA-5 | **PASS** | `rng.test.ts` 递归扫描无 `Math.random`；固定种子 |
+| TEST-1 | **NEEDS WORK** | 16 条 AC 都有测试，但 C-27 这条合法路径没有测试；AC-6 / AC-15 各有一处断言偏弱 |
+| TEST-2 | **PASS** | 行 98.02 ≥ 90，分支 96.63 ≥ 85 |
+| TEST-3 | **PASS** | `determinism.test.ts` 4 例 |
+| TEST-4 | **PASS** | `tests/setup/no-network.ts` |
+| STYLE-1 ~ STYLE-6 | **PASS** | 命名、具名导出、`night.ts` 375 行 < 400、无 `any` / 非空断言 |
+| STYLE-7 | **PASS** | `deathCauseOf` / `NIGHT_PHASE_EVENTS` 已删；无 TODO / 注释代码 |
+| DOC-1 | **NEEDS WORK** | C-27 的兜底选择只在 `win.ts` 注释里；C-28 的「玩家只看到天黑/天亮」声明在 RFC-003 §9.1，但按 RFC-007 的 `ProjectedContext` 定义并不成立 |
+| DOC-2 | **PASS** | 本 RFC 未新增依赖 |
+
+### 6. 测试有效性：本轮变异与探针
+
+| # | 变异 / 探针 | 观察 | 结论 |
+|---|---|---|---|
+| M-R3-1 | `night.ts` 的 hunter 分支改回 `visibleTo: 'public'` | `night-visibility.test.ts` 1 failed / 5 passed | B-R2-1 的真实路径锁有效 |
+| M-R3-2 | `deaths.ts` 加回 `.sort((a, b) => a.seat - b.seat)` | `death-resolve.test.ts` 1 failed / 15 passed | C-26 的顺序锁有效 |
+| M-R3-3 | `schemas.ts` 删掉 `HUNTER_SHOOT` 登记项 | `schemas.test.ts` 1 failed / 8 passed | B3 的登记表锁有效 |
+| **P-R3-1** | 合法残局：狼刀杀最后一个神（女巫）、女巫毒最后一只狼 | `GAME_ENDED { result: 'good', condition: 'all-wolves-dead' }`，但场上同时已无神 | **C-27，静默裁决** |
+| **P-R3-2** | 夜间直接读取 `state.phase` 与 `state.seats` | 跳过 seer 的夜晚 `phase === 'NIGHT_WITCH'`；hunter 开枪且女巫毒了村民时 `phase === 'NIGHT_HUNTER_SHOOT'`、`deadSeats === [6, 7]` | **C-28，投影通道泄漏**（RFC-007 尚未实现，但它按当前契约就会输出这些字段） |
+| P-R3-3 | 200 个固定种子跑一晚（合法动作），检查 `replay` / 公开事件 / 无重复死亡 | 全部通过 | 现有事件通道与派生字段稳定 |
+
+**C-27 的复现（构造残局，但每个 action 都合法）**：
+
+```
+roles: wolf×3 / seer / witch / hunter / villager×3
+deadSeats: [1, 2, 4, 6]        // 两只狼、seer、hunter 已出局
+先 WOLF_KILL: seat 3 → target 5 (witch)
+再 WITCH_ACT: seat 5, potion 'poison', target 3 (最后一只狼)
+
+WOLF_KILL_CHOSEN        wolves  {"target":5}
+PHASE_CHANGED           server  {"from":"NIGHT_WOLVES","to":"NIGHT_WITCH"}
+WITCH_POTION_USED       witch   {"potion":"poison","target":3}
+PHASE_CHANGED           server  {"from":"NIGHT_WITCH","to":"NIGHT_RESOLVE"}
+PLAYER_DIED             server  {"seat":5,"cause":"wolf"}
+PLAYER_DIED             server  {"seat":3,"cause":"poison"}
+GAME_ENDED              public  {"result":"good","condition":"all-wolves-dead"}
+alive [7, 8, 9]
+```
+
+这不是伪造 state 字段：残局只决定「谁已出局」，两个 action 都通过 `step` 的校验。`checkWin` 看到 `wolvesAlive === false` 就先返回好人胜，但同一批死亡也让 `godsAlive === false`。`RULES.md` §6 的 RUL-1 与 `RFCS.md` C-6 的「同时达成不可能」只论证了**猎人开枪**这一种来源，没有论证**狼刀 + 女巫毒药**。`FEATURES.md:69` 的 F8 AC-4 要求「未裁决的分支必须显式失败」，当前是静默选择。
+
+**C-28 的复现（引擎状态，不是投影实现）**：
+
+```
+seer 已出局，狼刀后：phase = NIGHT_WITCH，deadSeats = [4]
+hunter 被狼刀、女巫毒 7 号村民：phase = NIGHT_HUNTER_SHOOT，deadSeats = [6, 7]
+```
+
+RFC-007 §2.2 的 `ProjectedContext` 直接包含 `phase: Phase`、`aliveSeats`、`deadSeats`。按该契约，任何观察者都能从 `phase` 推断「seer 已死」「这是 hunter 开枪阶段」，并从 `deadSeats` 在 `DAY_STARTED` 之前看到当夜死亡。C-23 的事件通道修不到这三个字段；这是**另一条通道**，归 RFC-007 的投影修。
+
+### 7. SECURITY
+
+**Verdict: NEEDS WORK**
+
+#### 7.1 已修好的部分（不能因新发现忽略）
+
+- 夜间 `PHASE_CHANGED` 全部 `server`（`phaseVisibility`，`visibility.ts:22-24`）；生产代码里所有 `PHASE_CHANGED` 都经 `phaseChangedDraft`。
+- `GAME_STARTED` 仍 `server`；`WOLF_KILL_CHOSEN` `wolves`；`SEER_CHECKED` `seer`；`WITCH_POTION_USED` `witch`；`REJECTED` `self:<seat>`；夜间 `PLAYER_DIED` `server`。
+- `HUNTER_SHOOT` / `GAME_ENDED` / `→DAY_ANNOUNCE` 公开是合理的。
+- 没有密钥、模型原始响应或完整 state 写入事件 / 错误；SEC-1 / SEC-7 的落点在 RFC-006 / 008。
+
+#### 7.2 C-28（跨 RFC，非阻塞 RFC-003 / 阻塞 RFC-007）
+
+见 §6 的 P-R3-2。`RFC-003 §9.1` 写「玩家端仍能看到「天黑/天亮」——它来自投影后的 `state.phase`」；但 `state.phase` 的实际取值是 `NIGHT_SEER` / `NIGHT_WITCH` / `NIGHT_HUNTER_SHOOT`，不是「天黑」。RFC-007 的 `ProjectedContext.phase` 是 `Phase`（不是公共阶段），`aliveSeats` / `deadSeats` 也直接来自 `state.seats`。**这条不阻塞 RFC-003 的合并**（投影代码不在本 RFC），但 **RFC-007 开工前必须裁决**，否则 C-23 会在投影层以另一种形式复活。
+
+建议：
+1. `ProjectedContext` 增加/改用**公共阶段**（例如 `'night' | 'day' | 'finished'`），内部 `Phase` 留在服务端；玩家/AI 的「天黑了 / 天亮了」只来自公共阶段与 `DAY_STARTED`。
+2. `aliveSeats` / `deadSeats` 按**公开事件**（或上一次 `DAY_STARTED`）推导，而不是 `state.seats`；夜间当夜死亡在 `DAY_STARTED` 之前不进公共字段。
+3. RFC-007 的测试计划加两条：死 seer / 死 witch 的跳过夜、hunter 开枪夜的 `deadSeats`，断言非相关观察者看不到内部子阶段与当夜死亡。
+4. 修正 RFC-003 §9.1 的表述：不要承诺「从 `state.phase` 看到天黑」，应写「投影必须把内部相位映射成公共阶段」。
+
+#### 7.3 显式跳过的安全检查
+
+- 认证 / 授权：本 RFC 没有请求、会话或资源；N/A。
+- XSS / CSRF / 注入：本 RFC 没有客户端渲染或 HTTP 入口；N/A；运行时 `ActionSchema` 校验归 RFC-008 / RFC-011。
+- LLM 原始响应泄漏：RFC-006；本 RFC 不调用 LLM。
+
+### 8. PERFORMANCE
+
+**Verdict: N/A**
+
+纯函数引擎；循环规模由 9 席与固定板子界定；没有数据库、网络、缓存或 UI。`PHASE_CHANGED` 每夜 4–6 条的量级已由 RFC-003 §8.8 交给 RFC-008 评估。本 RFC 没有性能缺陷。
+
+### 9. MAINTAINABILITY
+
+**Verdict: NEEDS WORK**
+
+- **C-27 的注释要改**：`win.ts:31-33` 说「理论上不该出现」；本轮的合法残局证明它会出现。注释不能替代裁决。
+- **文档同步 nits（非阻塞）**：
+  - `RULES.md:3` 文件头 `版本 v1.0` 与 `:296` 的 v1.1 不一致；本轮顺手修正为 v1.1。
+  - `tests/engine/night-visibility.test.ts:50` 的标题「公开事件数为 0」实际有 1 条公开的 `PHASE_CHANGED(→DAY_ANNOUNCE)`；建议改成「公开事件只有天亮推进」。
+  - `tests/engine/replay.test.ts:242` 的注释仍写 `NIGHT_VOTES`，payload 是 `NIGHT_WITCH`；Round 2 的 N-R2-6 没清掉这一处。
+  - `tests/engine/events.test.ts` 的真实事件 schema 校验只覆盖 `potion: 'none'` 的一夜；补 hunter 开枪夜与终局夜。
+  - `TEST-STRATEGY.md` 的 RFC-003 小节缺 C-27 的测试行（本轮已在文档里补计划）；`TEST-STRATEGY` 的「计划测试行」计数早已与逐节表不完全一致，下一轮实现时重算一次。
+- **做对的部分**：`phases/night.ts` 的注释把 D-1 / D-2 / D-5 和三条规则讲清楚；`resolve/deaths.ts` 的「解药通过不产生击杀效果抵消」与 RUL-8 对应；`queries.ts` 纯只读；`tests/fixtures/night.ts` 沿真实路径推进，构造残局有明确注释。
+
+### 10. 总体评估
+
+**Overall Risk Level: High**
+
+**Summary**：Round 2 的两个阻塞项与 C-26 都已真修好——hunter 路径的真实路径测试在改回 `public` 时会红，RUL-11 已进 `RULES.md`，死亡顺序恢复结算顺序；门禁 295 用例与覆盖率全绿，16 条 AC 按字面全过。**但本轮发现一个不在 AC 覆盖面里的合法路径：最后一个神被狼刀、最后一只狼被女巫毒杀时，同一批死亡同时满足两阵营的胜利条件，`checkWin` 静默判好人胜**。RULES §6 的 RUL-1 与 C-6 只论证了「猎人开枪」这一种同时达成，没有覆盖狼刀 + 毒药；`win.ts` 的注释自认这是防御性兜底。按 ARCH-11 / F8 AC-4，这是必须由用户裁决（或显式抛错）的分支，不能静默选一个。另有 C-28：C-23 只修了事件通道，RFC-007 的 `ProjectedContext.phase` / `aliveSeats` / `deadSeats` 仍会在夜间泄漏内部子阶段与当夜死亡；它不阻塞 RFC-003 的代码，但阻塞 RFC-007。
+
+**Blocking Issues**：
+
+1. **C-27 · 合法夜间结算的胜负静默裁决**：`src/engine/win.ts:31-33,38-53`、`src/engine/phases/night.ts:89-95`。复现：`makeNightState` 残局（狼 3、女巫 5、村民 7/8/9；狼 1/2、seer 4、hunter 6 已出局）+ `WOLF_KILL(3→5)` + `WITCH_ACT(5 poison 3)` → `GAME_ENDED {result:'good',condition:'all-wolves-dead'}`，同时 `godsAlive === false`。`RULES.md` §6 没有这条裁决；`RFCS.md` C-6 的「同时达成不可能」只覆盖猎人开枪。修法：用户裁决后写入 `RULES.md` §6（新 RUL 或修订 RUL-1），或在此之前 `checkWin` 抛专用的「未裁决」错误；补 `win.test.ts` / `death-resolve.test.ts` 用例（同时成立、屠边与屠城）；同步 RFC-003 §2.3、`TEST-STRATEGY` 与 `win.ts` 注释。
+
+**Improvement Suggestions**（非阻塞，按优先级）：
+
+1. **C-28**：按 §7.2 修 RFC-007 的投影契约与测试；修正 RFC-003 §9.1 的「从 `state.phase` 看到天黑」表述。
+2. **B3 真实事件覆盖**：把 hunter 开枪夜与终局夜加入 `tests/engine/events.test.ts` 的 schema 校验；目前 `WITCH_POTION_USED` / `HUNTER_SHOOT` / `GAME_ENDED` 只有手写 fixture。
+3. **AC-6 / AC-15 的断言补强**：AC-6 断言 state 没有承载查验结果的字段（或构造 `not-wolf` 目标）；AC-15 补毒药 / 开枪 / 解药命中的「效果集与事件集一致」。
+4. **测试名与注释**：`night-visibility.test.ts:50` 的「公开事件数为 0」、`replay.test.ts:242` 的 `NIGHT_VOTES`、`RULES.md:3` 的版本头。
+5. **C-25**：F1 / F3 / F8 的功能映射仍待 `/manage-changes`；非阻塞。
+
+### 11. 本轮 Open conflicts / 状态更新
+
+本轮在 `RFCS.md` 登记/更新：
+
+- **C-23**：**事件通道关闭**（hunter 真实路径测试 + 反向探针）。投影通道未覆盖，转入 **C-28**。
+- **C-24**：**关闭**（RUL-11 + 代码 + 测试）。
+- **C-26**：**关闭**（结算顺序 + 反向探针）。
+- **C-27（新，阻塞）**：同一结算点同时满足两个阵营的胜利条件；`checkWin` 静默判好人胜；需用户裁决或显式错误。
+- **C-28（新，非阻塞 RFC-003 / 阻塞 RFC-007）**：`ProjectedContext.phase` / `aliveSeats` / `deadSeats` 在夜间泄漏内部子阶段与当夜死亡。
+- **C-25** 不变（非阻塞，功能映射）。
+
+**RFC-003 Status** 由 `Implemented` 改为 **`Changes requested`**。Round 4 的复核门槛：
+
+1. C-27 有权威裁决（`RULES.md` §6 的新条 / 修订）或代码显式抛未裁决错误；并且 `win.test.ts` / `death-resolve.test.ts` 有「同时成立」用例，反向探针能把静默好人胜改红。
+2. C-28 的投影契约修正（RFC-007）或至少明确记为 RFC-007 的阻塞前置；RFC-003 §9.1 的不实表述改正。
+3. 第 2 条 Improvement Suggestions（B3 真实事件覆盖）与 C-27 的 `TEST-STRATEGY` 行补上。
+
+### 12. 证据附录
+
+#### 12.1 C-27 探针（临时测试，已删）
+
+```
+roles: wolf×3 / seer / witch / hunter / villager×3
+deadSeats: [1, 2, 4, 6]
+WOLF_KILL seat 3 target 5
+after wolf kill phase NIGHT_WITCH
+after witch FINISHED
+WOLF_KILL_CHOSEN wolves {"target":5}
+PHASE_CHANGED server {"from":"NIGHT_WOLVES","to":"NIGHT_WITCH"}
+WITCH_POTION_USED witch {"potion":"poison","target":3}
+PHASE_CHANGED server {"from":"NIGHT_WITCH","to":"NIGHT_RESOLVE"}
+PLAYER_DIED server {"seat":5,"cause":"wolf"}
+PLAYER_DIED server {"seat":3,"cause":"poison"}
+GAME_ENDED public {"result":"good","condition":"all-wolves-dead"}
+alive [ 7, 8, 9 ]
+```
+
+#### 12.2 C-28 探针（临时测试，已删）
+
+```
+SEER-DEAD phase NIGHT_WITCH deadSeats [ 4 ]
+HUNTER-SHOOT phase NIGHT_HUNTER_SHOOT deadSeats [ 6, 7 ]
+```
+
+#### 12.3 变异探针的恢复确认
+
+- M-R3-1（hunter 分支改回 `public`）：`night-visibility.test.ts` 1 failed / 5 passed；恢复后 6/6。
+- M-R3-2（加回 `.sort`）：`death-resolve.test.ts` 1 failed / 15 passed；恢复后 16/16。
+- M-R3-3（删掉 `HUNTER_SHOOT` 登记）：`schemas.test.ts` 1 failed / 8 passed；恢复后 9/9。
+- P-R3-1 / P-R3-2 / P-R3-3 的探针文件删除后 `git status --short` 无源码改动；`unit` 套件 30 files / 261 tests 重新全绿。

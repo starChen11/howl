@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.10 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.1 / `RFCS.md` v2.21 · 最后更新 2026-11-18
+> 版本 v1.11 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.1 / `RFCS.md` v2.22 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -189,9 +189,10 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 15 | 同上：解药 < 击杀 < 开枪的 order；夜晚效果 `source` 全为 `role`；效果存活集与事件集一致 | unit | existing: tests/engine/death-resolve.test.ts | Must |
 | 16 | `tests/engine/night.test.ts`：夜晚结束进 `DAY_ANNOUNCE`；该阶段任何 action → `Rejected`（**AC 已修正**） | unit | existing: tests/engine/night.test.ts | Must |
 | 查询（§3 交付物） | `tests/engine/queries.test.ts`：`aliveSeats` / `countAliveByFaction` / `findAliveByRole` / `seatAt` 的语义 | unit | existing: tests/engine/queries.test.ts | Should |
-| C-23（评审 B2） | `tests/engine/night-visibility.test.ts`：夜间相位一律 `server`；一整夜的公开事件只允许「天亮推进」与 `GAME_ENDED` | unit | existing: tests/engine/night-visibility.test.ts | Must |
+| C-23（评审 B2） | `tests/engine/night-visibility.test.ts`：夜间相位一律 `server`；一整夜的公开事件只允许「天亮推进」、`GAME_ENDED` 与合法的 `HUNTER_SHOOT` | unit | existing: tests/engine/night-visibility.test.ts | Must |
 | C-24（评审 B1） | `tests/engine/death-resolve.test.ts`：毒药指向狼刀目标时只出局一次、死因 `poison`；目标是 hunter 时不进开枪阶段 | unit | existing: tests/engine/death-resolve.test.ts | Must |
 | B3（评审） | `tests/shared/schemas.test.ts`：6 个事件 payload + `GAME_ENDED` 的正反例 | unit | existing: tests/shared/schemas.test.ts | Must |
+| C-27（评审） | `tests/engine/win.test.ts` / `death-resolve.test.ts`：同一结算点同时满足两阵营胜利条件（最后一个神被狼刀、最后一只狼被女巫毒杀）→ 断言已裁决的结果，或显式未裁决错误；屠边两种条件与屠城各一条 | unit | proposed | Must |
 
 **依赖与夹具**：`tests/fixtures/night.ts`（沿真实路径推进到女巫阶段 + `makeNightState` 构造残局）。
 
@@ -257,6 +258,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 12、13 | 同上：同一文本玩家/AI 封装输出逐字相同；301 字符被拒绝并返回错误码 | unit | proposed | Must |
 | 14、15 | `tests/security/red-team.test.ts`：20 种对抗样本（含「忽略以上指令」、伪造闭合标签、JSON 块、代码块）后 `events`/`state` 深不变；`AI_THOUGHT` 只出现在该席位 `privateEvents`，对 8 个他人不可见 | security | proposed | Must |
 | 16 | `tests/server/inject/current-speech.test.ts`：传 `excludeSeq` 后该 `SPEECH` 不在 `publicEvents`，封装槽位使用其文本 | unit | proposed | Must |
+| C-28（评审） | `tests/server/project/night-visibility.test.ts`：死 seer / 死 witch 的跳过夜与 hunter 开枪夜，断言非相关观察者拿到的 `phase` 是公共阶段、`aliveSeats` / `deadSeats` 不含当夜未公开死亡；`state.phase` 的内部子阶段不出现在投影里 | unit | proposed | Must |
 
 ## RFC-008: 会话、状态存储与刷新恢复
 
@@ -445,6 +447,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.11 | RFC-003 Round 3 评审回填：C-23 的公开白名单补合法的 `HUNTER_SHOOT`；RFC-003 加 **C-27**（同时满足两阵营胜利条件）计划行，RFC-007 加 **C-28**（投影的夜间相位 / 死亡泄漏）计划行；引用 `RFCS.md` v2.22 |
 | 2026-11-18 | v1.10 | RFC-003 Round 2 修复后回填：RUL-11 落榜、C-26 死亡顺序、hunter 真实路径可见性、PAYLOAD_SCHEMAS 完整性；基线用例数 291 → 295 |
 | 2026-11-18 | v1.9 | RFC-003 Round 1 修复后回填：新增三行（C-23 / C-24 / B3）；基线用例数 270 → 291 |
 | 2026-11-18 | v1.8 | RFC-003 实现后回填：16 行 + 查询一行全部 `existing`；AC-8 / AC-16 措辞按 RFC-002 §2.3 修正；基线用例数 209 → 270 |
