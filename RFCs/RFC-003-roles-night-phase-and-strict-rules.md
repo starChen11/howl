@@ -97,7 +97,7 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 - **拒绝一律走 `Rejected` 事件**（RFC-002 §2.3），不抛业务异常。`code` 取值：`PHASE_MISMATCH`、`TARGET_NOT_ALIVE`、`WOLF_KILL_WOLF`、`WITCH_SELF_SAVE`、`POTION_ALREADY_USED`、`NOT_YOUR_TURN`。
 - 药水是否已用**从事件流推导**：可以以派生字段的形式存在 `state` 里，但**不得另存不可重建的副本**，且只能由 `applyEvent` 写（RFC-001 §2.3 的 C-18 规则）。
 - `NIGHT_RESOLVE` 是自动推进的阶段：没有 action，进入时立即结算并离开。
-- `DAY_ANNOUNCE` 阶段的处理实现在 RFC-004；本 RFC 的 `transitions.ts` 对它只登记「无允许 action」并在测试中预期抛 `UnhandledTransitionError`——这保证 RFC-003 独立可测，且不会静默放行。
+- `DAY_ANNOUNCE` 阶段的处理实现在 RFC-004；本 RFC 的 `transitions.ts` 对它只登记「无允许 action」，于是任何 action 都是 `Rejected`（`code: 'PHASE_MISMATCH'`）——**不是** `UnhandledTransitionError`（后者只用于「在允许集内却没有 handler」，见 §8.3 的 AC-16 修正）。
 
 ## 5. 验收标准
 
@@ -198,7 +198,7 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 | AC | 证据 | 结果 |
 |---|---|---|
 | 1 | `deal.test.ts` · 50 个固定种子各发一次，计数恒为 3/1/1/1/3 | PASS |
-| 2 | 同上 · 同 seed 两次发牌一致；`roles` 与 `GAME_STARTED` payload 同源 | PASS |
+| 2 | `deal.test.ts`（同 seed 两次发牌一致、座位角色由发牌决定）+ `events.test.ts`（`GAME_STARTED.payload.roles` 与发牌结果一致、与 `state` 一致） | PASS |
 | 3 | 同上 · 50 个种子里玩家席位拿到过狼 / 神 / 民三类 | PASS |
 | 4 | `night.test.ts` · `WOLF_KILL_CHOSEN` 的 `visibleTo === 'wolves'`，且状态里记下刀口 | PASS |
 | 5 | 同上 · `TARGET_NOT_ALIVE` / `WOLF_KILL_WOLF`，状态除 `seq` 外不变 | PASS |

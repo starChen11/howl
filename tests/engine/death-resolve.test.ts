@@ -5,6 +5,7 @@ import { EFFECT_ORDER } from '@shared/effects';
 
 import { DEATH_APPLIERS, resolveHunterShot, resolveNight } from '@engine/resolve/deaths';
 import { applyEffects } from '@engine/effects';
+import { checkWin } from '@engine/win';
 
 import { makeNightState, reachWitch, roleSeat, run } from '../fixtures/night';
 
@@ -288,7 +289,9 @@ describe('C-27 / RUL-12 · 真实夜间路径：同时达成时判 wolf 胜', ()
 });
 
 describe('C-27 / RUL-12 · 只有好人侧达成时不受影响', () => {
-  it('毒掉最后一只狼、但没有屠边 → 好人胜', () => {
+  it('毒掉最后一只狼、但没有屠边 → 好人胜（狼本局还活着，不是从终局态出发）', () => {
+    // 评审指出的问题：原来的版本 deadSeats 里就有那只唯一的狼，用例其实从**已终局**状态出发，
+    // 毒的还是一个村民——它验证不到「毒死最后的狼」这条路径。
     const roles = [
       'wolf',
       'villager',
@@ -302,22 +305,27 @@ describe('C-27 / RUL-12 · 只有好人侧达成时不受影响', () => {
     ] as const;
     const state = makeNightState({
       phase: 'NIGHT_WITCH',
-      deadSeats: [1],
       night: { killTarget: 9 },
       roles,
     });
-    const witch = roleSeat(state, 'witch');
 
-    const { events } = run(state, {
+    // 前置：wolf 还活着，游戏没结束
+    expect(state.seats.find((seat) => seat.seat === 1)?.alive).toBe(true);
+    expect(checkWin(state)).toBeNull();
+
+    const witch = roleSeat(state, 'witch');
+    const { events, state: after } = run(state, {
       type: 'WITCH_ACT',
       ts: 1,
       seat: witch,
       potion: 'poison',
-      target: 2,
+      target: 1,
     });
 
     const ended = events.find((event) => event.type === 'GAME_ENDED');
     expect(ended?.payload).toEqual({ result: 'good', condition: 'all-wolves-dead' });
+    // 神与民都还有存活 → 不是「同时达成」，只是好人侧单独达成
+    expect(after.seats.filter((seat) => seat.alive && seat.role === 'hunter')).toHaveLength(1);
   });
 });
 

@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.11 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.2 / `RFCS.md` v2.22 · 最后更新 2026-11-18
+> 版本 v1.12 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.25 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -30,7 +30,7 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 ```
 $ pnpm test
  Test Files  37 passed (37)     # unit 30 个 + meta 7 个
-      Tests  307 passed (307)
+      Tests  309 passed (309)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -173,7 +173,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
 | 1 | `tests/engine/deal.test.ts`：50 个固定种子，角色计数恒为 3/1/1/1/3 | unit | existing: tests/engine/deal.test.ts | Must |
-| 2 | 同上：同 seed 两次发牌一致；`roles` 与 `GAME_STARTED` payload 同源 | unit | existing: tests/engine/deal.test.ts | Must |
+| 2 | `deal.test.ts`：同 seed 两次发牌一致、座位角色由发牌决定；`events.test.ts`：`GAME_STARTED.payload.roles` 与发牌结果及 `state` 一致 | unit | existing: tests/engine/deal.test.ts + tests/engine/events.test.ts | Must |
 | 3 | 同上：玩家席位三类身份各出现 ≥1 次 | unit | existing: tests/engine/deal.test.ts | Must |
 | 4 | `tests/engine/night.test.ts`：`WOLF_KILL_CHOSEN` 的 `visibleTo === 'wolves'` | unit | existing: tests/engine/night.test.ts | Must |
 | 5 | 同上：`TARGET_NOT_ALIVE` / `WOLF_KILL_WOLF`，状态除 `seq` 外不变；非狼提交 → `NOT_YOUR_TURN` | unit | existing: tests/engine/night.test.ts | Must |
@@ -447,6 +447,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.13 | RFC-003 Round 4 回填（C-30 / 测试缺口）：基线用例数 307 → 309；AC-2 的证据归属改为「`events.test.ts` 真实事件」 |
 | 2026-11-18 | v1.12 | RFC-003 Round 3 修复后回填：C-27 落榜为 RUL-12（wolf 胜）并补真实路径用例；基线用例数 295 → 307 |
 | 2026-11-18 | v1.11 | RFC-003 Round 3 评审回填：C-23 的公开白名单补合法的 `HUNTER_SHOOT`；RFC-003 加 **C-27**（同时满足两阵营胜利条件）计划行，RFC-007 加 **C-28**（投影的夜间相位 / 死亡泄漏）计划行；引用 `RFCS.md` v2.22 |
 | 2026-11-18 | v1.10 | RFC-003 Round 2 修复后回填：RUL-11 落榜、C-26 死亡顺序、hunter 真实路径可见性、PAYLOAD_SCHEMAS 完整性；基线用例数 291 → 295 |

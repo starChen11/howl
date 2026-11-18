@@ -16,8 +16,10 @@ import type { EventDraft } from '../step';
  *
  * 白天相位仍然公开：「天亮了」「天黑了」是全场共识，不泄漏任何东西。
  *
- * 玩家端仍然能看到「现在天黑/天亮」——它来自投影后的 `state.phase`，不是事件流；
- * 真正的天亮广播由 RFC-004 的 `DAY_STARTED` 承担（payload 只有天数与死者，没有死因）。
+ * **玩家端看到的不是 `state.phase` 的原值**：`NIGHT_SEER` / `NIGHT_WITCH` /
+ * `NIGHT_HUNTER_SHOOT` 这些子阶段名本身就会泄漏身份存活状态，所以投影（RFC-007）必须把它
+ * 折叠成「夜晚 / 白天」两态——这是 C-28，留给 RFC-007 裁决。真正的天亮广播由 RFC-004 的
+ * `DAY_STARTED` 承担（payload 只有天数与死者，没有死因）。
  */
 export function phaseVisibility(to: Phase): Visibility {
   return to.startsWith('NIGHT_') ? 'server' : 'public';

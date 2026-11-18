@@ -56,12 +56,10 @@ describe('AC-2 · 同种子可复现，且发牌结果进事件', () => {
     expect(dealRoles(1).roles).not.toEqual(dealRoles(2).roles);
   });
 
-  it('roles 出现在 GAME_STARTED 的 payload 里，且与发牌顺序一致', () => {
+  it('座位角色由发牌决定（与 dealRoles 同源；payload 的校验在 events.test.ts）', () => {
     const lobby = lobbyState({ seed: 777 });
-    const started = lobby.seats.map((seat) => seat.role);
 
-    // 发牌 → 事件：`step` 由另一个测试覆盖，这里只断言「候选」与 `dealRoles` 同源。
-    expect(started).toEqual(dealRoles(777).roles);
+    expect(lobby.seats.map((seat) => seat.role)).toEqual(dealRoles(777).roles);
   });
 });
 

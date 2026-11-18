@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.24 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.2 · 最后更新 2026-11-18
+> 版本 v2.25 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -163,7 +163,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 | C-3 | `NFR-1` 在 PRD v0.3 改了数字，而 `FR-20/FR-21` 仍写旧值 | PRD v0.4 已改为引用 NFR-1；RFC-010 只实现一套口径 | PRD 变更记录 v0.4 |
 | C-4 | `F10` 的验收要求「好人 AI 的上下文不含夜聊」，但投影在 RFC-007 | 可见性判定放 `src/shared/visibility.ts`（RFC-001），`isVisibleTo` 行为在 RFC-005 验收，投影集成在 RFC-007 AC-9 验收 | RFC-001 §2.3、RFC-005、RFC-007 |
 | C-5 | RFC-001 的 `pnpm selfplay` 占位以退出码 1 结束，**违反 `OPS-3`** | 接受为**临时偏离**：脚本名先立住，行为由 RFC-015 补齐。RFC-015 完成时该偏离消除 | RFC-001 §4、AC-16 |
-| C-6 | ~~RFC-004 §2.7 裁定「两阵营同时达成 → 平局」，`RULES.md` §6 未覆盖此情形~~ | **已关闭**：用户裁定「胜负先于死亡触发技能」，狼胜条件成立时对局已结束、猎人无开枪机会，**同时达成不可能发生**。RUL-1 已反转，`draw` 分支与 RUL-10 均已移除 | `changes/CHANGE-REQUEST-002.md` |
+| C-6 | ~~RFC-004 §2.7 裁定「两阵营同时达成 → 平局」，`RULES.md` §6 未覆盖此情形~~ | **已关闭（结论不变：无平局）**：用户裁定「胜负先于死亡触发技能」，**死亡触发技能**造成的同时达成不会发生（狼胜成立瞬间对局已结束，猎人没有开枪机会），`draw` 分支与 RUL-10 均已移除。**但「同时达成」本身并未消失**：C-27 找到合法路径（同一批夜间死亡），由 **RUL-12「狼刀在先」**判 wolf 胜 | `changes/CHANGE-REQUEST-002.md`、`changes/CHANGE-REQUEST-006.md`、C-29 |
 | C-7 | `RULES ARCH-8` 把投影签名写作 `project(state, observerId)`，但 `GameState` 按 `ARCH-3` 不含事件流，投影必须读事件 | **按 RFC 实现**（对象签名 `{ state, events, observer, pending, excludeSeq }`），`ARCH-8` 的签名描述待 `/manage-changes` 修正。理由：把事件塞进 `GameState` 会让状态与事件流形成两份权威，与 `DATA-3` 冲突 | RFC-007 §2.1 |
 | C-8 | 复盘需要 AI 的 `reason`，但它对投影不可见（`self:`），单靠 `project()` 拿不到 | `AI_THOUGHT` 事件进事件流；**复盘（RFC-014）直接读事件流，不经过投影**——它发生在对局结束、身份揭示之后（SEC-6 / F28 的时间边界） | RFC-007 §2.5、RFC-014 |
 | C-9 | RFC-001 §2.2 同时要求「路径别名全覆盖」+「`tsc` 编译到 `dist/server/index.js`」+「`pnpm start` 能起来」，三者**不可共存**：`tsc` 不重写 `paths`，产物里留着 `@shared/*` 说明符，Node 直接 `ERR_MODULE_NOT_FOUND` | **服务端改用 `vite build --ssr`**（`vite.server.config.ts`），产物仍是 `dist/server/index.js`（单文件，依赖保持 external）。零新增依赖、别名保持单一来源。实证 `grep -c '@shared/' dist/server/index.js` → `0` | RFC-001 §8.2、§8.5 |
@@ -187,7 +187,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | # | 问题 | 阻塞哪些 RFC | 当前假设 | 不确认的后果 |
 |---|---|---|---|---|
-| ~~OQ-C6~~ | ~~两阵营同时达成胜利条件判谁赢~~ | — | **已关闭**（见 C-6） | 不再存在该情形 |
+| ~~OQ-C6~~ | ~~两阵营同时达成胜利条件判谁赢~~ | — | **已关闭**：不再判平局；夜间同批死亡同时达成时按 **RUL-12** 判 wolf 胜 | 见 C-6 / C-27 |
 | OQ-9（PRD） | 全思考模式下若单局超过 20 分钟，是否允许白天发言降级为非思考模式 | RFC-010、RFC-014 | 先按思考模式实测 | NFR-1 与 SM-5 可能无法同时满足，验收口径会反复 |
 | OQ-10（PRD） | AI 失败/超时时玩家可见的降级行为 | RFC-010 | 重试 1 次 → 极短发言替代 → 复盘标注 | AC 判定标准会变 |
 | OQ-11（PRD） | 玩家为狼时狼人私有频道的 UI 形态 | RFC-005、RFC-011 | 复用白天输入框，夜间仅狼可见 | 界面返工 |
@@ -279,6 +279,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.25 | C-29 落地（`CHANGE-REQUEST-007`）：F6 AC-4、RUL-1 依据句、C-6 / OQ-C6、RFC-004 §2.6 / Q-004-4 / Rules 头全部同步 RUL-12。代码与 RFC Status 未动 |
 | 2026-11-18 | v2.24 | RFC-003 Round 4 评审（Status → Reviewed）：C-27 关闭（复现 + 反向探针 M1/M1b）；307 用例 / 覆盖率 98.14 / 96.66 全绿；16 条 AC 均有测试，14 条经变异探针确认会红（AC-2 / AC-8 为直接断言）。新登记 **C-29**（旧「同时达成不可能」表述与 RUL-12 冲突；非阻塞 RFC-003、阻塞 RFC-004）与 **C-30**（README / TEST-STRATEGY 版本头 / `visibility.ts` 注释 / RFC §4 / AC-2 证据归属的文档漂移；非阻塞）。详见 `reviews/REVIEW-RFC-003.md` Round 4 |
 | 2026-11-18 | v2.23 | RFC-003 Round 3 修复（Status → Implemented）：C-27 落榜为 **RUL-12「狼刀在先」**（CR-006），`checkWin` 改为先算 wolf 侧条件；补同时达成的谓词用例与真实夜间路径用例（反向探针 4 条变红）；顺带核对「witch 被刀仍可开毒」与真实规则一致；B3 真实事件覆盖、AC-6 / AC-15 断言补强 |
 | 2026-11-18 | v2.22 | RFC-003 Round 3 评审（Status → `Changes requested`）：Round 2 的 B-R2-1 / B-R2-2 / C-26 复核通过（hunter 真实路径、RUL-11、结算顺序）；16 条 AC 与门禁全绿（295 用例、覆盖率 98.15 / 96.63）。新登记 **C-27**（夜间同一结算点同时满足两阵营胜利条件，`checkWin` 静默判好人胜；阻塞）与 **C-28**（`ProjectedContext.phase` / `aliveSeats` / `deadSeats` 在夜间泄漏内部子阶段与死亡；非阻塞 RFC-003、阻塞 RFC-007）。C-23 / C-24 / C-26 关闭。详见 `reviews/REVIEW-RFC-003.md` Round 3 |

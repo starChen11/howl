@@ -107,6 +107,38 @@ describe('AC-8（修正版）· 同一夜的第二次用药', () => {
   });
 });
 
+describe('用药目标的合法性：已出局席位不能用（night.ts 的两个拒绝分支）', () => {
+  it('解药指向已出局席位 → TARGET_NOT_ALIVE', () => {
+    const state = makeNightState({ phase: 'NIGHT_WITCH', deadSeats: [9] });
+    const witch = roleSeat(state, 'witch');
+
+    const { events } = run(state, {
+      type: 'WITCH_ACT',
+      ts: 1,
+      seat: witch,
+      potion: 'heal',
+      target: 9,
+    });
+
+    expect(events[0]?.payload).toEqual(expect.objectContaining({ code: 'TARGET_NOT_ALIVE' }));
+  });
+
+  it('毒药指向已出局席位 → TARGET_NOT_ALIVE', () => {
+    const state = makeNightState({ phase: 'NIGHT_WITCH', deadSeats: [9] });
+    const witch = roleSeat(state, 'witch');
+
+    const { events } = run(state, {
+      type: 'WITCH_ACT',
+      ts: 1,
+      seat: witch,
+      potion: 'poison',
+      target: 9,
+    });
+
+    expect(events[0]?.payload).toEqual(expect.objectContaining({ code: 'TARGET_NOT_ALIVE' }));
+  });
+});
+
 describe('AC-9 · 次夜复用已用药被拒（药水位由事件流推导）', () => {
   it('解药用过之后再用 → POTION_ALREADY_USED', () => {
     const state = makeNightState({
