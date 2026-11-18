@@ -186,3 +186,76 @@ function wrapPublicUtterance(input: { seat: SeatId; text: string }): string;
 | Q-007-1 | 投影是否包含全量历史事件 | **(assumption)** 包含；1M 上下文足够，且 KV 缓存能命中前缀 |
 | Q-007-2 | 对抗样本是否需要真实模型调用 | **(assumption)** 不需要；判定看 `events` / `state` 是否被改变，模型输出只做人工抽查 |
 | Q-007-3 | `AI_THOUGHT` 是否计入公开时间线 | **(assumption)** 不计入；它只出现在该 AI 的私有区与复盘的推理视图 |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。分支 `main`。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| Q-007-1 投影是否包含全量历史事件 | **包含**（用户确认）：1M 上下文够，且重复前缀能命中缓存 |
+| Q-007-3 `AI_THOUGHT` 是否计入公开时间线 | **不计入**（用户确认）：只在该 AI 的私有区与复盘的推理视图 |
+| C-7（`ARCH-8` 的签名描述） | **先按 RFC 的五参数实现**，`RULES.md` 的签名描述之后由 `/manage-changes` 修正（用户确认） |
+| 依赖顺序 | RFC-006 与 RFC-007 的依赖原先写反了，按用户裁决翻转（见 `RFCS.md` C-40）：**本 RFC 先做**，只依赖 RFC-005 |
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+| **D-1** | `wrapPublicUtterance` 放在 `src/server/project/inject.ts`，不是 RFC 原写的 `src/server/llm/inject.ts` | `src/server/llm/` 是 RFC-006 的目录，本 RFC 先做，建一个空目录给它没有意义。006 落地时可以挪，也可以就地引用 |
+| **D-2** | 常量（`INJECTION_NOTICE` / `UTTERANCE_LIMIT` / 转义函数）放 `src/shared/injection.ts`，函数放服务端 | 常量要被执行本 RFC 测试的客户端与服务端共用，且它们是**纯常量与纯函数**，符合 `ARCH-2` 对 `shared` 的要求 |
+| **D-3** | `legalTargets` 对 `kill` 只给存活席位，**不**替引擎筛掉 wolf | 投影给的是「可指向的范围」，最终合法性由引擎拒绝。投影替引擎做判断会让两处规则漂移（RFC-002 的教训） |
+| **D-4** | 重投阶段（`DAY_VOTE_RUNOFF`）的 `legalTargets` 只给并列者，**不含弃权** | RUL-2：重投不能弃权。这也让 AI 的选项清单与引擎的接受集合一致 |
+| **D-5** | `checks[].day` 用「第几条查验」编号，而不是真实天数 | `SEER_CHECKED` 的 payload 不带天数，而投影不能凭事件 `seq` 猜天数（死亡与相位会扭曲）。若将来复盘需要真实天数，应给 payload 加字段，而不是在投影里补算 |
+
+### 8.3 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 类型新增 | `src/shared/project.ts`（`ProjectInput` / `ProjectedContext` / `RoleKnowledge`）、`src/shared/injection.ts`（声明句与转义） |
+| 服务端新增 | `src/server/project/{index,knowledge,targets,inject}.ts` |
+| 测试新增 | `tests/server/project/project.test.ts`、`tests/server/inject/injection.test.ts` |
+| 文档 | 本文件 §8、`RFCS.md`（C-40 与状态）、`TEST-STRATEGY.md`、`README.md` |
+
+### 8.4 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `project.test.ts` · 同一输入两次深度相等、入参未被改动；不构造客户端即可调用 | PASS |
+| 2 | 同上 · 9 个观察者的 `self.role` 与真实身份一致；序列化后 `"role":` 只出现一次 | PASS |
+| 3 | 同上 · 狼看到 2 名队友且不含自己；好人为空数组 | PASS |
+| 4 | 同上（覆盖于 AC-7 的矩阵，见下）；`checks` 只在 seer 投影非空 | PASS |
+| 5 | 同上 · 非 witch 的 `potions` 两项均为 `used`；witch 反映药水位 | PASS |
+| 6 | 同上 · `canShoot` 为真时必是已出局的 hunter | PASS |
+| 7 | 同上 · 非 witch 或 `pending !== 'witch'` 时 `knownKillTarget` 为 null | PASS |
+| 8 | 同上 · `publicEvents` 与 `privateEvents` 的 `seq` 集合无交集 | PASS |
+| 9 | 同上 · 合并后按 `seq` 排序等于两集合的并集（与折叠等价） | PASS |
+| 10 | 同上 · `JSON.parse(JSON.stringify(ctx))` 深度相等 | PASS |
+| 11 | `injection.test.ts` · 标签内不含未转义尖括号；声明句逐字存在 | PASS |
+| 12 | 同上 · 同一文本、同席位两次封装结果逐字相同（不区分来源） | PASS |
+| 13 | 同上 · 301 字符返回 `{ ok: false, code: 'UTTERANCE_TOO_LONG' }` | PASS |
+| 14 | 同上 · 10 个红队样本（伪造闭合标签、JSON 块、伪造 system 行、空字节等）全部被包住且转义 | PASS |
+| 15 | 同上 · 声明句不含扮演类措辞；`AI_THOUGHT` 不可见由 `visibility` 的 `self:` 规则保证（RFC-005 已测） | PASS |
+| 16 | `project.test.ts` · `excludeSeq` 指定的那条不出现在 `publicEvents` | PASS |
+
+### 8.5 验证输出（实跑）
+
+```
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → Test Files 46 passed (46) · Tests 389 passed (389)
+```
+
+> 覆盖率门禁只统计 `src/engine/`（RFC-002 的 TEST-2 口径），本 RFC 的代码在 `src/server/`，不计入该阈值。
+
+### 8.6 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| `AI_THOUGHT` 尚未产出 | 本 RFC 定义了它的可见性与归属，产出在 RFC-006 | RFC-006 |
+| 对抗样本没有真调模型 | Q-007-2 的假设：判定看 `events` / `state` 是否被改，模型输出只人工抽查 | RFC-012 之后 |
+| `checks[].day` 是序号不是天数 | 见 D-5 | 若需要，改 payload |
+| `ARCH-8` 的签名描述待修正 | C-7 | `/manage-changes` |

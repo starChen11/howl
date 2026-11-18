@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.36 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
+> 版本 v2.37 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -43,7 +43,7 @@
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Reviewed |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Reviewed |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Not started |
-| [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Not started |
+| [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Implemented |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Not started |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Not started |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Not started |
@@ -324,6 +324,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.37 | RFC-007 实现完成（Status → Implemented）：`project()` 按序折叠 + 9 观察者矩阵 + 角色私货矩阵；注入封装与固定声明句；红队 10 样本。用户确认 Q-007-1（带全量历史）与 Q-007-3（内心独白不计入公开时间线）；C-7 先按五参数实现 |
 | 2026-11-18 | v2.36 | RFC-005 Round 2 复核（Status → `Reviewed`）：Round 1 的四项全部通过——第二夜夜聊（M-R2-1 改回两条 → 6 红，另做端到端探针走完夜聊接狼刀）、入夜清票（M-R2-2 删 `delete next.votes` → 1 红；完整崩溃序列不再崩）、四处正文回写（§2.1 / §2.4 / Q-005-1 / AC-3 与 `shared/visibility.ts` 一致）、500 字截断（M-R2-4 删截断 → 1 红）。门禁 44 files / 369 tests、覆盖率行 96.96% / 分支 93.31%。C-35 / C-36 / C-37 关闭；C-38 仅 ③ 关闭；新登记 C-39（非阻塞文档 / 测试残留）。详见 `reviews/REVIEW-RFC-005.md` Round 2 |
 | 2026-11-18 | v2.35 | RFC-005 Round 1 修复（Status → Implemented）：C-35 第二夜夜聊缺失（含测试锁住错误行为）、C-36 自曝未清票箱导致崩溃、C-37 正文未回写裁决、C-38 截断无测试——全部修复并各自做反向探针 |
 | 2026-11-18 | v2.34 | RFC-005 Round 1 评审（Status → `Changes requested`）：门禁 44 files / 366 tests、覆盖率 96.95% / 93.31% 全绿；17 条探针中 15 条变红，M14 / M18 暴露测试空白。新增三条阻塞——**C-35**（`enterNight` 仍跳过后续夜晚的夜聊）、**C-36**（`DAY_VOTE` 自曝后 `state.votes` 跨天，合法输入可触发 `PLAYER_DIED` 重复崩溃）、**C-37**（RFC §2.1 / §2.4 / §5 AC-3 / §7 Q-005-1 未回写用户裁决；实现本身与裁决一致，表是错的）；C-38 为非阻塞文档 / 测试残留。详见 `reviews/REVIEW-RFC-005.md` Round 1 |

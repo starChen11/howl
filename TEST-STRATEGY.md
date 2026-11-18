@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.17 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.36 · 最后更新 2026-11-18
+> 版本 v1.18 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.37 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -29,8 +29,8 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  44 passed (44)     # unit 37 个 + meta 7 个
-      Tests  369 passed (369)
+ Test Files  46 passed (46)     # unit 39 个 + meta 7 个
+      Tests  389 passed (389)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -249,17 +249,17 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1 | `tests/server/project/purity.test.ts`：同输入两次深相等、不改入参；不构造 LLM 客户端即可调用 | unit | proposed | Must |
-| 2 | `tests/server/project/property.test.ts`：固定种子生成 1000 个合法局面 × 9 观察者，断言 `self.role` 恰为自己、输出无他人角色字段 | unit | proposed | Must |
-| 3、4、5 | `tests/server/project/knowledge.test.ts`：狼/预言家/女巫三者断言 `teammates`/`checks`/`potions`；好人侧断言空值形态（`[]`、`'used'`） | unit | proposed | Must |
-| 6、7 | 同上：猎人仅开枪阶段 `canShoot===true`；女巫在 `pending==='witch'` 时 `knownKillTarget` 等于刀口，其余为 `null` | unit | proposed | Must |
-| 8、9 | `tests/server/project/partition.test.ts`：对 9 观察者断言并集等于按序折叠判定的可见集合、无交集；非狼观察者不含 `wolves` 事件 | unit | proposed | Must |
-| 10 | `tests/server/project/serialization.test.ts`：输出 JSON 往返深相等 | unit | proposed | Must |
-| 11 | `tests/server/inject/wrap.test.ts`：文本只出现在标签内且 `<>` 被转义；系统提示含 `INJECTION_NOTICE`（逐字） | unit | proposed | Must |
-| 12、13 | 同上：同一文本玩家/AI 封装输出逐字相同；301 字符被拒绝并返回错误码 | unit | proposed | Must |
-| 14、15 | `tests/security/red-team.test.ts`：20 种对抗样本（含「忽略以上指令」、伪造闭合标签、JSON 块、代码块）后 `events`/`state` 深不变；`AI_THOUGHT` 只出现在该席位 `privateEvents`，对 8 个他人不可见 | security | proposed | Must |
-| 16 | `tests/server/inject/current-speech.test.ts`：传 `excludeSeq` 后该 `SPEECH` 不在 `publicEvents`，封装槽位使用其文本 | unit | proposed | Must |
-| C-28（评审） | `tests/server/project/night-visibility.test.ts`：死 seer / 死 witch 的跳过夜与 hunter 开枪夜，断言非相关观察者拿到的 `phase` 是公共阶段、`aliveSeats` / `deadSeats` 不含当夜未公开死亡；`state.phase` 的内部子阶段不出现在投影里 | unit | proposed | Must |
+| 1 | `tests/server/project/purity.test.ts`：同输入两次深相等、不改入参；不构造 LLM 客户端即可调用 | unit | existing: tests/server/project + tests/server/inject | Must |
+| 2 | `tests/server/project/property.test.ts`：固定种子生成 1000 个合法局面 × 9 观察者，断言 `self.role` 恰为自己、输出无他人角色字段 | unit | existing: tests/server/project + tests/server/inject | Must |
+| 3、4、5 | `tests/server/project/knowledge.test.ts`：狼/预言家/女巫三者断言 `teammates`/`checks`/`potions`；好人侧断言空值形态（`[]`、`'used'`） | unit | existing: tests/server/project + tests/server/inject | Must |
+| 6、7 | 同上：猎人仅开枪阶段 `canShoot===true`；女巫在 `pending==='witch'` 时 `knownKillTarget` 等于刀口，其余为 `null` | unit | existing: tests/server/project + tests/server/inject | Must |
+| 8、9 | `tests/server/project/partition.test.ts`：对 9 观察者断言并集等于按序折叠判定的可见集合、无交集；非狼观察者不含 `wolves` 事件 | unit | existing: tests/server/project + tests/server/inject | Must |
+| 10 | `tests/server/project/serialization.test.ts`：输出 JSON 往返深相等 | unit | existing: tests/server/project + tests/server/inject | Must |
+| 11 | `tests/server/inject/wrap.test.ts`：文本只出现在标签内且 `<>` 被转义；系统提示含 `INJECTION_NOTICE`（逐字） | unit | existing: tests/server/project + tests/server/inject | Must |
+| 12、13 | 同上：同一文本玩家/AI 封装输出逐字相同；301 字符被拒绝并返回错误码 | unit | existing: tests/server/project + tests/server/inject | Must |
+| 14、15 | `tests/security/red-team.test.ts`：20 种对抗样本（含「忽略以上指令」、伪造闭合标签、JSON 块、代码块）后 `events`/`state` 深不变；`AI_THOUGHT` 只出现在该席位 `privateEvents`，对 8 个他人不可见 | security | existing: tests/server/project + tests/server/inject | Must |
+| 16 | `tests/server/inject/current-speech.test.ts`：传 `excludeSeq` 后该 `SPEECH` 不在 `publicEvents`，封装槽位使用其文本 | unit | existing: tests/server/project + tests/server/inject | Must |
+| C-28（评审） | `tests/server/project/night-visibility.test.ts`：死 seer / 死 witch 的跳过夜与 hunter 开枪夜，断言非相关观察者拿到的 `phase` 是公共阶段、`aliveSeats` / `deadSeats` 不含当夜未公开死亡；`state.phase` 的内部子阶段不出现在投影里 | unit | existing: tests/server/project + tests/server/inject | Must |
 
 ## RFC-008: 会话、状态存储与刷新恢复
 
@@ -448,6 +448,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.18 | RFC-007 实现后回填：16 条 AC 全部 `existing`（`tests/server/project` + `tests/server/inject`）；基线 369 → 389 |
 | 2026-11-18 | v1.17 | RFC-005 实现后回填：14 条 AC 全部 `existing`；基线 342 → 366 |
 | 2026-11-18 | v1.16 | RFC-004 Round 2 回填：补 AC-4b 行（C-31 的第二条路径）、同步版本引用 |
 | 2026-11-18 | v1.15 | RFC-004 Round 1 回填：C-31 / B2 / 三条不设防测试补齐；基线 337 → 342 |
