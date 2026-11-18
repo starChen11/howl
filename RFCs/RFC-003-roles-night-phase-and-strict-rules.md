@@ -106,7 +106,7 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 5. `WOLF_KILL` 指向已出局席位时产出 `Rejected`（`code === 'TARGET_NOT_ALIVE'`）；同一轮内狼人指定狼人为目标时产出 `Rejected`（`code === 'WOLF_KILL_WOLF'`）；两种情况状态除 `seq` 外不变
 6. `SEER_CHECK` 后产出 `SEER_CHECKED` 事件，`visibleTo === 'seer'`，`result` 只取 `'wolf'` 或 `'not-wolf'` 且与目标真实阵营一致
 7. `WITCH_ACT` 指定 `heal` 且 `target` 为女巫自己时，产出 `Rejected` 事件且 `code === 'WITCH_SELF_SAVE'`
-8. 同一夜第二次提交 `WITCH_ACT`（无论哪种药）时，产出 `Rejected` 事件且 `code === 'NOT_YOUR_TURN'`（该阶段已结束）
+8. 同一夜第二次提交 `WITCH_ACT`（无论哪种药）时，产出 `Rejected` 事件且 `code === 'NOT_YOUR_TURN'`（该阶段已结束）——**已由 §8.3 修正为 `PHASE_MISMATCH`**，见该节的理由
 9. 女巫用过的药在后续夜晚再次使用时，产出 `Rejected` 事件且 `code === 'POTION_ALREADY_USED'`（药水位由事件流推导）
 10. `heal` 目标与狼刀目标相同时：当夜无人出局，事件流中不含任何 `PLAYER_DIED` 事件
 11. `heal` 目标与狼刀目标不同时：狼刀目标出局、被救目标存活，两者各有一条 `PLAYER_DIED` 事件（仅出局者）
@@ -114,7 +114,7 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 13. 毒杀的猎人出局后**不**进入 `NIGHT_HUNTER_SHOOT`：事件流中不含任何 `HUNTER_SHOOT` 事件
 14. **胜负先于开枪**：构造「被刀的猎人正是最后一个神（屠边）」的局面，断言对局在第一次 `checkWin` 处结束为狼胜，且事件流中**不含** `NIGHT_HUNTER_SHOOT` 阶段与 `HUNTER_SHOOT` 事件
 15. 夜晚结算产出的每条 `Effect` 的 `source` 均为 `'role'`；解药的 `order` 小于狼刀与毒药的 `order`，猎人开枪的 `order` 大于二者的 `order`（可据此断言 RUL-8 的时序）
-16. 未分出胜负时，夜晚结束后 `phase === 'DAY_ANNOUNCE'`；此时对本 phase 提交任何 action 均抛 `UnhandledTransitionError`（RFC-004 尚未实现该阶段）
+16. 未分出胜负时，夜晚结束后 `phase === 'DAY_ANNOUNCE'`；此时对本 phase 提交任何 action 均抛 `UnhandledTransitionError`（RFC-004 尚未实现该阶段）——**已由 §8.3 修正为 `Rejected`（`PHASE_MISMATCH`）**，见该节的理由
 
 ## 6. 边界与测试
 
@@ -152,7 +152,7 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 
 | # | 决定 | 为什么 | 批准 |
 |---|---|---|---|
-| **D-1** | `GameEventMap` 新增 `PHASE_CHANGED { from, to }`（`visibleTo: 'public'`） | 相位推进需要一个事件来承载：`NIGHT_WITCH` 收到 `potion: 'none'` 时**什么也没发生**，没有别的事件能表示「这一阶段结束了」。没有它只能靠隐式推导，而「无事发生」的转移无处安放。RFC-001 §2.3 明文允许后续 RFC 增加成员 | 用户批准 |
+| **D-1** | `GameEventMap` 新增 `PHASE_CHANGED { from, to }`（**夜间 `server` / 白天 `public`**，见 §9 的 C-23） | 相位推进需要一个事件来承载：`NIGHT_WITCH` 收到 `potion: 'none'` 时**什么也没发生**，没有别的事件能表示「这一阶段结束了」。没有它只能靠隐式推导，而「无事发生」的转移无处安放。RFC-001 §2.3 明文允许后续 RFC 增加成员 | 用户批准 |
 | **D-2** | `NIGHT_RESOLVE` 是**瞬态**：最后一个夜间 action 的 handler 一次产出 `PHASE_CHANGED(→RESOLVE)` + 死亡事件 + `PHASE_CHANGED(→终点)` 或 `GAME_ENDED` | 无 action 的阶段无法被 `step` 驱动；把它做成瞬态既保留了阶段图的可观测性，又不需要额外的「推进」action | 计划内 |
 | **D-3** | `PLAYER_DIED` 的可见性是 **`server`** | 死因（刀 / 毒）在真实规则里**不公开**，天亮只公布「谁死了」。若 `PLAYER_DIED` 走 `public`，`cause` 会随公开事件泄漏给玩家。公开广播由 RFC-004 的 `DAY_STARTED.diedLastNight` 承担，那里没有 `cause` | 计划内的安全决定，见下 |
 | **D-4** | `GameState` 新增两个派生字段：`night?: { killTarget?, healTarget?, poisonTarget? }`、`potionsUsed?: { heal, poison }` | C-18 的规则：派生字段合法，但只能由 `applyEvent` 写、必须可完整重建。药水位整局累计（RUL-3 / FR-17），`night` 每次进入新的一夜清空 | 计划内 |
@@ -238,3 +238,61 @@ $ pnpm exec vitest run --project unit --coverage
 | 多狼共识 | 第一只提交的狼决定刀口，不做表决（D-6） | 若需要，走 RFC-005 的变更 |
 | 女巫「看到刀口」 | `WOLF_KILL_CHOSEN` 的 `visibleTo` 是 `wolves`，女巫要靠投影额外注入（§2.5）。**本 RFC 未实现投影**，所以这条只停留在状态里有 `night.killTarget` | RFC-007 |
 | `PHASE_CHANGED` 的事件量 | 每夜约 4–6 条相位事件，事件流比原来长。RFC-008 的存储策略会看到这个量级 | RFC-008 参考 |
+
+---
+
+## 9. Round 1 评审回应（Changes requested → 本轮修复）
+
+评审结论 **Changes requested / High**。16 条 AC 按字面全过，但三个阻塞项**都不在 AC 覆盖面里**——这是本轮最值得记的一点：AC 矩阵通过 ≠ 这份交付物可用。
+
+### 9.1 三个阻塞项
+
+| 项 | 问题 | 处理 | 复验 |
+|---|---|---|---|
+| **B1 / C-24** 合法输入崩溃 | 女巫毒「狼刀目标」时，`resolveNight` 产出两条 `Death` → 两条 `PLAYER_DIED` → `applyPlayerDied` 把第二次出局当数据损坏抛 `InvalidEventStreamError`。**一个正常操作把引擎打崩** | ①按座位归并死亡（必须）；②**毒药优先**（用户裁决）：同一目标既被刀又被毒时死因记为 `poison`，猎人因此**不开枪**。理由：FR-17 的本意是「被毒杀的人拿不走开枪」，而 witch 明确选中了毒这个目标 | `resolveNight({killTarget:7, poisonTarget:7})` 只产出 `[{seat:7, cause:'poison'}]` 与一条 kill 效果；目标是 hunter 时不进 `NIGHT_HUNTER_SHOOT` |
+| **B2 / C-23** 夜间相位公开泄漏 | `PHASE_CHANGED` 全是 `public`：跳过 `NIGHT_SEER`/`NIGHT_WITCH` 等于告诉全场「seer / witch 已出局」；`→NIGHT_HUNTER_SHOOT` 泄漏 hunter 死于狼刀而非毒杀。RFC-007 的 `publicEvents` 会把它原样放进每个 AI 的上下文（FR-9） | **夜间相位一律 `server`**，白天相位仍 `public`。新增 `src/engine/phases/visibility.ts` 的 `phaseVisibility(to)`：`to.startsWith('NIGHT_') ? 'server' : 'public'`。玩家端仍能看到「天黑/天亮」——它来自投影后的 `state.phase`，不是事件流；天亮广播由 RFC-004 的 `DAY_STARTED` 承担 | `tests/engine/night-visibility.test.ts`：一整夜的公开事件只允许「天亮的相位推进」与 `GAME_ENDED`；死 seer / 死 witch 两条跳过路径的相位事件都是 `server` |
+| **B3** payload schema 缺失 | RFC-003 接管的 6 个事件没有 Zod schema，违反 RFC-001 §2.3 的「每个 payload」 | 在 `src/shared/schemas.ts` 补 `WOLF_KILL_CHOSEN` / `SEER_CHECKED` / `WITCH_POTION_USED` / `PLAYER_DIED` / `HUNTER_SHOOT` / `PHASE_CHANGED` 六个 schema，并登记进 `PAYLOAD_SCHEMAS`。**`GAME_ENDED` 的归属**：它第一次由 RFC-003 产出（夜间即可终局），schema 定义在这里，RFC-004 复用 | `tests/shared/schemas.test.ts`：每个 schema 一对正反例 |
+
+### 9.2 非阻塞项
+
+| # | 处理 |
+|---|---|
+| **N1** | `replay-parity.test.ts` 的序列改成**真实的一整夜**（开局 → 狼刀 → 查验 → 女巫解药），并加一条断言：`night` 与 `potionsUsed` 在 `replay` 后仍在。原来那条序列没有任何夜间 action 成功执行，两个派生字段根本没被覆盖 |
+| **N2** | AC-5 的 `WOLF_KILL_WOLF` 补「除 `seq` 外状态不变」断言 |
+| **N3** | AC-9 的药水位测试改成从开局重跑、收集完整事件流再 `replay`——原来标题写 replay，正文却没调用它 |
+| **N4** | §5 的 AC-8 / AC-16 正文加「已由 §8.3 修正」的指针 |
+| **N5** | 删掉 `hunterShoot` 里 `deathCauseOf` 的空循环；`resolveHunterShot` 里效果 payload 与 `Death` 共用同一个 `cause` 常量 |
+| **N6** | 统一 appliers：handler 改用 `context.appliers`（原来绕过注入直接引用 `DEATH_APPLIERS` 常量），`DEFAULT_APPLIERS` 接上 `DEATH_APPLIERS`。现在注入自定义表能真正替换掉默认行为 |
+| **N7** | 补三条负向用例：`PHASE_CHANGED` 的 `from` 与当前阶段不一致、`PLAYER_DIED` 重复出局（真正的数据损坏） |
+| **N8** | README / TEST-STRATEGY / 本节证据同步 |
+| **N9** | 记入 §9.4：`PLAYER_DIED(cause: 'lynch')` 在 RFC-004 里应当是 `public`（放逐结果要进事件面板），**不要**照搬夜间 `server` |
+| **N10** | `POTION_ALREADY_USED` 的检查提到 `WITCH_SELF_SAVE` 之前：药已经没了比「你不能对自己用」更根本，两种错误同时成立时前者更可操作。补用例 |
+| **C-25** | 非阻塞，属 `FEATURES` 与 RFC 的功能映射问题，不在本 RFC 代码范围；留给 `/manage-changes` |
+
+### 9.3 文件清单（本轮新增 / 修改）
+
+| 类别 | 文件 |
+|---|---|
+| 引擎新增 | `src/engine/phases/visibility.ts`（`phaseVisibility` / `phaseChangedDraft`） |
+| 引擎修改 | `src/engine/resolve/deaths.ts`（按座位归并 + 毒药优先 + N5）、`src/engine/phases/night.ts`（相位草稿走统一可见性、appliers 来自 context、用药优先级）、`src/engine/step.ts`（START 的相位可见性、`DEFAULT_APPLIERS`） |
+| 共享修改 | `src/shared/schemas.ts`（+7 个 payload schema 与 `PAYLOAD_SCHEMAS` 登记） |
+| 测试新增 | `tests/engine/night-visibility.test.ts`（C-23）、`tests/shared/schemas.test.ts`（B3） |
+| 测试修改 | `tests/engine/{death-resolve,night,witch,replay,replay-parity}.test.ts`（B1 / C-24 / N1 / N2 / N3 / N7 / N10） |
+
+### 9.4 给 RFC-004 的提醒
+
+- **`PLAYER_DIED(cause: 'lynch')` 应当是 `public`**：放逐结果全桌可见，且 RFC-013 的事件面板要展示它。夜间之所以是 `server`，是因为**夜间死亡**的死因不公开且天亮前不该有人知道；白天放逐不适用这条。
+- **`DAY_STARTED` 是天亮的唯一公开广播**，payload 只有天数与死者、没有死因。
+- `PHASE_CHANGED` 的可见性规则已由 `phaseVisibility()` 统一，白天阶段直接复用；不要为白天另写一套。
+
+### 9.5 本轮验证输出
+
+```
+$ pnpm typecheck    → exit 0
+$ pnpm lint         → exit 0
+$ pnpm format:check → exit 0
+$ pnpm build        → exit 0
+$ pnpm test         → Test Files 37 passed (37) · Tests 291 passed (291)  exit 0
+$ pnpm exec vitest run --project unit --coverage
+  All files | % Stmts 97.59 | % Branch 95.79 | % Funcs 100 | % Lines 97.42
+```

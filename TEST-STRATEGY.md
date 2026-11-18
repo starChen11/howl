@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.8 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.17 · 最后更新 2026-11-18
+> 版本 v1.9 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.17 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -29,8 +29,8 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  35 passed (35)     # unit 28 个 + meta 7 个
-      Tests  270 passed (270)
+ Test Files  37 passed (37)     # unit 30 个 + meta 7 个
+      Tests  291 passed (291)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -189,6 +189,9 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 15 | 同上：解药 < 击杀 < 开枪的 order；夜晚效果 `source` 全为 `role`；效果存活集与事件集一致 | unit | existing: tests/engine/death-resolve.test.ts | Must |
 | 16 | `tests/engine/night.test.ts`：夜晚结束进 `DAY_ANNOUNCE`；该阶段任何 action → `Rejected`（**AC 已修正**） | unit | existing: tests/engine/night.test.ts | Must |
 | 查询（§3 交付物） | `tests/engine/queries.test.ts`：`aliveSeats` / `countAliveByFaction` / `findAliveByRole` / `seatAt` 的语义 | unit | existing: tests/engine/queries.test.ts | Should |
+| C-23（评审 B2） | `tests/engine/night-visibility.test.ts`：夜间相位一律 `server`；一整夜的公开事件只允许「天亮推进」与 `GAME_ENDED` | unit | existing: tests/engine/night-visibility.test.ts | Must |
+| C-24（评审 B1） | `tests/engine/death-resolve.test.ts`：毒药指向狼刀目标时只出局一次、死因 `poison`；目标是 hunter 时不进开枪阶段 | unit | existing: tests/engine/death-resolve.test.ts | Must |
+| B3（评审） | `tests/shared/schemas.test.ts`：6 个事件 payload + `GAME_ENDED` 的正反例 | unit | existing: tests/shared/schemas.test.ts | Must |
 
 **依赖与夹具**：`tests/fixtures/night.ts`（沿真实路径推进到女巫阶段 + `makeNightState` 构造残局）。
 
@@ -442,6 +445,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.9 | RFC-003 Round 1 修复后回填：新增三行（C-23 / C-24 / B3）；基线用例数 270 → 291 |
 | 2026-11-18 | v1.8 | RFC-003 实现后回填：16 行 + 查询一行全部 `existing`；AC-8 / AC-16 措辞按 RFC-002 §2.3 修正；基线用例数 209 → 270 |
 | 2026-11-18 | v1.7 | RFC-002 Round 3 评审同步：基线用例数 206 → 209；AC-13 行补递归扫描与接线可注入；`RFCS.md` 引用更新为 v2.16 |
 | 2026-11-17 | v1.6 | RFC-002 Round 1/2 评审修复后回填：基线用例数 186 → 206；AC-13 的扫描改为递归且接线可注入；补 `tests/helpers/source-scan.ts` 一行 |

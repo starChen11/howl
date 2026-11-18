@@ -15,7 +15,7 @@ v0.11 · **工程骨架 + 引擎内核已落地。** RFC-001 四轮评审后 `Re
 ```bash
 pnpm install
 pnpm dev        # http://localhost:5173
-pnpm test       # 270 个用例，含五条命令与覆盖率门禁
+pnpm test       # 291 个用例，含五条命令与覆盖率门禁
 ```
 
 ## 怎么参与开发
@@ -35,8 +35,8 @@ pnpm test       # 270 个用例，含五条命令与覆盖率门禁
 ```
 RFC-001 → 四轮评审后 Reviewed
 RFC-002 → 三轮评审后 Reviewed
-RFC-003 → 实现完成，Status Implemented（§8 记录了 9 项决定与 3 条 AC 修正）
-下一步：/review-rfc 003（新会话）
+RFC-003 → Round 1 评审（Changes requested · High）→ 三项阻塞已修 → Status Implemented
+下一步：/review-rfc 003（新会话；重点复核 B1/B2/B3 与 N1~N3）
 ```
 
 随时查看全局进度：`/workflow-status`。

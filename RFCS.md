@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.18 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 · 最后更新 2026-11-18
+> 版本 v2.19 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -39,7 +39,7 @@
 |---|---|---|---|---|
 | [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Reviewed |
 | [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
-| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Changes requested |
+| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Implemented |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Not started |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Not started |
@@ -205,8 +205,8 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
 |---|---|---|---|
-| **C-23** | RFC-003 D-1 把 `PHASE_CHANGED` 定为 `visibleTo: 'public'`。夜晚跳过 `NIGHT_SEER` / `NIGHT_WITCH` 会向所有观察者暴露「预言家 / 女巫已出局」；`NIGHT_RESOLVE → NIGHT_HUNTER_SHOOT` 还会暴露猎人死于狼刀而非毒杀。这与 PRD User Journeys 第 4 步「玩家闭眼（只看到「天黑了」）」以及 `FR-9`（AI 只能使用自己有权知道的信息）冲突；RFC-007 §2.2 的 `publicEvents` 会包含全部 `visibleTo: 'public'` 事件，因此该泄漏会进入每个 AI 的上下文。D-3 为避免死因泄漏把 `PLAYER_DIED` 设为 `server`，但同一夜的公开相位又把身份存活状态与死因漏了回去 | **阻塞 RFC-003**，需用户确认后修正。按权威顺序 `PRD > FEATURES > RULES > RFC`，夜晚内部相位不应公开。候选：① 夜间 `PHASE_CHANGED` 改 `server`（或新增专用可见性），公共侧只保留 RFC-004 的 `DAY_STARTED`；② 若客户端需要「天黑了 / 天亮了」提示，由 `project()` 的 `phase` 字段或 RFC-004 的公开事件承担。修正后补「死预言家 / 死女巫 / 被毒猎人」三条「公开事件不泄漏」的回归测试 | **Open** · RFC-003 §8.2 D-1、`src/engine/phases/night.ts:76-77,101-108,120-128,357-361`、`src/engine/step.ts:126-133`、RFC-007 §2.2、`PRD.md` User Journeys 4 / FR-9、`reviews/REVIEW-RFC-003.md` B2 |
-| **C-24** | `RULES.md` §6 未裁决「狼刀目标与毒药目标为同一席位时，猎人是否算作被毒杀（是否开枪）」。RFC-003 §2.3 的集合语义只要求该席位出局一次，但 `resolveNight` 产出两条 `Death`，`finishNight` 产出两条 `PLAYER_DIED`，而 `applyPlayerDied` 把重复出局当作数据损坏抛 `InvalidEventStreamError`。这是**合法 action**（女巫毒狼刀目标）触发的引擎崩溃；若该席位是猎人，还叠加「被狼刀 → 开枪 / 被毒 → 不开枪」的未裁决分支（ARCH-11）。`PLAYER_DIED` 重复不能被当作「事件流损坏」 | **阻塞 RFC-003**，需用户裁决：① 同一目标只记一次出局（按座位去重，这是实现必须做的，不是可选项）；② 若为猎人，死因按狼刀还是毒药（决定是否开枪）。裁决前至少应把这条路径变成显式的「未裁决规则」错误，而不是让合法输入撞上内部不变量错误；裁决后补 `killTarget === poisonTarget` 的测试 | **Open** · RFC-003 §2.3 第 3–6 步、`src/engine/resolve/deaths.ts:53-96`、`src/engine/phases/night.ts:80-99`、`src/engine/apply.ts:124-131`、RULES §6 / ARCH-11、FEATURES F8 AC-4、`reviews/REVIEW-RFC-003.md` B1 |
+| **C-23** | RFC-003 D-1 把 `PHASE_CHANGED` 定为 `visibleTo: 'public'`。夜晚跳过 `NIGHT_SEER` / `NIGHT_WITCH` 会向所有观察者暴露「预言家 / 女巫已出局」；`NIGHT_RESOLVE → NIGHT_HUNTER_SHOOT` 还会暴露猎人死于狼刀而非毒杀。这与 PRD User Journeys 第 4 步「玩家闭眼（只看到「天黑了」）」以及 `FR-9`（AI 只能使用自己有权知道的信息）冲突；RFC-007 §2.2 的 `publicEvents` 会包含全部 `visibleTo: 'public'` 事件，因此该泄漏会进入每个 AI 的上下文。D-3 为避免死因泄漏把 `PLAYER_DIED` 设为 `server`，但同一夜的公开相位又把身份存活状态与死因漏了回去 | **阻塞 RFC-003**，需用户确认后修正。按权威顺序 `PRD > FEATURES > RULES > RFC`，夜晚内部相位不应公开。候选：① 夜间 `PHASE_CHANGED` 改 `server`（或新增专用可见性），公共侧只保留 RFC-004 的 `DAY_STARTED`；② 若客户端需要「天黑了 / 天亮了」提示，由 `project()` 的 `phase` 字段或 RFC-004 的公开事件承担。修正后补「死预言家 / 死女巫 / 被毒猎人」三条「公开事件不泄漏」的回归测试 | **Open** · RFC-003 §8.2 D-1、`src/engine/phases/night.ts:76-77,101-108,120-128,357-361`、`src/engine/step.ts:126-133`、RFC-007 §2.2、`PRD.md` User Journeys 4 / FR-9、`reviews/REVIEW-RFC-003.md` B2 | **已裁决并修复（Round 1 修复）**：夜间相位一律 `server`、白天相位仍 `public`，规则收敛在 `src/engine/phases/visibility.ts` 的 `phaseVisibility()`。玩家端仍能看到「天黑/天亮」（来自投影后的 `state.phase`），天亮广播由 RFC-004 的 `DAY_STARTED` 承担。回归测试 `tests/engine/night-visibility.test.ts`（一整夜的公开事件只允许天亮推进与 `GAME_ENDED`）
+| **C-24** | `RULES.md` §6 未裁决「狼刀目标与毒药目标为同一席位时，猎人是否算作被毒杀（是否开枪）」。RFC-003 §2.3 的集合语义只要求该席位出局一次，但 `resolveNight` 产出两条 `Death`，`finishNight` 产出两条 `PLAYER_DIED`，而 `applyPlayerDied` 把重复出局当作数据损坏抛 `InvalidEventStreamError`。这是**合法 action**（女巫毒狼刀目标）触发的引擎崩溃；若该席位是猎人，还叠加「被狼刀 → 开枪 / 被毒 → 不开枪」的未裁决分支（ARCH-11）。`PLAYER_DIED` 重复不能被当作「事件流损坏」 | **阻塞 RFC-003**，需用户裁决：① 同一目标只记一次出局（按座位去重，这是实现必须做的，不是可选项）；② 若为猎人，死因按狼刀还是毒药（决定是否开枪）。裁决前至少应把这条路径变成显式的「未裁决规则」错误，而不是让合法输入撞上内部不变量错误；裁决后补 `killTarget === poisonTarget` 的测试 | **Open** · RFC-003 §2.3 第 3–6 步、`src/engine/resolve/deaths.ts:53-96`、`src/engine/phases/night.ts:80-99`、`src/engine/apply.ts:124-131`、RULES §6 / ARCH-11、FEATURES F8 AC-4、`reviews/REVIEW-RFC-003.md` B1 | **已裁决并修复**：按座位归并死亡（同一目标只出局一次）；**毒药优先**——同一目标既被刀又被毒时死因记为 `poison`，猎人因此**不开枪**（理由：FR-17 的本意是「被毒杀的人拿不走开枪」，而 witch 明确选中了毒这个目标）。补 `killTarget === poisonTarget` 的用例，含「目标是 hunter」的分支
 | **C-25** | `FEATURES.md` 把 F1 / F3 / F8 整体列在 RFC-003 下，但它们的验收标准包含 RFC-003 明确不做的部分：F1 AC-1（界面，RFC-012）与 AC-5（会话，RFC-008）；F3 AC-1 的「狼队内部先协商」依赖夜聊（RFC-005）；F8 AC-3 的「被放逐时可开枪」是 `DAY_HUNTER_SHOOT`（RFC-004）。RFC-003 §6 已显式划出范围，但功能归属 / 状态没有同步 | **非阻塞**，不是 RFC-003 代码缺陷。需要 `/manage-changes` 或更新 `RFCS.md` §2 / §5 的功能映射，避免 F1 / F3 / F8 在只完成 RFC-003 时被当成「已全部实现」 | **Open（非阻塞）** · `FEATURES.md` F1 / F3 / F8、RFC-003 §6、`RFCS.md` §2 / §5、`reviews/REVIEW-RFC-003.md` §3.5 |
 
 ---
@@ -250,6 +250,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.19 | RFC-003 Round 1 评审修复（Status → Implemented）：C-24 按座位归并死亡 + 毒药优先；C-23 夜间相位改 `server`（`phaseVisibility`）+ 泄漏回归测试；B3 补 7 个 payload schema；N1~N10 逐项处理（replay-parity 覆盖真实夜间、appliers 走注入、用药优先级等） |
 | 2026-11-18 | v2.18 | RFC-003 Round 1 评审完成（Status → `Changes requested`）：16 条 AC 与门禁全绿（270 用例、覆盖率 97.24 / 94.36），六个关键变异探针均能变红；但新增三项阻塞：C-24 合法输入（毒药目标 == 狼刀目标）触发重复 `PLAYER_DIED` 崩溃、C-23 夜间 `PHASE_CHANGED` 公开泄漏预言家 / 女巫存活与猎人死因、RFC-003 的 6 个事件 payload 缺少 Zod schema。非阻塞：replay-parity 未覆盖夜间派生字段、AC-5 / AC-9 断言缺口、README 数字落后。功能映射冲突登记为 C-25。证据见 `reviews/REVIEW-RFC-003.md` Round 1 |
 | 2026-11-18 | v2.17 | RFC-003 实现完成（Status → Implemented）：新增 `PHASE_CHANGED` 事件（D-1）承载相位推进；`NIGHT_RESOLVE` 做成瞬态（D-2）；`PLAYER_DIED` 改为 `server` 可见性，避免死因泄漏（D-3）；`GameState` 加 `night` / `potionsUsed` 两个派生字段；修正三条 AC（AC-8 / AC-16 / AC-14 补断言），偏差见 RFC-003 §8.3 |
 | 2026-11-18 | v2.16 | RFC-002 Round 3 评审完成（Status → `Reviewed`）：Round 2 的 B-R2-1（POSIX 归一化）与 B-R2-2（接线级递归锁）复核通过；N9 / M3 修复复核通过；209 用例、覆盖率 98.01 / 95.23 全绿。非阻塞建议（隐藏 `.ts` 扫描，登记为 C-22；FINISHED 拒绝路径用例；`rngAfter` 只对消耗随机数的事件生效）见 `reviews/REVIEW-RFC-002.md` Round 3 |
