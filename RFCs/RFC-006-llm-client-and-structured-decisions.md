@@ -179,3 +179,64 @@ interface CallMeta {
 | Q-006-1 | 思考模式是否可关 | **(assumption)** 配置项存在但 v1 恒为 true；关闭需走 `/manage-changes`（RULES AI-9） |
 | Q-006-2 | `reason` 是否对玩家可见 | **(assumption)** 对局中不可见，复盘可见；由 RFC-007 的投影保证 |
 | Q-006-3 | 具体模型版本 | **(assumption)** 默认 `deepseek-flash`；版本号记录在 RULES §2 |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。前置已满足：RFC-007 `Reviewed`（「知情清单」的类型由它提供）。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| 规则书放哪 | 单独 `src/server/llm/prompts/rules.ts`（用户选 A） |
+| 装 `openai` | 是，`openai@7.57.0`（用户选 A，与 `RULES.md` §2 登记的版本一致） |
+| `ProjectedContext` 归属 | 由 RFC-007 提供；本 RFC 只消费，不另造一份（用户选「先做 007」） |
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+| **D-1** | 客户端基于 `openai` SDK，但关掉 SDK 自带重试（`maxRetries: 0`） | 本 RFC 的重试要逐次产出 `CallMeta` 并回喂校验错误；两套重试叠在一起会让 `attempt` 与本节的计数对不上 |
+| **D-2** | 错误只保留状态码与错误类别，**不含响应体** | `SEC-7`：响应体可能带着整段提示词甚至密钥回显 |
+| **D-3** | 格式校验失败时，把**校验错误文本**作为新一轮 user 消息追加 | 只重试不喂错误，第二次会原样再错一次（`§4` 明文要求） |
+| **D-4** | 规则书里的身份名从 `ROLE_LABELS` 取，不硬编码 | 项目规则要求 `src/` 里的身份名只有 `terms.ts` 一处；提示词是**产品文案**，更应该走同一个来源 |
+| **D-5** | `toAction` 对不合法组合返回 `{ reject }`，不抛错 | 「AI 说了句不属于当前阶段的话」是正常情况，不该让服务端崩掉 |
+| **D-6** | `toAction` 对 `speak` 要求非空 `speech`；超长由提示词侧截断（`§2.2`） | 空发言等于没说；超长截断而不是拒绝，避免 AI 因为啰嗦被整条丢弃 |
+
+### 8.3 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 服务端新增 | `src/server/llm/{config,client,schema,to-action,meta}.ts`、`src/server/llm/prompts/{base,rules}.ts` |
+| 依赖 | `openai@7.57.0`（`package.json`） |
+| 测试新增 | `tests/server/llm/{client,to-action,prompts}.test.ts`、`tests/security/llm-isolation.test.ts` |
+| 文档 | 本文件 §8、`RFCS.md`、`TEST-STRATEGY.md`、`README.md` |
+
+### 8.4 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `llm-isolation.test.ts` · `api.deepseek.com` 只命中 `config.ts` / `client.ts` | PASS |
+| 2 | 同上 · `DEEPSEEK_API_KEY` 只命中 `server/llm/config.ts`；`src/client/` 与两个字符串无关 | PASS |
+| 3 | `client.test.ts` · 500 响应里的 `sk-SECRET-DO-NOT-LEAK` 不出现在错误 message 中 | PASS |
+| 4 | 同上 · 未设环境变量取默认值；`LLM_TIMEOUT_MS` / `LLM_MAX_RETRIES` 可覆盖；缺 key 抛错 | PASS |
+| 5 | 同上 · 5xx 重试一次（两次调用）、4xx 不重试（一次）、超时重试 | PASS |
+| 6 | — | 去重责任在调用方（`§2.3`），本 RFC 未实现编排层；见 §8.5 |
+| 7 | `schema.test.ts`（`client.test.ts` 的 INVALID_OUTPUT 路径）· 缺 `reason` 被拒 | PASS |
+| 8 | `client.test.ts` · 第二次请求体里含第一次的校验错误文本，且第二次成功 | PASS |
+| 9 | `to-action.test.ts` · `vote` + 合法/非法 target；`abstain` | PASS |
+| 10 | 同上 · `speak` + 空文本 → reject；`shoot` 在非开枪阶段 → reject | PASS |
+| 11 | `prompts.test.ts` · 5 个禁词在有/无人格两种提示里都不出现 | PASS |
+| 12 | `client.test.ts` · `CallMeta` 13 个字段；重试时 `attempt` 递增（`[1,2]`） | PASS |
+| 13 | `llm-isolation.test.ts` · `'deepseek-flash'` 只在 `config.ts` | PASS |
+| 14 | `client.test.ts` · 假 fetch 返回固定 JSON → 解析出 `Decision` 且写入 `CallMeta` | PASS |
+
+### 8.5 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| AC-6（重试不重复 action） | 去重是**调用方**的责任（`§2.3` 的 `(gameId, seq, seat)` 键）。本 RFC 只交付客户端与契约，没有编排层可挂 | RFC-008 / 后续 |
+| 真实 API 调用 | 本 RFC 全部用假 `fetch`；真实调用只在手工验证时做（`§6`） | 手工 |
+| 流式与降级 | 不做 | RFC-010 |

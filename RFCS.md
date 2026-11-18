@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.42 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
+> 版本 v2.43 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -42,7 +42,7 @@
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Reviewed |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Reviewed |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Reviewed |
-| [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Not started |
+| [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Implemented |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Not started |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Not started |
@@ -364,6 +364,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.43 | RFC-006 实现完成（Status → Implemented）：`openai@7.57.0` 客户端（唯一端点、错误脱敏、可重试分类、校验错误回喂）、`DecisionSchema`、`toAction`、提示词与规则书、`CallMeta`。AC-6（去重）属编排层，留给后续 RFC |
 | 2026-11-18 | v2.42 | RFC-007 Round 3 复核（Status → `Reviewed`）：C-44 / C-45 / C-46 关闭；C-28 / C-41 关闭；M3 / M4 / M4b / M5 / M6b / M7 分别打红，真实种子 `4_242_424` 的夜间终局投影与引擎一致；非阻塞残项见 §8.15。详见 `reviews/REVIEW-RFC-007.md` Round 3 |
 | 2026-11-18 | v2.41 | RFC-007 Round 2 修复（Status → Implemented）：终局视为全部死亡已揭示；`aliveSeats` / `legalTargets` 改用观察者已知存活并排除自己；新增 `partition.test.ts`（独立折叠比对）与 `thought.test.ts`（AI_THOUGHT 投影）。四类反向探针各自会红 |
 | 2026-11-18 | v2.40 | RFC-007 Round 2 复核（Status → `Changes requested`）：C-28 的 phase 折叠与当夜 `deadSeats` 通过（M1 / M2 红）；但 `aliveSeats` / `legalTargets` 无回归锁（M3 / M4 绿）、`FINISHED` 夜间终局漏死者、AC-8 / AC-9 仍同义反复（M6b 绿）、AC-15 无投影用例（M5 绿）。新增 **C-44 / C-45 / C-46**；C-28 / C-41 保持 Open。详见 `reviews/REVIEW-RFC-007.md` Round 2 |
