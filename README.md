@@ -38,9 +38,9 @@ RFC-002 引擎内核    Reviewed（三轮）
 RFC-003 夜晚与规则  Reviewed（五轮）
 RFC-004 白天与投票  Reviewed（三轮）
 RFC-005 夜聊与自曝  Reviewed（两轮）
-RFC-006 LLM 接入    Changes requested（Round 2：B3 / B4 / B6 残项与 RFC-001 AC-11 冲突，见 REVIEW-RFC-006.md）
+RFC-006 LLM 接入    Changes requested（Round 3：真实超时误归与私有狼聊未封装，见 REVIEW-RFC-006.md）
 RFC-007 投影与防注入 Reviewed（Round 3：终局揭示 + 四条回归锁）
-下一步：按 reviews/REVIEW-RFC-006.md Round 2 修复 006 的阻塞项，再复审
+下一步：按 reviews/REVIEW-RFC-006.md Round 3 修复 C-55 / C-56（及 C-50 残项），再复审
 ```
 
 随时查看全局进度：`/workflow-status`。
