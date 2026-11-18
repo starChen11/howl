@@ -239,7 +239,7 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     const [startedEvent] = eventsOfStart();
     if (startedEvent?.type !== 'GAME_STARTED') throw new Error('缺少 GAME_STARTED');
 
-    // GAME_STARTED 之后状态在 NIGHT_WOLF_CHAT，事件却说 from 是 NIGHT_VOTES —— 拼错了。
+    // GAME_STARTED 之后状态在 NIGHT_WOLF_CHAT，事件却说 from 是 NIGHT_WITCH —— 与当前阶段不符，拼错了。
     const bogus: GameEvent = {
       gameId: startedEvent.gameId,
       seq: 2,

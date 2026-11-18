@@ -62,6 +62,26 @@ describe('AC-6 · 查验产出私有事件', () => {
     expect(checkResultOf(events).visibleTo).toBe('seer');
   });
 
+  it('查一个好人时 result 是 not-wolf，且 state 里不存查验结果', () => {
+    const state = reachSeer();
+    const seer = roleSeat(state, 'seer');
+    const goodTarget = state.seats.find((seat) => seat.alive && seat.role === 'villager')?.seat;
+    if (goodTarget === undefined) throw new Error('没有 villager');
+
+    const { events, state: after } = run(state, {
+      type: 'SEER_CHECK',
+      ts: 1_100,
+      seat: seer,
+      target: goodTarget,
+    });
+
+    expect(checkResultOf(events).payload.result).toBe('not-wolf');
+    // 状态里既没有「查过谁」也没有结果：私有信息只以事件存在（RFC-003 §2.4）
+    expect(JSON.stringify(after)).not.toContain('not-wolf');
+    expect(after).not.toHaveProperty('checks');
+    expect(after).not.toHaveProperty('seerChecks');
+  });
+
   it('查验后推进到女巫阶段，且 state 里不存查验结果', () => {
     const state = reachSeer();
     const seer = roleSeat(state, 'seer');

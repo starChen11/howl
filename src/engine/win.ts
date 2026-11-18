@@ -28,32 +28,43 @@ const GOD_ROLES: ReadonlySet<Role> = new Set<Role>(['seer', 'witch', 'hunter']);
  *
  * **判定只看存活，不看死因**（RUL-5）：被毒杀的神同样计入「神已全部出局」。
  *
- * 次序上先判「狼是否灭绝」：狼全灭时好人立即获胜。理论上「狼全灭 + 神全灭」同时成立的
- * 局面不该出现——RUL-1 规定胜负判定先于死亡触发技能，所以狼胜成立的瞬间对局已结束、
- * hunter 没有开枪机会。这里的次序是防御性的：真要构造出这种局面，好人胜。
+ * **次序由 RUL-12 决定（「狼刀在先」）**：夜间结算后若**同时**满足两阵营的胜利条件，
+ * 判 **wolf** 胜。所以先算 wolf 侧的条件，再算「狼是否灭绝」。
+ *
+ * 这条次序曾经是反过来写的（先判狼全灭），理由是「双方同时达成」被当成不该出现的局面
+ * ——但那是错的：**一个合法的夜间批次就能造出它**（最后一名神被刀 + 最后一只狼被毒）。
+ * 真实对局的通行规则在这种情况下判 wolf 胜，见 RULES.md §6 的 RUL-12 与其引用来源。
+ *
+ * 注意 RUL-12 **只决定同时成立时判谁，不改变判定时机**：判定仍在「全部出局者应用完毕
+ * 之后」做一次（RUL-1 不变）。它也**不是**「技能顺序在先」——夜间技能是同时发动的。
  */
 export function checkWin(state: GameState): WinResult | null {
   const alive = state.seats.filter((seat) => seat.alive);
 
+  const godsAlive = alive.some((seat) => GOD_ROLES.has(seat.role));
+  const villagersAlive = alive.some((seat) => seat.role === 'villager');
+  const goodAlive = alive.some((seat) => FACTION_OF[seat.role] === 'good');
+
+  // 第一步：wolf 侧的胜利条件（RUL-12：同时成立时狼胜，所以先算它）。
+  const wolfCondition: WinCondition | null =
+    state.mode === 'slaughter-all'
+      ? goodAlive
+        ? null
+        : 'all-good-dead'
+      : !godsAlive
+        ? 'all-gods-dead'
+        : !villagersAlive
+          ? 'all-villagers-dead'
+          : null;
+
+  if (wolfCondition !== null) {
+    return { result: 'wolf', condition: wolfCondition };
+  }
+
+  // 第二步：好人侧的胜利条件（狼全部出局）。
   const wolvesAlive = alive.some((seat) => FACTION_OF[seat.role] === 'wolf');
   if (!wolvesAlive) {
     return { result: 'good', condition: 'all-wolves-dead' };
-  }
-
-  const godsAlive = alive.some((seat) => GOD_ROLES.has(seat.role));
-  const villagersAlive = alive.some((seat) => seat.role === 'villager');
-
-  if (state.mode === 'slaughter-all') {
-    const goodAlive = alive.some((seat) => FACTION_OF[seat.role] === 'good');
-    return goodAlive ? null : { result: 'wolf', condition: 'all-good-dead' };
-  }
-
-  // 屠边：杀光所有神或所有民即胜。
-  if (!godsAlive) {
-    return { result: 'wolf', condition: 'all-gods-dead' };
-  }
-  if (!villagersAlive) {
-    return { result: 'wolf', condition: 'all-villagers-dead' };
   }
 
   return null;

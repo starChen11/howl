@@ -48,8 +48,8 @@ describe('C-23 · phaseVisibility 规则', () => {
   });
 });
 
-describe('C-23 · 一整夜没有公开事件', () => {
-  it('开局 + 狼刀 + 查验 + 用药的完整事件流里，公开事件数为 0', () => {
+describe('C-23 · 一整夜没有**泄漏性**公开事件', () => {
+  it('开局 + 狼刀 + 查验 + 用药：公开事件只允许「天亮推进」，其余一律不得公开', () => {
     const lobby = nightStart();
     const wolf = roleSeat(lobby, 'wolf');
     const killTarget = lobby.seats.find((seat) => seat.alive && seat.role === 'villager')?.seat;

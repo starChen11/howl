@@ -67,6 +67,47 @@ describe('AC-15 · 屠城（slaughter-all）', () => {
   });
 });
 
+describe('RUL-12 · 狼刀在先：同时达成时判 wolf 胜', () => {
+  it('屠边：最后一名神被刀 + 最后一只狼被毒 → wolf 胜（condition 为 all-gods-dead）', () => {
+    // 这是 C-27 的核心用例：合法性来自真实夜间批次，不是构造错误。
+    const state = stateWithRoles(FIXTURE_ROLES, 'slaughter-side', {
+      deadSeats: [...GODS, ...WOLVES],
+    });
+
+    expect(checkWin(state)).toEqual({ result: 'wolf', condition: 'all-gods-dead' });
+  });
+
+  it('屠边：民全灭 + 狼全灭 → 同样判 wolf 胜', () => {
+    const state = stateWithRoles(FIXTURE_ROLES, 'slaughter-side', {
+      deadSeats: [...VILLAGERS, ...WOLVES],
+    });
+
+    expect(checkWin(state)).toEqual({ result: 'wolf', condition: 'all-villagers-dead' });
+  });
+
+  it('屠城：好人全灭 + 狼全灭 → wolf 胜', () => {
+    const state = stateWithRoles(FIXTURE_ROLES, 'slaughter-all', {
+      deadSeats: [...GODS, ...VILLAGERS, ...WOLVES],
+    });
+
+    expect(checkWin(state)).toEqual({ result: 'wolf', condition: 'all-good-dead' });
+  });
+
+  it('只有狼全灭、好人侧还有存活时，仍然判好人胜（不是「狼刀在先」的适用面）', () => {
+    const state = stateWithRoles(FIXTURE_ROLES, 'slaughter-side', { deadSeats: [...WOLVES] });
+
+    expect(checkWin(state)).toEqual({ result: 'good', condition: 'all-wolves-dead' });
+  });
+
+  it('狼全灭但神全灭不成立、民全灭不成立 → 好人胜（不误判）', () => {
+    const state = stateWithRoles(FIXTURE_ROLES, 'slaughter-side', {
+      deadSeats: [...WOLVES, 4],
+    });
+
+    expect(checkWin(state)).toEqual({ result: 'good', condition: 'all-wolves-dead' });
+  });
+});
+
 describe('AC-15 · RUL-5 · 只看存活不看死因', () => {
   it('被毒杀的神同样计入「神已全部出局」（死因不参与判定）', () => {
     // 夹具只关心 alive 布尔：无论怎么死的，只要 alive === false 就算出局。

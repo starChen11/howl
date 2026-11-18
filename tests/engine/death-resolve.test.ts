@@ -67,12 +67,14 @@ describe('AC-12 · 被狼刀的猎人进入开枪阶段', () => {
   });
 
   it('开枪带走最后一只狼 → 触发第二次胜负判定，好人胜', () => {
-    // 只剩 1 狼 + hunter 在场：猎人开枪带走那只狼
+    // 只剩 1 狼 + 一个存活的神（seer）+ hunter 已出局：猎人开枪带走那只狼。
+    // 注意**不能**让 hunter 同时是最后一个神——那种局面在第一次判定处就已经狼胜、
+    // 根本不会进开枪阶段（RUL-1 / RUL-12）。
     const roles = [
       'wolf',
       'villager',
       'villager',
-      'villager',
+      'seer',
       'villager',
       'villager',
       'hunter',
@@ -248,6 +250,77 @@ describe('B1 / C-24 · 毒药指向狼刀目标（合法 action 不能崩）', (
   });
 });
 
+describe('C-27 / RUL-12 · 真实夜间路径：同时达成时判 wolf 胜', () => {
+  it('最后一名神被刀 + 最后一只狼被毒 → GAME_ENDED(result: wolf)', () => {
+    // 残局：狼 3、女巫 5、村民 7/8/9 存活；狼 1/2、seer 4、hunter 6 已出局。
+    // 狼刀砍 5（最后的神），女巫毒 3（最后的狼）——两个条件在同一批死亡后同时成立。
+    const roles = [
+      'wolf',
+      'wolf',
+      'wolf',
+      'seer',
+      'witch',
+      'hunter',
+      'villager',
+      'villager',
+      'villager',
+    ] as const;
+    const state = makeNightState({
+      phase: 'NIGHT_WITCH',
+      deadSeats: [1, 2, 4, 6],
+      night: { killTarget: 5 },
+      roles,
+    });
+    const witch = roleSeat(state, 'witch');
+
+    const { events, state: after } = run(state, {
+      type: 'WITCH_ACT',
+      ts: 1,
+      seat: witch,
+      potion: 'poison',
+      target: 3,
+    });
+
+    const ended = events.find((event) => event.type === 'GAME_ENDED');
+    expect(ended?.payload).toEqual({ result: 'wolf', condition: 'all-gods-dead' });
+    expect(after.phase).toBe('FINISHED');
+  });
+});
+
+describe('C-27 / RUL-12 · 只有好人侧达成时不受影响', () => {
+  it('毒掉最后一只狼、但没有屠边 → 好人胜', () => {
+    const roles = [
+      'wolf',
+      'villager',
+      'villager',
+      'seer',
+      'witch',
+      'hunter',
+      'villager',
+      'villager',
+      'villager',
+    ] as const;
+    const state = makeNightState({
+      phase: 'NIGHT_WITCH',
+      deadSeats: [1],
+      night: { killTarget: 9 },
+      roles,
+    });
+    const witch = roleSeat(state, 'witch');
+
+    const { events } = run(state, {
+      type: 'WITCH_ACT',
+      ts: 1,
+      seat: witch,
+      potion: 'poison',
+      target: 2,
+    });
+
+    const ended = events.find((event) => event.type === 'GAME_ENDED');
+    expect(ended?.payload).toEqual({ result: 'good', condition: 'all-wolves-dead' });
+  });
+});
+
 describe('死亡效果的防御分支', () => {
   it('kill 效果没有目标时抛错（不静默跳过）', () => {
     const applier = DEATH_APPLIERS['kill'];
@@ -296,6 +369,42 @@ describe('AC-15 · 效果时序（RUL-8 + RUL-1）', () => {
     expect(night.killCancelled).toBe(true);
     expect(night.deaths).toEqual([]);
     expect(night.effects.filter((effect) => effect.type === 'kill')).toEqual([]);
+  });
+
+  it('毒药夜：效果集、死亡集与 PLAYER_DIED 事件集三者一致', () => {
+    const state = makeNightState({ phase: 'NIGHT_WITCH', night: { killTarget: 9 } });
+    const witch = roleSeat(state, 'witch');
+
+    const { events, state: after } = run(state, {
+      type: 'WITCH_ACT',
+      ts: 1,
+      seat: witch,
+      potion: 'poison',
+      target: 8,
+    });
+
+    const resolution = resolveNight({ killTarget: 9, poisonTarget: 8 });
+    const applied = applyEffects(state, resolution.effects, DEATH_APPLIERS);
+
+    const fromEvents = events
+      .filter((event) => event.type === 'PLAYER_DIED')
+      .map((event) => (event.type === 'PLAYER_DIED' ? event.payload.seat : 0));
+    const fromEffects = resolution.deaths.map((death) => death.seat);
+    const fromApplied = applied.seats.filter((seat) => !seat.alive).map((seat) => seat.seat);
+
+    expect(fromEvents).toEqual(fromEffects);
+    expect(fromApplied.sort()).toEqual([...fromEvents].sort());
+    expect(after.seats.filter((seat) => !seat.alive).length).toBe(fromEvents.length);
+  });
+
+  it('开枪夜：效果集与 PLAYER_DIED(cause=shoot) 一致', () => {
+    const shot = resolveHunterShot(2);
+    const state = makeNightState({ phase: 'NIGHT_HUNTER_SHOOT', deadSeats: [6] });
+
+    const applied = applyEffects(state, shot.effects, DEATH_APPLIERS);
+
+    expect(shot.deaths.map((death) => death.seat)).toEqual([2]);
+    expect(applied.seats.find((seat) => seat.seat === 2)?.alive).toBe(false);
   });
 
   it('效果按 order 应用后与死亡事件集一致（两条路径不分叉）', () => {

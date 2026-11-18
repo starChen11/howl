@@ -2,10 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import type { GameEvent } from '@shared/events';
 import { GAME_EVENT_TYPES } from '@shared/events';
-import { GameStartedPayloadSchema, PAYLOAD_SCHEMAS, RejectedPayloadSchema } from '@shared/schemas';
+import {
+  GameEndedPayloadSchema,
+  GameStartedPayloadSchema,
+  HunterShootPayloadSchema,
+  PAYLOAD_SCHEMAS,
+  PlayerDiedPayloadSchema,
+  RejectedPayloadSchema,
+} from '@shared/schemas';
 
 import { replay } from '@engine/replay';
 import { step } from '@engine/step';
+
+import { makeNightState } from '../fixtures/night';
 
 import { lobbyState, startActionOf, playerSeatOf } from '../fixtures/states';
 
@@ -71,6 +80,66 @@ describe('AC-6 · seq 与事件类型', () => {
     const result = step(lobby, startActionOf(lobby, 987_654));
 
     expect(result.events[0]?.ts).toBe(987_654);
+  });
+});
+
+describe('B3 · hunter 开枪夜与终局夜也走一遍真实 schema 校验', () => {
+  it('枪夜：HUNTER_SHOOT 与 PLAYER_DIED(cause=shoot) 的 payload 通过 schema', () => {
+    const roles = [
+      'wolf',
+      'villager',
+      'villager',
+      'seer',
+      'villager',
+      'villager',
+      'hunter',
+      'villager',
+      'villager',
+    ] as const;
+    const state = makeNightState({ phase: 'NIGHT_HUNTER_SHOOT', deadSeats: [7], roles });
+    const hunter = state.seats.find((seat) => seat.role === 'hunter')?.seat;
+    if (hunter === undefined) throw new Error('没有 hunter');
+
+    const { events } = step(state, { type: 'HUNTER_SHOOT', ts: 9, seat: hunter, target: 1 });
+
+    const shot = events.find((event) => event.type === 'HUNTER_SHOOT');
+    const died = events.find((event) => event.type === 'PLAYER_DIED');
+    expect(HunterShootPayloadSchema.safeParse(shot?.payload).success).toBe(true);
+    expect(PlayerDiedPayloadSchema.safeParse(died?.payload).success).toBe(true);
+    expect(died?.payload).toEqual(expect.objectContaining({ cause: 'shoot' }));
+  });
+
+  it('终局夜：GAME_ENDED 的 payload 通过 schema', () => {
+    const roles = [
+      'wolf',
+      'wolf',
+      'wolf',
+      'seer',
+      'witch',
+      'hunter',
+      'villager',
+      'villager',
+      'villager',
+    ] as const;
+    const state = makeNightState({
+      phase: 'NIGHT_WITCH',
+      deadSeats: [1, 2, 4, 6],
+      night: { killTarget: 5 },
+      roles,
+    });
+    const witch = state.seats.find((seat) => seat.role === 'witch')?.seat;
+    if (witch === undefined) throw new Error('没有 witch');
+
+    const { events } = step(state, {
+      type: 'WITCH_ACT',
+      ts: 9,
+      seat: witch,
+      potion: 'poison',
+      target: 3,
+    });
+
+    const ended = events.find((event) => event.type === 'GAME_ENDED');
+    expect(GameEndedPayloadSchema.safeParse(ended?.payload).success).toBe(true);
   });
 });
 
