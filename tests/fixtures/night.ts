@@ -27,10 +27,28 @@ export interface NightRun {
   events: ReturnType<typeof step>['events'];
 }
 
-/** 开局并停在 `NIGHT_WOLVES`。 */
+/**
+ * 开局并停在 `NIGHT_WOLVES`。
+ *
+ * RFC-005 起，发牌之后先进入 `NIGHT_WOLF_CHAT`（狼队协商），每只存活 wolf 各报一句才轮到下刀。
+ * 夹具沿真实路径走完这一段，避免测试拿到状态机不会产生的状态。
+ */
 export function nightStart(seed = 20_261_117): GameState {
   const lobby = lobbyState({ seed });
-  return step(lobby, startActionOf(lobby)).state;
+  let current = step(lobby, startActionOf(lobby)).state;
+
+  for (let guard = 0; guard < 10 && current.phase === 'NIGHT_WOLF_CHAT'; guard += 1) {
+    const speaker = current.seats.find(
+      (seat) =>
+        seat.alive &&
+        seat.role === 'wolf' &&
+        !(current.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+    )?.seat;
+    if (speaker === undefined) break;
+    current = step(current, { type: 'WOLF_CHAT', ts: 1, seat: speaker, text: '' }).state;
+  }
+
+  return current;
 }
 
 /** 占位：让测试代码的意图更清楚。 */

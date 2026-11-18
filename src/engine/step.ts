@@ -9,8 +9,9 @@ import { UnhandledTransitionError } from './errors';
 import { AUTO_PHASE_ENTRIES, AUTO_PHASE_LIMIT } from './phases/auto-table';
 import { DAY_HANDLERS } from './phases/day';
 import { NIGHT_HANDLERS } from './phases/night';
+import { SELF_EXPOSE_HANDLERS } from './phases/self-expose';
 import { VOTE_HANDLERS } from './phases/vote';
-import { phaseChangedDraft } from './phases/visibility';
+import { WOLF_CHAT_HANDLERS } from './phases/wolf-chat';
 import { DEATH_APPLIERS } from './resolve/deaths';
 import { rejectionDraft, seatOf } from './reject';
 import { assertCompleteTransitionTable, DEFAULT_TRANSITIONS } from './transitions';
@@ -128,11 +129,8 @@ const startHandler: ActionHandlerFor<'START'> = (state, action) => {
         personas: state.seats.map((seat) => seat.personaId ?? null),
       },
     },
-    // 发牌后进入 NIGHT_WOLF_CHAT（RFC-003 §2.2 的阶段图从这里开始）。夜聊由 RFC-005 实现，
-    // 本 RFC 直接推进到第一个「有人要行动」的阶段——每个相位推进都是一条事件，所以
-    // replay 能把这段路径原样重建出来。可见性由 `phaseChangedDraft` 统一决定：夜间是
-    // `server`，否则相位序列会把「谁已出局」漏给全场（C-23）。
-    phaseChangedDraft('NIGHT_WOLF_CHAT', 'NIGHT_WOLVES'),
+    // 发牌后停在 NIGHT_WOLF_CHAT（RFC-005 起它是真实阶段：狼队先协商，再下刀）。
+    // 相位已由 `GAME_STARTED` 折叠设成 `NIGHT_WOLF_CHAT`，这里不需要额外的相位事件。
   ];
 };
 
@@ -141,6 +139,8 @@ export const DEFAULT_HANDLERS: HandlerTable = {
   ...NIGHT_HANDLERS,
   ...DAY_HANDLERS,
   ...VOTE_HANDLERS,
+  ...WOLF_CHAT_HANDLERS,
+  ...SELF_EXPOSE_HANDLERS,
 };
 
 /**

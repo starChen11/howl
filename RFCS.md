@@ -41,7 +41,7 @@
 | [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Reviewed |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Reviewed |
-| [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
+| [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Implemented |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Not started |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Not started |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Not started |
@@ -297,6 +297,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.33 | RFC-005 实现完成（Status → Implemented）：`NIGHT_WOLF_CHAT` 成为真实阶段（有界退出：每只存活 wolf 一条），`SELF_EXPOSE` 在两个白天阶段可用；可见性 `wolves` 取消死亡收窄（用户裁决：死狼仍能看狼队频道），`self:<n>` 补齐死亡收窄；AC-3 的自相矛盾已修正 |
 | 2026-11-18 | v2.32 | RFC-003 Round 5 窄范围复核（Status → Reviewed）：AC-16 的自动阶段改动成立——`step` 的自动循环 + `DAY_ANNOUNCE` entry 让「夜晚 → 天亮」在**同一步**内停在 `DAY_SPEECH`（真实探针：相位事件 `NIGHT_RESOLVE → DAY_ANNOUNCE → DAY_SPEECH`）；3 个复核点全过（P1 删 `DAY_ANNOUNCE` entry 17 红、P2 删相位事件 11 红、P3 拒绝路径加自动推进精确打红 RFC-002 AC-8 守卫）。新登记 **C-34**（§2.3 第 8 步 / TEST-STRATEGY 行 / 测试名 / `DAY_SPEECH` 字面用例的文档残留；非阻塞）。342 用例全绿，探针后工作树干净 |
 | 2026-11-18 | v2.31 | RFC-004 Round 3 复核（Status → Reviewed）：C-31 关闭——真实夹具改为「wolf 刀村民 6 + witch 毒 wolf 2」，起点改为对 `dayAnnounceEntry` 的直接断言；M1 / M2 / M3 三条反向探针均实跑变红，探针后 342 用例全绿。PRD FR-5 / D34、FEATURES F4 AC-2 与五处源码注释已同步；残留非阻塞文档漂移（RFC §8.5 AC-2 证据行、README:13、`day.test.ts:20` 等）见 `reviews/REVIEW-RFC-004.md` Round 3 §R3.3 / §R3.6 |
 | 2026-11-18 | v2.30 | RFC-004 Round 2 修复（Status → Implemented）：C-31 起点路径的空断言已换成直接规则断言（M2/M3 会红）；注释、PRD FR-5/D34、FEATURES F4 AC-2、TEST-STRATEGY、README 的过时表述同步 |

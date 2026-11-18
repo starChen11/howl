@@ -81,6 +81,11 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'SPEECH':
     case 'SPEECH_SKIPPED':
       return appendSpoken(base, event.payload.seat);
+    case 'WOLF_CHAT_POSTED':
+      return { ...base, wolfChat: [...(base.wolfChat ?? []), event.payload] };
+    case 'SELF_EXPOSE':
+      // 自曝本身不改状态：它的后果是「当日终止」，由相位转移表达。
+      return base;
     case 'VOTE_CAST':
       return appendVote(base, event.payload);
     case 'VOTE_REVEALED':
@@ -115,6 +120,7 @@ function applyPhaseChanged(state: GameState, payload: { from: Phase; to: Phase }
     // 首个夜晚由 `GAME_STARTED` 直接设定，不经过这条转移，所以 `day` 仍从 1 开始。
     delete next.night;
     delete next.pendingDeaths;
+    delete next.wolfChat;
     if (state.phase !== 'LOBBY') {
       next.day = state.day + 1;
     }

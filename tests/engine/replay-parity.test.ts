@@ -31,12 +31,27 @@ function playSequence(): { events: GameEvent[]; liveStates: ReturnType<typeof st
   const lobby = lobbyState({ seed: 31_337 });
   const started = step(lobby, startActionOf(lobby, 1_000));
   const state = started.state;
+  // RFC-005 起发牌后停在 NIGHT_WOLF_CHAT：让每只存活 wolf 各报一句，再进入下刀阶段。
+  const chatEvents = [];
+  let afterChat = state;
+  for (let guard = 0; guard < 10 && afterChat.phase === 'NIGHT_WOLF_CHAT'; guard += 1) {
+    const speaker = afterChat.seats.find(
+      (seat) =>
+        seat.alive &&
+        seat.role === 'wolf' &&
+        !(afterChat.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+    )?.seat;
+    if (speaker === undefined) break;
+    const result = step(afterChat, { type: 'WOLF_CHAT', ts: 900, seat: speaker, text: '' });
+    afterChat = result.state;
+    chatEvents.push(...result.events);
+  }
 
   const wolf = state.seats.find((seat) => seat.role === 'wolf' && seat.alive)?.seat;
   const killTarget = state.seats.find((seat) => seat.alive && seat.role === 'villager')?.seat;
   if (wolf === undefined || killTarget === undefined) throw new Error('夹具缺少狼或村民');
 
-  const killed = step(state, { type: 'WOLF_KILL', ts: 2_000, seat: wolf, target: killTarget });
+  const killed = step(afterChat, { type: 'WOLF_KILL', ts: 2_000, seat: wolf, target: killTarget });
 
   const seer = killed.state.seats.find((seat) => seat.role === 'seer' && seat.alive)?.seat;
   const checkTarget = killed.state.seats.find((seat) => seat.alive && seat.role !== 'seer')?.seat;
@@ -61,7 +76,13 @@ function playSequence(): { events: GameEvent[]; liveStates: ReturnType<typeof st
   });
 
   return {
-    events: [...started.events, ...killed.events, ...checked.events, ...healed.events],
+    events: [
+      ...started.events,
+      ...chatEvents,
+      ...killed.events,
+      ...checked.events,
+      ...healed.events,
+    ],
     liveStates: [started, killed, checked, healed],
   };
 }

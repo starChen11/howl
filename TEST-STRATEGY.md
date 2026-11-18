@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.16 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.30 · 最后更新 2026-11-18
+> 版本 v1.17 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.32 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -29,8 +29,8 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  41 passed (41)     # unit 34 个 + meta 7 个
-      Tests  342 passed (342)
+ Test Files  44 passed (44)     # unit 37 个 + meta 7 个
+      Tests  366 passed (366)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -220,13 +220,13 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2、3、4 | `tests/engine/visibility.test.ts`：对 `public`/`wolves`/`self:<n>` 三类事件 × 9 观测者 × 死亡时序（事件前死/事件后死/存活）做全矩阵参数化 | unit | proposed | Must |
-| 5、6 | `tests/engine/wolf-chat.test.ts`：断言 `NIGHT_WOLF_CHAT` 排在 `NIGHT_WOLVES` 前；每个存活狼提交后产出 `WOLF_CHAT_POSTED` 且 `visibleTo==='wolves'` | unit | proposed | Must |
-| 7、8 | 同上：未全部提交前提交 `WOLF_KILL` → `REJECTED`+`PHASE_MISMATCH`；空串 `text` 也算提交并推进 | unit | proposed | Must |
-| 9 | 同上：白天提交 `WOLF_CHAT` → `REJECTED`，除 `seq` 外不变 | unit | proposed | Must |
-| 10、11 | `tests/engine/self-expose.test.ts`：`DAY_SPEECH` 与 `DAY_VOTE` 两个阶段各一次自曝，断言 `SELF_EXPOSE` 公开、`phase` 进 `NIGHT_WOLF_CHAT`、当日无 `VOTE_CAST`/`VOTE_REVEALED` | unit | proposed | Must |
-| 12、13 | 同上：非狼 → `NOT_A_WOLF`；已出局狼 → `NOT_ALIVE`；自曝前后存活计数不变、`checkWin` 结论不变 | unit | proposed | Must |
-| 14 | 同上：对 9 个好人观察者断言过滤后集合不含任何夜聊事件 | unit | proposed | Must |
+| 1、2、3、4 | `tests/engine/visibility.test.ts`：`public` / `server` / `wolves` / `self:<n>` × 9 观察者 × 死亡时序；`wolves` 不因出局中断（用户裁决），其余按死亡收窄 | unit | existing: tests/engine/visibility.test.ts | Must |
+| 5、6 | `tests/engine/wolf-chat.test.ts`：发牌后停在 `NIGHT_WOLF_CHAT`（排在 `NIGHT_WOLVES` 前）；`WOLF_CHAT_POSTED` 的 `visibleTo === 'wolves'` | unit | existing: tests/engine/wolf-chat.test.ts | Must |
+| 7、8 | 同上：未全部提交前 `WOLF_KILL` → `PHASE_MISMATCH`；空串也算提交并推进 | unit | existing: tests/engine/wolf-chat.test.ts | Must |
+| 9 | 同上：白天提交 `WOLF_CHAT` → `REJECTED`，除 `seq` 外不变 | unit | existing: tests/engine/wolf-chat.test.ts | Must |
+| 10、11 | `tests/engine/self-expose.test.ts`：两个白天阶段各一次自曝 → 公开事件、相位进 `NIGHT_WOLF_CHAT`、当日无 `VOTE_CAST`/`VOTE_REVEALED` | unit | existing: tests/engine/self-expose.test.ts | Must |
+| 12、13 | 同上：非狼 → `NOT_A_WOLF`；已出局狼 → `NOT_ALIVE`；自曝前后存活计数不变 | unit | existing: tests/engine/self-expose.test.ts | Must |
+| 14 | 同上：9 个观察者过滤后只有狼能看到夜聊 | unit | existing: tests/engine/visibility.test.ts | Must |
 
 ---
 
@@ -448,6 +448,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.17 | RFC-005 实现后回填：14 条 AC 全部 `existing`；基线 342 → 366 |
 | 2026-11-18 | v1.16 | RFC-004 Round 2 回填：补 AC-4b 行（C-31 的第二条路径）、同步版本引用 |
 | 2026-11-18 | v1.15 | RFC-004 Round 1 回填：C-31 / B2 / 三条不设防测试补齐；基线 337 → 342 |
 | 2026-11-18 | v1.14 | RFC-004 实现后回填：16 条 AC 全部 `existing`；夹具改为 `tests/fixtures/day.ts`（无 `scripted-game.ts`）；基线用例数 309 → 337 |

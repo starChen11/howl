@@ -138,7 +138,8 @@ describe('AC-8 · 拒绝路径', () => {
 
     const accepted = step(rejected.state, startActionOf(rejected.state, 2_000));
     expect(accepted.events[0]?.type).toBe('GAME_STARTED');
-    // 拒绝占 1 个 seq，START 自己产出 GAME_STARTED + PHASE_CHANGED（RFC-003 起）
-    expect(accepted.state.seq).toBe(3);
+    // 拒绝占 1 个 seq，START 产出 GAME_STARTED（RFC-005 起不再附带相位事件：
+    // `GAME_STARTED` 已把相位设成 `NIGHT_WOLF_CHAT`）
+    expect(accepted.state.seq).toBe(2);
   });
 });

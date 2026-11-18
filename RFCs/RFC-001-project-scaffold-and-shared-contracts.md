@@ -228,7 +228,7 @@ export function isVisibleTo(
 ): boolean;
 ```
 
-判定：`public` 恒真；`server` 对**所有**席位恒假（只用于服务端重建状态，如 `GAME_STARTED` 的全员身份）；`wolves` 仅 `Role === 'wolf'` 的席位且 `seat.diedSeq` 未定义或 `> event.seq`；`seer`/`witch`/`hunter` 同理；`self:<n>` 仅席位 n。
+判定：`public` 恒真；`server` 对**所有**席位恒假（只用于服务端重建状态，如 `GAME_STARTED` 的全员身份）；`wolves` 仅 `Role === 'wolf'` 的席位；`seer`/`witch`/`hunter` 同理；`self:<n>` 仅席位 n。**死亡收窄**（`seat.diedSeq` 未定义或 `> event.seq`）适用于 `seer`/`witch`/`hunter`/`self:<n>`；**`wolves` 不适用**——狼队频道在成员出局后继续（RFC-005 的用户裁决，见该 RFC §8.2 D-1）。
 
 **真相视图不走这个函数**：它是复盘/观战时的前端展示开关（RFC-013），数据来自复盘快照（RFC-014），不参与 `project()`，因此不会给 AI 开任何口子。
 

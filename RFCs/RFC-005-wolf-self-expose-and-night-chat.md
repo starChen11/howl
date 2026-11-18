@@ -107,3 +107,84 @@
 | Q-005-1 | 死狼能否看见死后的夜聊 | **(assumption)** 不能；见 §2.4。若需要，只能通过真相视图（RFC-013） |
 | Q-005-2 | 自曝后当日已产生的发言事件是否保留 | **(assumption)** 保留，它们是已发生的公开事实 |
 | Q-005-3 | 狼人能否在 `DAY_ANNOUNCE` 阶段自曝 | **(assumption)** 不能；该阶段玩家尚未发言，自曝没有信息价值 |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。分支 `main`。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| 死狼能否看见死后的夜聊（Q-005-1） | **能**（用户裁决，与 RFC 初稿假设相反）：狼队频道不因成员出局中断 |
+| TODO 3 的交付物 | 不新建 `src/engine/visibility.ts`（用户同意）：`isVisibleTo` 已在 `src/shared/visibility.ts` 里实现并经测试 |
+| Q-005-2 / Q-005-3 | Q-005-2 保持（自曝前的发言事件保留）；Q-005-3 **关闭**——`DAY_ANNOUNCE` 是自动阶段，玩家停不在那里，问题在机制上不存在 |
+
+### 8.2 偏离与决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+| **D-1** | 可见性里 `wolves` **不看死活**；`seer` / `witch` / `hunter` / `self:<n>` 仍按死亡时间收窄 | 只有狼有「队伍频道」这种死后仍在继续的信息流；个人频道人死了就不会再有新内容。**`self:<n>` 原本没有做死亡收窄**（RFC-001 的实现只在角色分支之后判断），本 RFC 补齐——否则 RFC-005 §2.1 的表与实现不一致 |
+| **D-2** | 夜聊的退出条件是「每只**存活**狼各提交一条」，空串也算 | 有界、确定，不依赖编排层判断「AI 说完了没有」 |
+| **D-3** | 文本超长**截断**到 500 字，不拒绝 | 狼队内部发言不该因为太长而卡住流程（§4） |
+| **D-4** | 夜聊重复提交返回 `ALREADY_SPOKEN` | §2.2 只要求「每人一条」，没给拒绝码；与投票的 `ALREADY_VOTED` 对称 |
+| **D-5** | 自曝后进 `NIGHT_WOLF_CHAT`，**不是** `NIGHT_WOLVES` | 否则跳过狼队协商（§4 明文要求） |
+| **D-6** | `START` 不再产出相位推进事件 | `GAME_STARTED` 已把相位设成 `NIGHT_WOLF_CHAT`；RFC-003 时代的「跳过夜聊」补丁随之删除 |
+
+### 8.3 AC 修正
+
+| AC | 原文 | 问题 | 改为 |
+|---|---|---|---|
+| **AC-3** | 「在事件发生**前**已出局的狼返回 `true`，在事件发生后出局的狼返回 `true`，在事件**之前就死亡**的狼返回 `false`」 | 第一句与第三句**说的是同一种情形、结论相反**（「事件前已出局」= 「事件之前就死亡」），实现无法同时满足 | 按用户裁决统一为：**只要是狼就能看狼队事件，与死亡时间无关**；`seer` / `witch` / `hunter` / `self` 仍是「死前可见、死后不可见」 |
+
+### 8.4 连带改动：RFC-001 §2.4 的规则文字
+
+RFC-001 的 `isVisibleTo` 判定说明里写着 `wolves` 要求 `seat.diedSeq` 未定义或 `> event.seq`。D-1 之后这句不再成立，已在 RFC-001 §2.4 注明「`wolves` 的死亡收窄由 RFC-005 的裁决取消」。**RFC-001 的验收标准没有变化**（它没有断言死亡时序），所以状态保持 `Reviewed`。
+
+### 8.5 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 引擎新增 | `src/engine/phases/wolf-chat.ts`、`src/engine/phases/self-expose.ts` |
+| 引擎修改 | `src/engine/step.ts`（`START` 停在夜聊、并入两组 handler）、`src/engine/transitions.ts`（夜聊与自曝的允许集）、`src/engine/phases/vote.ts`（`enterNight` 只发一条相位事件）、`src/engine/apply.ts`（折叠两个新事件、入夜清空 `wolfChat`） |
+| 共享修改 | `src/shared/visibility.ts`（wolves 豁免死亡收窄、self 补齐死亡收窄）、`src/shared/domain.ts`（`wolfChat`）、`src/shared/schemas.ts`（两个 schema） |
+| 测试新增 | `tests/engine/{visibility,wolf-chat,self-expose}.test.ts` |
+| 测试修改 | `tests/fixtures/night.ts`（`nightStart` 先过夜聊）、`tests/engine/{full-game,replay-parity,witch,day,events,reject,replay,transitions}.test.ts`、`tests/shared/schemas.test.ts` |
+| 文档 | 本文件 §8、`RFCs/RFC-001` §2.4、`RFCS.md`、`TEST-STRATEGY.md`、`README.md` |
+
+### 8.6 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `visibility.test.ts` · `public` 对 9 个观察者全真；`server` 全假 | PASS |
+| 2 | 同上 · `wolves` 对 9 个观察者按阵营判定 | PASS |
+| 3 | 同上 · 死在事件之前的 wolf 仍可见（反向探针：去掉豁免 → 变红） | PASS |
+| 4 | 同上 · `self:4` 恰好 1/9 可见；死前的事件可见、死后的不可见 | PASS |
+| 5 | `wolf-chat.test.ts` · 发牌后停在 `NIGHT_WOLF_CHAT`；未全部提交前 `WOLF_KILL` → `PHASE_MISMATCH` | PASS |
+| 6 | 同上 · `WOLF_CHAT_POSTED` 可见性 `wolves`、payload 带 `round` | PASS |
+| 7 | 同上 · 全部提交后进入 `NIGHT_WOLVES` | PASS |
+| 8 | 同上 · 空串同样推进 | PASS |
+| 9 | 同上 · 白天提交 → `Rejected`，除 `seq` 外不变 | PASS |
+| 10 | `self-expose.test.ts` · 两个白天阶段自曝 → 公开事件 + 进 `NIGHT_WOLF_CHAT` | PASS |
+| 11 | 同上 · 自曝事件流无 `VOTE_CAST` / `VOTE_REVEALED`；此前的发言事件保留 | PASS |
+| 12 | 同上 · 非狼 → `NOT_A_WOLF`；出局狼 → `NOT_ALIVE` | PASS |
+| 13 | 同上 · 自曝前后存活计数相同 | PASS |
+| 14 | `visibility.test.ts` · 9 个观察者过滤后只有狼能看到夜聊 | PASS |
+
+### 8.7 验证输出（实跑）
+
+```
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → Test Files 44 passed (44) · Tests 366 passed (366)
+$ coverage → 行 96.95% / 分支 93.31%；新文件 wolf-chat.ts / self-expose.ts / visibility.ts 均 100%
+```
+
+### 8.8 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| `project()` 没有实现 | AC-14 只在 `isVisibleTo` 层验证；投影必须调用它，否则夜聊会漏给好人 | RFC-007 |
+| 夜聊内容生成 | 本 RFC 只定义通道与有界退出 | RFC-006 |
+| 死狼能看夜聊的观感 | 观战态（RFC-013）与玩家视角（RFC-011）都要注意别把这层"死人视角"显示给活人 | RFC-011 / 013 |

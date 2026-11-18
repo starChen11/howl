@@ -208,6 +208,14 @@ export const VoteRevealedPayloadSchema = z.object({
   votes: z.array(z.object({ seat: seatIdSchema, target: seatIdSchema.or(z.literal('abstain')) })),
 });
 
+export const WolfChatPostedPayloadSchema = z.object({
+  seat: seatIdSchema,
+  text: z.string(),
+  round: z.literal('night-chat'),
+});
+
+export const SelfExposePayloadSchema = z.object({ seat: seatIdSchema });
+
 export const DayStartedPayloadSchema = z.object({
   day: z.number().int().min(1),
   diedLastNight: z.array(seatIdSchema),
@@ -224,6 +232,8 @@ export const PAYLOAD_SCHEMAS = {
   GAME_STARTED: GameStartedPayloadSchema,
   REJECTED: RejectedPayloadSchema,
   DAY_STARTED: DayStartedPayloadSchema,
+  WOLF_CHAT_POSTED: WolfChatPostedPayloadSchema,
+  SELF_EXPOSE: SelfExposePayloadSchema,
   SPEECH: SpeechPayloadSchema,
   SPEECH_SKIPPED: SpeechSkippedPayloadSchema,
   VOTE_CAST: VoteCastPayloadSchema,

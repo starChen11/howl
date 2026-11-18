@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest';
 
+import type { GameState } from '@shared/domain';
+import type { GameEvent } from '@shared/events';
+
 import { replay } from '@engine/replay';
 import { step } from '@engine/step';
+
+/** 让每只存活 wolf 各报一句，直到进入 `NIGHT_WOLVES`。返回事件。 */
+function passWolfChat(state: GameState): { state: GameState; events: GameEvent[] } {
+  let current = state;
+  const events: GameEvent[] = [];
+  for (let guard = 0; guard < 10 && current.phase === 'NIGHT_WOLF_CHAT'; guard += 1) {
+    const speaker = current.seats.find(
+      (seat) =>
+        seat.alive &&
+        seat.role === 'wolf' &&
+        !(current.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+    )?.seat;
+    if (speaker === undefined) break;
+    const result = step(current, { type: 'WOLF_CHAT', ts: 0, seat: speaker, text: '' });
+    current = result.state;
+    events.push(...result.events);
+  }
+  return { state: current, events };
+}
 
 import { makeNightState, reachWitch, roleSeat, run } from '../fixtures/night';
 import { lobbyState, startActionOf } from '../fixtures/states';
@@ -185,13 +207,15 @@ describe('AC-9 · 次夜复用已用药被拒（药水位由事件流推导）',
 
     const started = step(lobby, startActionOf(lobby, 900));
     stream.push(...started.events);
+    const chat = passWolfChat(started.state);
+    stream.push(...chat.events);
 
-    const wolf = roleSeat(started.state, 'wolf');
-    const killTarget = started.state.seats.find(
+    const wolf = roleSeat(chat.state, 'wolf');
+    const killTarget = chat.state.seats.find(
       (seat) => seat.alive && seat.role === 'villager',
     )?.seat;
     if (killTarget === undefined) throw new Error('没有可刀目标');
-    const killed = step(started.state, {
+    const killed = step(chat.state, {
       type: 'WOLF_KILL',
       ts: 1_000,
       seat: wolf,

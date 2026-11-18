@@ -131,6 +131,8 @@ export interface GameState {
   votes?: { seat: SeatId; target: SeatId | 'abstain' }[];
   /** 重投的候选集：并列最高票者（RUL-2）。 */
   runoff?: SeatId[];
+  /** 本夜狼队已提交的发言（`WOLF_CHAT_POSTED` 折叠而来，可重建）。 */
+  wolfChat?: { seat: SeatId; text: string }[];
   /** 已被放逐的席位（`VOTE_REVEALED` 唯一最高票时写入，`DAY_LYNCH` 的自动推进读它）。 */
   lynched?: SeatId;
   // 注：无 stalemateDays 之类的平局兜底字段。RUL-10 已移除该规则（见 RULES.md §6）。

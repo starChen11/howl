@@ -50,8 +50,8 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     const replayed = replay(stream);
 
     expect(replayed).toEqual(rejected.state);
-    // GAME_STARTED + PHASE_CHANGED（RFC-003 起 START 推两相位）+ REJECTED
-    expect(replayed.seq).toBe(3);
+    // GAME_STARTED + REJECTED（RFC-005 起 START 只产一条事件）
+    expect(replayed.seq).toBe(2);
   });
 
   it('空事件流抛 InvalidEventStreamError', () => {
@@ -293,9 +293,9 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
       gameId: startedEvent.gameId,
       seq: 2,
       ts: 0,
-      type: 'WOLF_CHAT_POSTED',
-      visibleTo: 'wolves',
-      payload: { seat: 1, text: '嗨', round: 'night-chat' },
+      type: 'AI_THOUGHT',
+      visibleTo: 'server',
+      payload: { reason: '想一下', decisionSeq: 2 },
     };
 
     expect(() => replay([startedEvent, speech])).toThrow(UnknownEventError);

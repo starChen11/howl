@@ -25,6 +25,16 @@ function nextAction(state: GameState, ts: number): Action | undefined {
     case 'LOBBY':
       return startActionOf(state, ts);
 
+    case 'NIGHT_WOLF_CHAT': {
+      const speaker = state.seats.find(
+        (seat) =>
+          seat.alive &&
+          seat.role === 'wolf' &&
+          !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+      )?.seat;
+      return speaker === undefined ? undefined : { type: 'WOLF_CHAT', ts, seat: speaker, text: '' };
+    }
+
     case 'NIGHT_WOLVES': {
       const wolf = roleOf('wolf');
       const victim = alive.find((seat) => seat.role !== 'wolf')?.seat;

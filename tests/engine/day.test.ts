@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GameState } from '@shared/domain';
+import type { GameEvent } from '@shared/events';
 
 import { replay } from '@engine/replay';
 import { dayAnnounceEntry, speechOrder } from '@engine/phases/day';
@@ -9,6 +10,25 @@ import { step } from '@engine/step';
 import { reachDay, speakAll } from '../fixtures/day';
 import { twoDeaths } from '../fixtures/day';
 import { FIXTURE_ROLES, lobbyState, startActionOf, stateWithRoles } from '../fixtures/states';
+
+/** 让每只存活 wolf 各报一句，直到进入 `NIGHT_WOLVES`。返回事件。 */
+function passWolfChat(state: GameState): { state: GameState; events: GameEvent[] } {
+  let current = state;
+  const events: GameEvent[] = [];
+  for (let guard = 0; guard < 10 && current.phase === 'NIGHT_WOLF_CHAT'; guard += 1) {
+    const speaker = current.seats.find(
+      (seat) =>
+        seat.alive &&
+        seat.role === 'wolf' &&
+        !(current.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+    )?.seat;
+    if (speaker === undefined) break;
+    const result = step(current, { type: 'WOLF_CHAT', ts: 0, seat: speaker, text: '' });
+    current = result.state;
+    events.push(...result.events);
+  }
+  return { state: current, events };
+}
 
 /**
  * AC-1 ~ AC-4：天亮与发言顺序（RFC-004 §2.1 / §2.2）。
@@ -182,8 +202,10 @@ describe('AC-3 · 无死者时起点由 rng 决定，且可重放', () => {
 
   it('起点写在 DAY_STARTED 的 payload 里，且 replay 重建得出来', () => {
     const lobby = lobbyState({ seed: 777 });
-    let current = step(lobby, startActionOf(lobby, 1)).state;
-    const events = [...step(lobby, startActionOf(lobby, 1)).events];
+    const opened = step(lobby, startActionOf(lobby, 1));
+    const chatted = passWolfChat(opened.state);
+    let current = chatted.state;
+    const events = [...opened.events, ...chatted.events];
 
     const push = (action: Parameters<typeof step>[1]) => {
       const result = step(current, action);

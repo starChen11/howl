@@ -21,7 +21,7 @@ export const DEFAULT_TRANSITIONS: TransitionTable = {
 
   // 夜晚阶段（RFC-003）。NIGHT_WOLF_CHAT 由 RFC-005 填；NIGHT_RESOLVE 是无 action 的
   // 自动结算阶段，所以它的允许集为空——任何 action 在那里都是 PHASE_MISMATCH。
-  NIGHT_WOLF_CHAT: [],
+  NIGHT_WOLF_CHAT: ['WOLF_CHAT'],
   NIGHT_WOLVES: ['WOLF_KILL'],
   NIGHT_SEER: ['SEER_CHECK'],
   NIGHT_WITCH: ['WITCH_ACT'],
@@ -31,8 +31,8 @@ export const DEFAULT_TRANSITIONS: TransitionTable = {
   // 白天阶段归 RFC-004。空数组意味着「拒绝」而不是「未实现」，见 RFC-002 §2.3 的判据。
   // DAY_ANNOUNCE 是自动阶段（天亮由 step 的自动循环推进），所以它没有允许的 action。
   DAY_ANNOUNCE: [],
-  DAY_SPEECH: ['SPEECH', 'SPEECH_SKIP'],
-  DAY_VOTE: ['VOTE'],
+  DAY_SPEECH: ['SPEECH', 'SPEECH_SKIP', 'SELF_EXPOSE'],
+  DAY_VOTE: ['VOTE', 'SELF_EXPOSE'],
   DAY_VOTE_RUNOFF: ['VOTE'],
   // DAY_LYNCH 是自动阶段（放逐在 VOTE_REVEALED 之后由 step 的自动循环执行）
   DAY_LYNCH: [],

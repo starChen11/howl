@@ -21,8 +21,15 @@ export function isVisibleTo(event: EventEnvelope, observer: SeatId, state: GameS
   // 服务端专用：任何席位都不可见。
   if (visibility === 'server') return false;
 
+  const self = state.seats.find((seat) => seat.seat === observer);
+  if (self === undefined) {
+    throw new Error(`观察者席位 ${observer} 不在本局座位表中`);
+  }
+
+  // `self:<n>` 也是**个人频道**：出局之后就不再看到新事件（RFC-005 §2.1 的表）。
   if (visibility.startsWith(SELF_VISIBILITY_PREFIX)) {
-    return visibility === `${SELF_VISIBILITY_PREFIX}${observer}`;
+    const isSelf = visibility === `${SELF_VISIBILITY_PREFIX}${observer}`;
+    return isSelf && (self.diedSeq === undefined || self.diedSeq > event.seq);
   }
 
   const requiredRole = roleForScopedVisibility(visibility);
@@ -31,12 +38,11 @@ export function isVisibleTo(event: EventEnvelope, observer: SeatId, state: GameS
     throw new Error(`未知的可见性取值：${String(visibility)}`);
   }
 
-  const self = state.seats.find((seat) => seat.seat === observer);
-  if (self === undefined) {
-    throw new Error(`观察者席位 ${observer} 不在本局座位表中`);
-  }
-
   if (self.role !== requiredRole) return false;
+
+  // 狼队的「队伍频道」在成员出局后仍继续（RFC-005 的用户裁决）：只要身份是 wolf 就能看，
+  // 不看死活。其余几种是**个人频道**，人死了就不会再有新信息，所以仍然按死亡时间收窄。
+  if (visibility === 'wolves') return true;
 
   // 出局后不再看到新事件，但出局之前发生的仍然看得到。
   return self.diedSeq === undefined || self.diedSeq > event.seq;
