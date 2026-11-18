@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.9 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.17 · 最后更新 2026-11-18
+> 版本 v1.10 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.1 / `RFCS.md` v2.21 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -30,7 +30,7 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 ```
 $ pnpm test
  Test Files  37 passed (37)     # unit 30 个 + meta 7 个
-      Tests  291 passed (291)
+      Tests  295 passed (295)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -445,6 +445,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.10 | RFC-003 Round 2 修复后回填：RUL-11 落榜、C-26 死亡顺序、hunter 真实路径可见性、PAYLOAD_SCHEMAS 完整性；基线用例数 291 → 295 |
 | 2026-11-18 | v1.9 | RFC-003 Round 1 修复后回填：新增三行（C-23 / C-24 / B3）；基线用例数 270 → 291 |
 | 2026-11-18 | v1.8 | RFC-003 实现后回填：16 行 + 查询一行全部 `existing`；AC-8 / AC-16 措辞按 RFC-002 §2.3 修正；基线用例数 209 → 270 |
 | 2026-11-18 | v1.7 | RFC-002 Round 3 评审同步：基线用例数 206 → 209；AC-13 行补递归扫描与接线可注入；`RFCS.md` 引用更新为 v2.16 |

@@ -49,6 +49,8 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 2. 若女巫本夜用了 `heal` 且 `healTarget === killTarget` → 该目标存活，当夜无狼刀死亡。
 3. 否则 `killTarget` 出局。
 4. 若女巫本夜用了 `poison`，其目标出局。
+
+**同一席位既被刀又被毒**（第 3、4 步指向同一人）：按 **RUL-11** 只出局一次、死因记为**毒药**，因此若该席位是 hunter 则**不开枪**。顺序上它仍排在「狼刀」的位置（`diedLastNight` 依赖结算顺序，见 RFC-004）。
 5. 全部出局者应用完毕后，**先调用 `checkWin`（RFC-002 §2.7）判一次胜负**（RUL-1）。
    - 已分出胜负 → 对局结束，**不进入开枪阶段**。
    - 未分出胜负 → 继续下一步。
@@ -249,8 +251,8 @@ $ pnpm exec vitest run --project unit --coverage
 
 | 项 | 问题 | 处理 | 复验 |
 |---|---|---|---|
-| **B1 / C-24** 合法输入崩溃 | 女巫毒「狼刀目标」时，`resolveNight` 产出两条 `Death` → 两条 `PLAYER_DIED` → `applyPlayerDied` 把第二次出局当数据损坏抛 `InvalidEventStreamError`。**一个正常操作把引擎打崩** | ①按座位归并死亡（必须）；②**毒药优先**（用户裁决）：同一目标既被刀又被毒时死因记为 `poison`，猎人因此**不开枪**。理由：FR-17 的本意是「被毒杀的人拿不走开枪」，而 witch 明确选中了毒这个目标 | `resolveNight({killTarget:7, poisonTarget:7})` 只产出 `[{seat:7, cause:'poison'}]` 与一条 kill 效果；目标是 hunter 时不进 `NIGHT_HUNTER_SHOOT` |
-| **B2 / C-23** 夜间相位公开泄漏 | `PHASE_CHANGED` 全是 `public`：跳过 `NIGHT_SEER`/`NIGHT_WITCH` 等于告诉全场「seer / witch 已出局」；`→NIGHT_HUNTER_SHOOT` 泄漏 hunter 死于狼刀而非毒杀。RFC-007 的 `publicEvents` 会把它原样放进每个 AI 的上下文（FR-9） | **夜间相位一律 `server`**，白天相位仍 `public`。新增 `src/engine/phases/visibility.ts` 的 `phaseVisibility(to)`：`to.startsWith('NIGHT_') ? 'server' : 'public'`。玩家端仍能看到「天黑/天亮」——它来自投影后的 `state.phase`，不是事件流；天亮广播由 RFC-004 的 `DAY_STARTED` 承担 | `tests/engine/night-visibility.test.ts`：一整夜的公开事件只允许「天亮的相位推进」与 `GAME_ENDED`；死 seer / 死 witch 两条跳过路径的相位事件都是 `server` |
+| **B1 / C-24** 合法输入崩溃 | 女巫毒「狼刀目标」时，`resolveNight` 产出两条 `Death` → 两条 `PLAYER_DIED` → `applyPlayerDied` 把第二次出局当数据损坏抛 `InvalidEventStreamError`。**一个正常操作把引擎打崩** | ①按座位归并死亡（必须）；②**毒药优先**，且**已落榜为 `RULES.md` 的 RUL-11**（`CHANGE-REQUEST-005`）——RFC 的实现说明不是规则依据 | `resolveNight({killTarget:7, poisonTarget:7})` 只产出 `[{seat:7, cause:'poison'}]` 与一条 kill 效果；目标是 hunter 时不进 `NIGHT_HUNTER_SHOOT`；多死时顺序是结算顺序（狼刀先、毒药后） |
+| **B2 / C-23** 夜间相位公开泄漏 | `PHASE_CHANGED` 全是 `public`：跳过 `NIGHT_SEER`/`NIGHT_WITCH` 等于告诉全场「seer / witch 已出局」；`→NIGHT_HUNTER_SHOOT` 泄漏 hunter 死于狼刀而非毒杀。RFC-007 的 `publicEvents` 会把它原样放进每个 AI 的上下文（FR-9） | **夜间相位一律 `server`**，白天相位仍 `public`。规则收敛在 `src/engine/phases/visibility.ts` 的 `phaseVisibility(to)`：`to.startsWith('NIGHT_') ? 'server' : 'public'`。**所有相位草稿都必须经 `phaseChangedDraft()` 产出**——Round 2 抓到 `NIGHT_RESOLVE → NIGHT_HUNTER_SHOOT` 这一条漏改、仍硬编码 `public`。玩家端仍能看到「天黑/天亮」——它来自投影后的 `state.phase`，不是事件流；天亮广播由 RFC-004 的 `DAY_STARTED` 承担 | `tests/engine/night-visibility.test.ts`：一整夜的公开事件只允许「天亮的相位推进」与 `GAME_ENDED`；死 seer / 死 witch 两条跳过路径的相位事件都是 `server` |
 | **B3** payload schema 缺失 | RFC-003 接管的 6 个事件没有 Zod schema，违反 RFC-001 §2.3 的「每个 payload」 | 在 `src/shared/schemas.ts` 补 `WOLF_KILL_CHOSEN` / `SEER_CHECKED` / `WITCH_POTION_USED` / `PLAYER_DIED` / `HUNTER_SHOOT` / `PHASE_CHANGED` 六个 schema，并登记进 `PAYLOAD_SCHEMAS`。**`GAME_ENDED` 的归属**：它第一次由 RFC-003 产出（夜间即可终局），schema 定义在这里，RFC-004 复用 | `tests/shared/schemas.test.ts`：每个 schema 一对正反例 |
 
 ### 9.2 非阻塞项
@@ -264,7 +266,7 @@ $ pnpm exec vitest run --project unit --coverage
 | **N5** | 删掉 `hunterShoot` 里 `deathCauseOf` 的空循环；`resolveHunterShot` 里效果 payload 与 `Death` 共用同一个 `cause` 常量 |
 | **N6** | 统一 appliers：handler 改用 `context.appliers`（原来绕过注入直接引用 `DEATH_APPLIERS` 常量），`DEFAULT_APPLIERS` 接上 `DEATH_APPLIERS`。现在注入自定义表能真正替换掉默认行为 |
 | **N7** | 补三条负向用例：`PHASE_CHANGED` 的 `from` 与当前阶段不一致、`PLAYER_DIED` 重复出局（真正的数据损坏） |
-| **N8** | README / TEST-STRATEGY / 本节证据同步 |
+| **N8** | README / TEST-STRATEGY / 本节证据同步——**Round 2 抓到这里其实没做**：README 的用例数与覆盖率仍是旧值，与同文件另一处自相矛盾。Round 2 修复时一并改掉 |
 | **N9** | 记入 §9.4：`PLAYER_DIED(cause: 'lynch')` 在 RFC-004 里应当是 `public`（放逐结果要进事件面板），**不要**照搬夜间 `server` |
 | **N10** | `POTION_ALREADY_USED` 的检查提到 `WITCH_SELF_SAVE` 之前：药已经没了比「你不能对自己用」更根本，两种错误同时成立时前者更可操作。补用例 |
 | **C-25** | 非阻塞，属 `FEATURES` 与 RFC 的功能映射问题，不在本 RFC 代码范围；留给 `/manage-changes` |
@@ -292,7 +294,48 @@ $ pnpm typecheck    → exit 0
 $ pnpm lint         → exit 0
 $ pnpm format:check → exit 0
 $ pnpm build        → exit 0
-$ pnpm test         → Test Files 37 passed (37) · Tests 291 passed (291)  exit 0
+$ pnpm test         → Test Files 37 passed (37) · Tests 295 passed (295)  exit 0
 $ pnpm exec vitest run --project unit --coverage
   All files | % Stmts 97.59 | % Branch 95.79 | % Funcs 100 | % Lines 97.42
 ```
+
+---
+
+## 10. Round 2 评审回应（Changes requested → 本轮修复）
+
+Round 2 的结论是 **Changes requested / High**，抓到的是**「修了一半就以为修完了」**。
+
+### 10.1 三个阻塞项
+
+| 项 | 问题 | 处理 | 反向验证 |
+|---|---|---|---|
+| **B-R2-1** hunter 路径仍泄漏 | Round 1 我把 `finishNight` 的相位草稿换成了 `phaseChangedDraft`，却漏了紧邻的 `NIGHT_RESOLVE → NIGHT_HUNTER_SHOOT` 那条，它仍是硬编码 `public`——**泄漏点原封不动**。而当时新写的测试只断言 `phaseVisibility()` 的规则，改对改错都不会红 | 那条也改走 `phaseChangedDraft`；新增**真实路径**测试：狼刀 hunter → 查验 → 女巫 `none` → 断言进入开枪的那条 `PHASE_CHANGED` 是 `server`；`leaksOf` 白名单补上合法的 `HUNTER_SHOOT`（开枪本来就是公开动作） | 把那条改回 `public` → 真实路径测试立刻变红（本轮实跑） |
+| **B-R2-2** 裁决没落榜 | C-24 的「毒药优先」只写在本文档 §9，`RULES.md` §6 没有对应裁决。**RFC 的实现说明不是规则依据**——下一个人读 RULES 找不到，就会在 RFC-004/005 重新撞一次 | 走 `/manage-changes`：`changes/CHANGE-REQUEST-005.md` 把裁决落榜为 **RUL-11**（同一席位只出局一次、死因记毒药、hunter 不开枪）。同步 RULES §4 计数（75 → 76）、§6 引导句、OQ-R5 与 `AGENTS.md` 的规则范围引用 | — |
+| **C-26** 死亡顺序被排序打乱 | Round 1 去重时顺手写了 `.sort((a, b) => a.seat - b.seat)`，于是 `resolveNight({killTarget:9, poisonTarget:3})` 返回 `[3, 9]`——而 RFC-003 §2.3 的步骤是「先狼刀、后毒药」，RFC-004 的 `diedLastNight` 与发言起点都依赖这个顺序 | 删掉排序。归并用的 `Map` 保留首次插入位置，所以顺序天然是结算顺序；同一座位既被刀又被毒时仍排在狼刀的位置（死因已改记为毒药） | 新增用例：`resolveNight({killTarget:9, poisonTarget:3})` 必须返回 `[9, 3]` |
+
+### 10.2 测试与死代码
+
+| # | 处理 |
+|---|---|
+| **PAYLOAD_SCHEMAS 完整性** | 补齐两条断言：键集合与 9 个已登记事件一一对应（删一条会红）、每一项都是可 `safeParse` 的 schema。另加**真实事件集成校验**：跑一整夜，把产出的每条事件按 `event.type` 取对应 schema 校验 payload——原来只测 schema 本体，删掉登记项照样全绿 |
+| **N7 名不副实** | 原来的「不存在座位」测试实际验的是重复出局，已改名；另补一条真正覆盖 `src/engine/apply.ts` 座位查找分支的用例（直接对空状态 `applyEvent`） |
+| **死代码** | `deathCauseOf` 在 N5 之后只剩测试调用、`NIGHT_PHASE_EVENTS` 从未被使用，两者都删掉（连带删掉 `deathCauseOf` 的测试） |
+| **文档同步** | README 的用例数与覆盖率、TEST-STRATEGY 的版本引用、本文档 §9 的 N8 不实声明，全部改正 |
+
+### 10.3 本轮验证输出
+
+```
+$ pnpm typecheck    → exit 0
+$ pnpm lint         → exit 0
+$ pnpm format:check → exit 0
+$ pnpm build        → exit 0
+$ pnpm test         → Test Files 37 passed (37) · Tests 295 passed (295)  exit 0
+$ pnpm exec vitest run --project unit --coverage
+  All files | % Stmts 98.15 | % Branch 96.63 | % Funcs 100 | % Lines 98.02
+```
+
+### 10.4 教训（写给下一个人）
+
+Round 1 我修了「夜间相位可见性」，但只改了**我先想到的那一处**，没做全局搜索；新测试又只断言了 helper 的规则，于是「修了一半」被两层掩盖：代码漏一处、测试也不覆盖那一处。
+
+**以后的纪律**：换一条语义（例如「所有相位草稿走同一个函数」）之后，先 `grep` 该语义的所有产出点，再写一条走**真实路径**的测试，最后用反向探针确认它会红。
