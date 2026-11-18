@@ -41,7 +41,7 @@ describe('放逐与入夜', () => {
     const { state } = lynch(day.state, target.seat);
 
     expect(state.seats.find((seat) => seat.seat === target.seat)?.alive).toBe(false);
-    expect(state.phase).toBe('NIGHT_WOLVES');
+    expect(state.phase).toBe('NIGHT_WOLF_CHAT');
     expect(state.day).toBe(before + 1);
   });
 
@@ -157,7 +157,7 @@ describe('AC-13 / RUL-1 · 开枪之后的第二次判定', () => {
 
     const { state } = step(shotPhase, { type: 'HUNTER_SHOOT', ts: 30, seat: hunter });
 
-    expect(state.phase).toBe('NIGHT_WOLVES');
+    expect(state.phase).toBe('NIGHT_WOLF_CHAT');
   });
 });
 

@@ -76,6 +76,31 @@ describe('AC-11 · 自曝之后当天不再有投票', () => {
   });
 });
 
+describe('AC-11 · 自曝取消当日投票：已投出的票不得带到下一夜（评审 B2）', () => {
+  it('投票阶段先投出几票，再自曝 → 入夜后票箱为空', () => {
+    const day = reachDay();
+    const voting = speakAll(day.state);
+    expect(voting.phase).toBe('DAY_VOTE');
+
+    const alive = voting.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+    const wolf = voting.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat;
+    if (wolf === undefined) throw new Error('没有存活的 wolf');
+
+    // 投出两票（不投给 wolf 自己，避免干扰）
+    const target = alive.find((seat) => seat !== wolf) as number;
+    let current = voting;
+    for (const seat of alive.slice(0, 2)) {
+      current = step(current, { type: 'VOTE', ts: 21, seat, target: target as never }).state;
+    }
+    expect(current.votes?.length).toBeGreaterThan(0);
+
+    const { state } = step(current, { type: 'SELF_EXPOSE', ts: 50, seat: wolf });
+
+    expect(state.phase).toBe('NIGHT_WOLF_CHAT');
+    expect(state.votes).toBeUndefined();
+  });
+});
+
 describe('AC-12 · 非狼与已出局狼都不能自曝', () => {
   it('好人提交 → NOT_A_WOLF', () => {
     const day = reachDay();

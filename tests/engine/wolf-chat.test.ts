@@ -5,6 +5,7 @@ import type { SeatId } from '@shared/domain';
 import { pendingChatters } from '@engine/phases/wolf-chat';
 import { step } from '@engine/step';
 
+import { reachDay, speakAll } from '../fixtures/day';
 import { lobbyState, startActionOf } from '../fixtures/states';
 
 /**
@@ -92,6 +93,44 @@ describe('AC-7 / AC-8 · 全部提交后推进，空串也算提交', () => {
 
     expect(state.phase).toBe('NIGHT_WOLVES');
     expect(state.wolfChat).toHaveLength(3);
+  });
+});
+
+describe('第二夜起夜聊仍然存在（评审 B1）', () => {
+  it('放逐之后进入的是 NIGHT_WOLF_CHAT，不是直接 NIGHT_WOLVES', () => {
+    const day = reachDay();
+    const voting = speakAll(day.state);
+    const alive: SeatId[] = voting.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+    const victim = alive[0] as SeatId;
+
+    let current = voting;
+    for (const seat of alive) {
+      current = step(current, { type: 'VOTE', ts: 20, seat, target: victim }).state;
+    }
+
+    expect(current.phase).toBe('NIGHT_WOLF_CHAT');
+    // 第二夜的夜聊必须从空开始（上一夜的发声不能带过来）
+    expect(current.wolfChat ?? []).toHaveLength(0);
+    expect(pendingChatters(current).length).toBeGreaterThan(0);
+  });
+});
+
+describe('夜聊文本截断（RFC §4）', () => {
+  it('超过 500 字的部分被截断，事件仍然产出', () => {
+    const state = opened();
+    const wolf = state.seats.find((seat) => seat.role === 'wolf')?.seat;
+    if (wolf === undefined) throw new Error('没有 wolf');
+
+    const { events } = step(state, {
+      type: 'WOLF_CHAT',
+      ts: 2,
+      seat: wolf,
+      text: 'x'.repeat(600),
+    });
+
+    const posted = events.find((event) => event.type === 'WOLF_CHAT_POSTED');
+    if (posted?.type !== 'WOLF_CHAT_POSTED') throw new Error('没有 WOLF_CHAT_POSTED');
+    expect(posted.payload.text).toHaveLength(500);
   });
 });
 

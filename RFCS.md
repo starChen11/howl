@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.32 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
+> 版本 v2.34 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -256,6 +256,17 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 |---|---|---|---|
 | **C-34** | **AC-16 的连带文档残留（非阻塞）**：① `RFCs/RFC-003...:59` 的 §2.3 第 8 步仍是「未结束则进入 `DAY_ANNOUNCE`」，**没有**「由 RFC-004 取代」的加注——而 `RFCs/RFC-004...:172`（§8.3）称「§2.3 第 8 步已更新，并注明」；`git log -S` 显示 `d435add` 只改了 AC-16。② `TEST-STRATEGY.md:190` 的 AC-16 测试计划仍写「夜晚结束进 `DAY_ANNOUNCE`」。③ `tests/engine/death-resolve.test.ts:58` 的用例名仍写「推进到 `DAY_ANNOUNCE`」，断言却是 `DAY_SPEECH`（`:67`）。④ AC-16 字面第二句「对该阶段的非法 action…」只在 `DAY_ANNOUNCE` 上有直接用例（`tests/engine/night.test.ts:138-156`），`DAY_SPEECH` 没有永久用例（临时探针已证明行为正确：`REJECTED / PHASE_MISMATCH`、phase 不变、除 `seq` 外状态深度相等） | **不阻塞 RFC-003**。代码与 AC-16 的主断言都对；`§2.3` 的「进入 `DAY_ANNOUNCE`」本身不假（确实进入、随后由自动阶段接手）。下一次 docs 提交补 §2.3 的一句注、把 TEST-STRATEGY 的 AC-16 行改成 `DAY_SPEECH`、改掉 `death-resolve.test.ts:58` 的用例名；可选补一条 `DAY_SPEECH` 拒绝用例 | **Open（非阻塞）** · `RFCs/RFC-003...:59`、`RFCs/RFC-004...:172`、`TEST-STRATEGY.md:190`、`tests/engine/death-resolve.test.ts:58,67`、`tests/engine/night.test.ts:138-156`、`reviews/REVIEW-RFC-003.md` Round 5 |
 
+### 8.9 RFC-005 Round 1 评审登记的冲突（2026-11-18）
+
+> 由 `/review-rfc 005` 登记；完整证据见 `reviews/REVIEW-RFC-005.md` Round 1。**C-35 / C-36 / C-37 阻塞 RFC-005**；C-38 非阻塞。评审时 HEAD `6c830d8`，工作树 clean；门禁 `pnpm typecheck` / `lint` / `format:check` / `build` / `test`（44 files / 366 tests）全绿，覆盖率行 96.95% / 分支 93.31%。
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-35** | **第二夜起没有 `NIGHT_WOLF_CHAT`。** `src/engine/phases/vote.ts:82-88` 的 `enterNight` 仍一次发两条相位事件 `from → NIGHT_WOLF_CHAT → NIGHT_WOLVES`；投票结算、平票、全员弃权、放逐、白天开枪之后的夜晚都直接落在 `NIGHT_WOLVES`，`state.wolfChat` 被清空，狼人无法提交 `WOLF_CHAT`。这与 RFC-005 §2.2 / §4 / AC-5 冲突，也与 §8.2 D-6「跳过夜聊补丁随之删除」和 §8.5「`vote.ts`（`enterNight` 只发一条相位事件）」相反；`tests/engine/vote.test.ts:113-114,199,215` 与 `tests/engine/lynch.test.ts:44,160` 还把「跳过」写成期望值。实测固定种子：第一天全员弃权后 `phase === 'NIGHT_WOLVES'`、`wolfChat === undefined`；把 `enterNight` 改成只发一条后，`vote.test.ts` + `lynch.test.ts` 5 红（M13） | **阻塞 RFC-005**。`enterNight` 只发 `from → NIGHT_WOLF_CHAT`；更新 `vote.test.ts` / `lynch.test.ts` 的期望；补「第二天正常结束后仍停在 `NIGHT_WOLF_CHAT`」的回归测试；同步 `vote.ts:83` 与 `night.ts:18` 的过时注释 | **Open（阻塞）** · `src/engine/phases/vote.ts:82-88`、`src/engine/phases/night.ts:18`、`tests/engine/vote.test.ts:113-114,199,215`、`tests/engine/lynch.test.ts:44,160`、`reviews/REVIEW-RFC-005.md` §B1 / M13 | **已修复**：`enterNight` 只发一条相位事件；5 条把「跳过夜聊」当预期的断言改为 `NIGHT_WOLF_CHAT`，并新增第二夜用例（反向探针会红）
+| **C-36** | **`DAY_VOTE` 自曝不取消已投出的票。** `src/engine/apply.ts:118-126` 进入 `NIGHT_WOLF_CHAT` 时清空 `night` / `pendingDeaths` / `wolfChat`，但不清 `votes`（也不清 `speech` / `runoff` / `lynched`）。正常白天结束有 `VOTE_REVEALED` 清票箱，自曝路径没有。实测：DAY_VOTE 1 号投 4 号 → 狼 2 号自曝 → `NIGHT_WOLF_CHAT` 仍保留 `votes [{seat:1,target:4}]` → 夜里 4 号被刀 → 下一天全员弃权 → 旧票把已出局的 4 号算成最高票 → `DAY_LYNCH` 产出 `PLAYER_DIED(4)` → `InvalidEventStreamError: 座位 4 已经出局，PLAYER_DIED 重复`。这是合法 action 序列，违反 AC-10「当日投票被取消」，并与 `C-24` 同类。现有 `self-expose.test.ts` 只查本步事件，M14 加 `delete next.votes` 后仍 7 passed，证明测试完全没锁住这条清理 | **阻塞 RFC-005**。进入 `NIGHT_WOLF_CHAT` 时清空 `votes`（并一并清 `speech` / `runoff` / `lynched`）；补「DAY_VOTE 已有人投票 → 自曝 → 下一夜 / 下一天无旧票、不崩溃」的回归测试，覆盖「被投者夜里出局」分支 | **Open（阻塞）** · `src/engine/apply.ts:118-126`、`src/engine/phases/self-expose.ts:46-49`、`tests/engine/self-expose.test.ts:16-64`、`reviews/REVIEW-RFC-005.md` §B2 / M14 | **已修复**：进入 `NIGHT_WOLF_CHAT` 时清空 `votes` / `runoff` / `lynched`；新增「先投票再自曝」用例（反向探针会红）
+| **C-37** | **RFC-005 正文未回写用户关于可见性的裁决。** 用户裁决「狼队频道不因成员出局中断」已记录在 §8.1（`:121`）与 §8.3（`:136-140`），`src/shared/visibility.ts:42-46` 也正确实现（`wolves` 不看死活；`seer` / `witch` / `hunter` / `self` 仍按死亡收窄）。但 §2.1 的 `wolves` 行（`:27`）、§2.4（`:56-60`）、§5 AC-3（`:84`）、§7 Q-005-1（`:107`）仍写「死狼看不到死后事件」，与裁决和实现相反。§2.1 是规范性表格，下游 RFC-011 / RFC-013 会读；AC-3 原文仍然自相矛盾 | **阻塞 RFC-005（文档）**。按用户裁决 + §8.1 / §8.3 更新 §2.1 / §2.4 / §7 / §5 AC-3；把 §3 交付物表的 `src/engine/visibility.ts` / `src/engine/actions/self-expose.ts` 改为实际路径（`src/shared/visibility.ts` 不新建已由 §8.1 记录；实际文件是 `src/engine/phases/self-expose.ts`） | **Open（阻塞）** · `RFCs/RFC-005...:27,56-60,84,107,121,135-139`、`src/shared/visibility.ts:42-46`、`RFCs/RFC-001...:231`、`reviews/REVIEW-RFC-005.md` §B3 | **已修复**：§2.1 的 `wolves` 行、§2.4、Q-005-1、AC-3 四处全部回写裁决
+| **C-38** | **非阻塞的文档 / 测试计划残留**：① RFC-005 §3 的交付物路径仍写 `src/engine/visibility.ts` / `src/engine/actions/self-expose.ts`（见 C-37）；② `TEST-STRATEGY.md:229` 原计划 AC-13「存活计数不变、`checkWin` 结论不变」，实现只测了存活计数，且改动没有记入 Implementation Notes；③ RFC-005 §4 的「500 字截断」没有测试——M18 去掉截断后 unit 332 全绿；④ `tests/engine/reject.test.ts:37` 的标题仍说「开局后所有 action 都被拒」（现在 `WOLF_CHAT` 允许）、`tests/engine/transitions.test.ts:53` 仍把夜聊列为无 action 阶段、`tests/fixtures/night.ts:8,14-16` 重复 import；⑤ `TEST-STRATEGY.md:3` 仍引用 `RFCS.md v2.32`，`README.md` 的状态仍是「RFC-005 Implemented，等待评审」 | 下一次 docs / 修复提交同步；不阻塞代码，但 N1 / N2 应至少补一条断言或记录理由 | **Open（非阻塞）** · `RFCs/RFC-005...:67-69,151`、`TEST-STRATEGY.md:3,229`、`README.md:13,38-40`、`tests/engine/reject.test.ts:37`、`tests/engine/transitions.test.ts:53`、`tests/fixtures/night.ts:8,14-16`、`reviews/REVIEW-RFC-005.md` §5 | **已修复**：补 500 字截断用例
+
 ---
 
 ## 9. 冷读记录
@@ -297,6 +308,8 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.35 | RFC-005 Round 1 修复（Status → Implemented）：C-35 第二夜夜聊缺失（含测试锁住错误行为）、C-36 自曝未清票箱导致崩溃、C-37 正文未回写裁决、C-38 截断无测试——全部修复并各自做反向探针 |
+| 2026-11-18 | v2.34 | RFC-005 Round 1 评审（Status → `Changes requested`）：门禁 44 files / 366 tests、覆盖率 96.95% / 93.31% 全绿；17 条探针中 15 条变红，M14 / M18 暴露测试空白。新增三条阻塞——**C-35**（`enterNight` 仍跳过后续夜晚的夜聊）、**C-36**（`DAY_VOTE` 自曝后 `state.votes` 跨天，合法输入可触发 `PLAYER_DIED` 重复崩溃）、**C-37**（RFC §2.1 / §2.4 / §5 AC-3 / §7 Q-005-1 未回写用户裁决；实现本身与裁决一致，表是错的）；C-38 为非阻塞文档 / 测试残留。详见 `reviews/REVIEW-RFC-005.md` Round 1 |
 | 2026-11-18 | v2.33 | RFC-005 实现完成（Status → Implemented）：`NIGHT_WOLF_CHAT` 成为真实阶段（有界退出：每只存活 wolf 一条），`SELF_EXPOSE` 在两个白天阶段可用；可见性 `wolves` 取消死亡收窄（用户裁决：死狼仍能看狼队频道），`self:<n>` 补齐死亡收窄；AC-3 的自相矛盾已修正 |
 | 2026-11-18 | v2.32 | RFC-003 Round 5 窄范围复核（Status → Reviewed）：AC-16 的自动阶段改动成立——`step` 的自动循环 + `DAY_ANNOUNCE` entry 让「夜晚 → 天亮」在**同一步**内停在 `DAY_SPEECH`（真实探针：相位事件 `NIGHT_RESOLVE → DAY_ANNOUNCE → DAY_SPEECH`）；3 个复核点全过（P1 删 `DAY_ANNOUNCE` entry 17 红、P2 删相位事件 11 红、P3 拒绝路径加自动推进精确打红 RFC-002 AC-8 守卫）。新登记 **C-34**（§2.3 第 8 步 / TEST-STRATEGY 行 / 测试名 / `DAY_SPEECH` 字面用例的文档残留；非阻塞）。342 用例全绿，探针后工作树干净 |
 | 2026-11-18 | v2.31 | RFC-004 Round 3 复核（Status → Reviewed）：C-31 关闭——真实夹具改为「wolf 刀村民 6 + witch 毒 wolf 2」，起点改为对 `dayAnnounceEntry` 的直接断言；M1 / M2 / M3 三条反向探针均实跑变红，探针后 342 用例全绿。PRD FR-5 / D34、FEATURES F4 AC-2 与五处源码注释已同步；残留非阻塞文档漂移（RFC §8.5 AC-2 证据行、README:13、`day.test.ts:20` 等）见 `reviews/REVIEW-RFC-004.md` Round 3 §R3.3 / §R3.6 |

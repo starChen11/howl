@@ -111,7 +111,7 @@ describe('AC-7 · 唯一最高票者被放逐', () => {
     expect(died?.payload).toEqual({ seat: victim, cause: 'lynch' });
     if (events[0] !== undefined) expect(events.length).toBeGreaterThan(0);
     // 放逐之后进入下一夜（`NIGHT_WOLF_CHAT` 被跳过，与 START 一致）
-    expect(current.phase).toBe('NIGHT_WOLVES');
+    expect(current.phase).toBe('NIGHT_WOLF_CHAT');
     expect(current.seats.find((seat) => seat.seat === victim)?.alive).toBe(false);
   });
 });
@@ -196,7 +196,7 @@ describe('AC-8 / RUL-2 · 平票重投的选项集只有并列者', () => {
       events = result.events;
     }
 
-    expect(current.phase).toBe('NIGHT_WOLVES');
+    expect(current.phase).toBe('NIGHT_WOLF_CHAT');
     expect(
       events.some((event) => event.type === 'PLAYER_DIED' && event.payload.cause === 'lynch'),
     ).toBe(false);
@@ -212,7 +212,7 @@ describe('AC-9 · 全员弃权当日无人出局', () => {
     const voting = atVote(day.state);
     const ended = voteAll(voting, () => 'abstain');
 
-    expect(ended.phase).toBe('NIGHT_WOLVES');
+    expect(ended.phase).toBe('NIGHT_WOLF_CHAT');
     expect(ended.seats.every((seat) => seat.alive)).toBe(true);
   });
 });

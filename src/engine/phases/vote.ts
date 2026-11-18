@@ -80,12 +80,9 @@ function voterProblem(
 
 /** 进入下一夜。 */
 export function enterNight(from: Phase): EventDraft[] {
-  // `NIGHT_WOLF_CHAT` 归 RFC-005。本 RFC 与 START 一样跳过它：先进入该阶段（它会清空
-  // 本夜暂存、`day` 递增、清空昨夜死者），再立刻推进到 wolf 行动阶段。
-  return [
-    phaseChangedDraft(from, 'NIGHT_WOLF_CHAT'),
-    phaseChangedDraft('NIGHT_WOLF_CHAT', 'NIGHT_WOLVES'),
-  ];
+  // 只发一条：进入 `NIGHT_WOLF_CHAT` 后由狼队夜聊推进到 `NIGHT_WOLVES`（RFC-005）。
+  // 这个阶段还负责 `day++`、清空本夜暂存与昨夜死者。
+  return [phaseChangedDraft(from, 'NIGHT_WOLF_CHAT')];
 }
 
 /** 投票结算：公布票型，然后决定去向。 */
