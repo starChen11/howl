@@ -1,7 +1,7 @@
 # RFC-006 · LLM 接入与结构化决策
 
 **Features**: F11, F16, F17, F20
-**Depends on**: RFC-004
+**Depends on**: RFC-004, RFC-007
 **Rules**: AI-1, AI-2, AI-3, AI-4, AI-5, AI-7, AI-8, SEC-1, SEC-7, DATA-1
 **Complexity**: High
 > 关联需求：NFR-3、NFR-14、NFR-16

@@ -1,7 +1,7 @@
 # RFC-007 · 上下文投影与注入隔离
 
 **Features**: F12, F13
-**Depends on**: RFC-005, RFC-006
+**Depends on**: RFC-005
 **Rules**: ARCH-8, SEC-3, SEC-5, ARCH-2
 **Complexity**: High
 > 关联需求：NFR-15、FR-9、FR-10、FR-32；可见性口径见 RULES.md §6
