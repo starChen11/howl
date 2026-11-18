@@ -26,6 +26,8 @@ function leaksOf(events: ReturnType<typeof run>['events']) {
   return events.filter((event) => {
     if (event.visibleTo !== 'public') return false;
     if (event.type === 'GAME_ENDED') return false;
+    // 开枪是公开动作：全场都看得见「谁带走了谁」。
+    if (event.type === 'HUNTER_SHOOT') return false;
     if (event.type === 'PHASE_CHANGED' && !event.payload.to.startsWith('NIGHT_')) return false;
     return true;
   });
@@ -112,13 +114,41 @@ describe('C-23 · 三个具体泄漏点', () => {
     expect(leaksOf(events)).toEqual([]);
   });
 
-  it('进入 NIGHT_HUNTER_SHOOT 的相位事件是 server（否则泄漏猎人死于狼刀）', () => {
+  it('真实路径：狼刀 hunter → 查验 → 女巫 none，进开枪的相位事件必须是 server（B-R2-1）', () => {
+    // 这条是 Round 2 抓到的缺口：`finishNight` 里 `NIGHT_RESOLVE → NIGHT_HUNTER_SHOOT`
+    // 曾硬编码 `public`，而当时的测试只断言 `phaseVisibility()` 的规则，改对改错都不会红。
     const hunter = 6 as SeatId;
-    const state = makeNightState({ phase: 'NIGHT_RESOLVE', night: { killTarget: hunter } });
-    // 直接构造「结算后进入开枪」的路径太长，这里用 night 状态 + 一次真实结算更脆；
-    // 改为断言可见性函数的规则 + 上一整夜测试已覆盖真实路径。
-    expect(phaseVisibility('NIGHT_HUNTER_SHOOT')).toBe('server');
-    expect(state.night?.killTarget).toBe(hunter);
+    const base = makeNightState({ phase: 'NIGHT_WOLVES' });
+    const wolf = roleSeat(base, 'wolf');
+
+    const killed = run(base, { type: 'WOLF_KILL', ts: 1, seat: wolf, target: hunter });
+    expect(killed.state.phase).toBe('NIGHT_SEER');
+
+    const seer = roleSeat(killed.state, 'seer');
+    const checkTarget = killed.state.seats.find((seat) => seat.alive && seat.role !== 'seer')?.seat;
+    if (checkTarget === undefined) throw new Error('没有可查目标');
+    const checked = run(killed.state, {
+      type: 'SEER_CHECK',
+      ts: 2,
+      seat: seer,
+      target: checkTarget,
+    });
+    expect(checked.state.phase).toBe('NIGHT_WITCH');
+
+    const witch = roleSeat(checked.state, 'witch');
+    const acted = run(checked.state, { type: 'WITCH_ACT', ts: 3, seat: witch, potion: 'none' });
+
+    expect(acted.state.phase).toBe('NIGHT_HUNTER_SHOOT');
+
+    const toShoot = acted.events.filter(
+      (event) => event.type === 'PHASE_CHANGED' && event.payload.to === 'NIGHT_HUNTER_SHOOT',
+    );
+    expect(toShoot).toHaveLength(1);
+    expect(toShoot[0]?.visibleTo).toBe('server');
+
+    // 整条夜的公开事件里不能有任何泄漏（开枪本身允许公开，但这一夜还没开枪）
+    const all = [...killed.events, ...checked.events, ...acted.events];
+    expect(leaksOf(all)).toEqual([]);
   });
 
   it('天亮的相位事件恢复 public（玩家该看到「天亮了」）', () => {

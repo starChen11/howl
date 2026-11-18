@@ -4,6 +4,8 @@ import type { GameEvent } from '@shared/events';
 
 import { MissingRngStateError, UnknownEventError } from '@engine/errors';
 import { initialStateFromSeed } from '@engine/rng';
+import { applyEvent } from '@engine/apply';
+import { createEmptyState } from '@engine/init';
 import { replay } from '@engine/replay';
 import { step } from '@engine/step';
 
@@ -250,7 +252,7 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     expect(() => replay([startedEvent, bogus])).toThrow(/from 与当前阶段不一致/);
   });
 
-  it('PLAYER_DIED 指向不存在的座位时抛错（N7）', () => {
+  it('同一个座位重复出局时抛错（真正的数据损坏，N7）', () => {
     const [startedEvent] = eventsOfStart();
     if (startedEvent === undefined) throw new Error('缺少 GAME_STARTED');
 
@@ -266,6 +268,21 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     const first: GameEvent = { ...bogus };
 
     expect(() => replay([startedEvent, first, { ...bogus, seq: 3 }])).toThrow(/重复/);
+  });
+
+  it('PLAYER_DIED 指向状态里不存在的座位时抛错（N7，覆盖 apply.ts 的座位查找分支）', () => {
+    // 空状态的 seats 是空的，所以任何座位都「不存在」——这条路径只能直接调 applyEvent 触发。
+    const empty = createEmptyState();
+    const event: GameEvent = {
+      gameId: 'g',
+      seq: 1,
+      ts: 0,
+      type: 'PLAYER_DIED',
+      visibleTo: 'server',
+      payload: { seat: 3, cause: 'wolf' },
+    };
+
+    expect(() => applyEvent(empty, event)).toThrow(/不存在的座位/);
   });
 
   it('未实现折叠的事件类型抛 UnknownEventError（不静默忽略）', () => {

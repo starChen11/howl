@@ -3,12 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SeatId } from '@shared/domain';
 import { EFFECT_ORDER } from '@shared/effects';
 
-import {
-  DEATH_APPLIERS,
-  deathCauseOf,
-  resolveHunterShot,
-  resolveNight,
-} from '@engine/resolve/deaths';
+import { DEATH_APPLIERS, resolveHunterShot, resolveNight } from '@engine/resolve/deaths';
 import { applyEffects } from '@engine/effects';
 
 import { makeNightState, reachWitch, roleSeat, run } from '../fixtures/night';
@@ -238,31 +233,22 @@ describe('B1 / C-24 · 毒药指向狼刀目标（合法 action 不能崩）', (
     expect(resolution.effects.filter((effect) => effect.type === 'kill')).toHaveLength(1);
   });
 
-  it('resolveNight 对同一座位的死因按毒药归并，并按座位升序', () => {
+  it('resolveNight 对同一座位的死因按毒药归并', () => {
     const resolution = resolveNight({ killTarget: 7, poisonTarget: 7 });
 
     expect(resolution.deaths).toEqual([{ seat: 7, cause: 'poison' }]);
+  });
 
-    const both = resolveNight({ killTarget: 3, poisonTarget: 7 });
-    expect(both.deaths.map((death) => death.seat)).toEqual([3, 7]);
-    expect(both.deaths.map((death) => death.cause)).toEqual(['wolf', 'poison']);
+  it('多死时的顺序是**结算顺序**（狼刀先、毒药后），不是座位顺序（C-26）', () => {
+    // 刀口 9、毒药 3：按座位排会得到 [3, 9]，按结算顺序是 [9, 3]。
+    const resolution = resolveNight({ killTarget: 9, poisonTarget: 3 });
+
+    expect(resolution.deaths.map((death) => death.seat)).toEqual([9, 3]);
+    expect(resolution.deaths.map((death) => death.cause)).toEqual(['wolf', 'poison']);
   });
 });
 
-describe('死亡效果的两条防御分支', () => {
-  it('效果 payload 的 cause 非法时抛错（不猜测死因）', () => {
-    expect(() =>
-      deathCauseOf({
-        id: 'x',
-        source: 'role',
-        type: 'kill',
-        target: 1,
-        payload: { cause: 'banana' },
-        order: 100,
-      }),
-    ).toThrow(/cause 非法/);
-  });
-
+describe('死亡效果的防御分支', () => {
   it('kill 效果没有目标时抛错（不静默跳过）', () => {
     const applier = DEATH_APPLIERS['kill'];
     if (applier === undefined) throw new Error('kill applier 未注册');

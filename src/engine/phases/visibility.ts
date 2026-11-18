@@ -1,5 +1,5 @@
 import type { Phase } from '@shared/domain';
-import type { GameEventType, Visibility } from '@shared/events';
+import type { Visibility } from '@shared/events';
 import type { EventDraft } from '../step';
 
 /**
@@ -31,8 +31,3 @@ export function phaseChangedDraft(from: Phase, to: Phase): EventDraft {
     payload: { from, to },
   };
 }
-
-/** 该事件类型在夜间是否必须不可见。给测试与将来的投影过滤用。 */
-export const NIGHT_PHASE_EVENTS: ReadonlySet<GameEventType> = new Set<GameEventType>([
-  'PHASE_CHANGED',
-]);

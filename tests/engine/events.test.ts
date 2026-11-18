@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { GameEvent } from '@shared/events';
 import { GAME_EVENT_TYPES } from '@shared/events';
-import { GameStartedPayloadSchema, RejectedPayloadSchema } from '@shared/schemas';
+import { GameStartedPayloadSchema, PAYLOAD_SCHEMAS, RejectedPayloadSchema } from '@shared/schemas';
 
 import { replay } from '@engine/replay';
 import { step } from '@engine/step';
@@ -71,6 +71,51 @@ describe('AC-6 · seq 与事件类型', () => {
     const result = step(lobby, startActionOf(lobby, 987_654));
 
     expect(result.events[0]?.ts).toBe(987_654);
+  });
+});
+
+describe('真实事件的 payload 能被登记的 schema 校验（Round 2 评审）', () => {
+  it('一整夜产出的每条事件，其 payload 都通过对应 schema', () => {
+    const lobby = lobbyState();
+    const started = step(lobby, startActionOf(lobby));
+    const state = started.state;
+
+    const wolf = state.seats.find((seat) => seat.role === 'wolf' && seat.alive)?.seat;
+    const killTarget = state.seats.find((seat) => seat.alive && seat.role === 'villager')?.seat;
+    if (wolf === undefined || killTarget === undefined) throw new Error('夹具缺少角色');
+
+    const killed = step(state, { type: 'WOLF_KILL', ts: 2_000, seat: wolf, target: killTarget });
+    const seer = killed.state.seats.find((seat) => seat.role === 'seer' && seat.alive)?.seat;
+    const checkTarget = killed.state.seats.find((seat) => seat.alive && seat.role !== 'seer')?.seat;
+    if (seer === undefined || checkTarget === undefined) throw new Error('夹具缺少角色');
+
+    const checked = step(killed.state, {
+      type: 'SEER_CHECK',
+      ts: 3_000,
+      seat: seer,
+      target: checkTarget,
+    });
+    const witch = checked.state.seats.find((seat) => seat.role === 'witch' && seat.alive)?.seat;
+    if (witch === undefined) throw new Error('夹具缺少 witch');
+    const acted = step(checked.state, {
+      type: 'WITCH_ACT',
+      ts: 4_000,
+      seat: witch,
+      potion: 'none',
+    });
+
+    const all = [...started.events, ...killed.events, ...checked.events, ...acted.events];
+    expect(all.length).toBeGreaterThan(5);
+
+    for (const event of all) {
+      const schema = PAYLOAD_SCHEMAS[event.type as keyof typeof PAYLOAD_SCHEMAS];
+      if (schema === undefined) continue; // 还没登记 schema 的事件类型（如 SPEECH 归 RFC-004）
+      const result = schema.safeParse(event.payload);
+      expect(
+        result.success,
+        `${event.type} 的 payload 未通过 schema：${JSON.stringify(result.error?.issues)}`,
+      ).toBe(true);
+    }
   });
 });
 

@@ -99,14 +99,11 @@ function finishNight(
     (death) => death.cause === 'wolf' && seatAt(state, death.seat).role === 'hunter',
   );
 
-  drafts.push({
-    type: 'PHASE_CHANGED',
-    visibleTo: 'public',
-    payload: {
-      from: 'NIGHT_RESOLVE',
-      to: hunterKilledByWolf ? 'NIGHT_HUNTER_SHOOT' : 'DAY_ANNOUNCE',
-    },
-  });
+  // 走 `phaseChangedDraft`：夜间相位是 `server`。这里曾经硬编码 `public`，于是
+  // 「进入开枪阶段」就等于告诉全场「hunter 死于狼刀而非毒杀」（评审 B-R2-1）。
+  drafts.push(
+    phaseChangedDraft('NIGHT_RESOLVE', hunterKilledByWolf ? 'NIGHT_HUNTER_SHOOT' : 'DAY_ANNOUNCE'),
+  );
 
   return drafts;
 }

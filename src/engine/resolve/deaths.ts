@@ -76,9 +76,14 @@ export function resolveNight(input: NightResolutionInput): NightResolution {
     causes.set(poisonTarget, 'poison');
   }
 
-  const deaths: Death[] = [...causes.entries()]
-    .map(([seat, cause]) => ({ seat, cause }))
-    .sort((a, b) => a.seat - b.seat);
+  /**
+   * **顺序即结算顺序**（RFC-003 §2.3 第 3、4 步：先狼刀、后毒药），不是座位顺序。
+   *
+   * 一开始这里按座位排过序，那是错的（评审 C-26）：RFC-004 的 `DAY_STARTED.diedLastNight`
+   * 与「发言起点」都依赖死亡结算顺序。归并用的 `Map` 保留首次插入的位置，所以同一座位
+   * 既被刀又被毒时，那条死亡仍排在狼刀的位置上（死因已改记为毒药）。
+   */
+  const deaths: Death[] = [...causes.entries()].map(([seat, cause]) => ({ seat, cause }));
 
   // 解药效果存在即说明「witch 用了药」，与它是否真的救下人都无关。
   if (healTarget !== undefined) {
@@ -138,15 +143,6 @@ export function resolveHunterShot(target: SeatId | undefined): {
     ],
     deaths: [{ seat: target, cause }],
   };
-}
-
-/** 从效果的 payload 里取死因；payload 是 `Record<string, unknown>`，必须窄化。 */
-export function deathCauseOf(effect: Effect): DeathCause {
-  const cause = effect.payload['cause'];
-  if (cause === 'wolf' || cause === 'poison' || cause === 'lynch' || cause === 'shoot') {
-    return cause;
-  }
-  throw new Error(`效果 ${effect.id} 的 cause 非法：${String(cause)}`);
 }
 
 /**
