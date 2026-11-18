@@ -32,7 +32,7 @@ export interface ScannedFile {
   source: string;
 }
 
-/** 递归列出 `rootDir` 下所有 `.ts` 文件（跳过 `.tsx`、`node_modules` 与隐藏目录）。 */
+/** 递归列出 `rootDir` 下所有 `.ts` / `.tsx` 文件（跳过 `node_modules` 与隐藏目录）。 */
 export function collectTypeScriptFiles(rootDir: string): ScannedFile[] {
   const found: ScannedFile[] = [];
 
@@ -47,7 +47,7 @@ export function collectTypeScriptFiles(rootDir: string): ScannedFile[] {
         walk(absolutePath);
         continue;
       }
-      if (entry.isFile() && entry.name.endsWith('.ts')) {
+      if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx'))) {
         found.push({
           relativePath: toPosixPath(relative(rootDir, absolutePath)),
           absolutePath,

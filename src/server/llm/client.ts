@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import type { ProjectedContext } from '@shared/project';
 
 import type { LlmConfig } from './config';
+import { DecisionLog, type DecisionKey } from './decision-log';
 import { CallMetaLog, type CallMeta } from './meta';
 import { DecisionSchema, type Decision } from './schema';
 import { buildSystemPrompt, buildUserMessage } from './prompts/base';
@@ -37,12 +38,16 @@ export interface LlmDeps {
   /** 测试注入假 fetch；生产不传，走全局。 */
   fetchImpl?: typeof fetch;
   metaLog?: CallMetaLog;
+  /** 决策轮次去重（AC-6）：同一 `(gameId, seq, seat)` 至多一条 action。 */
+  decisionLog?: DecisionLog;
 }
 
 export interface DecideInput {
   gameId: string;
   seq: number;
   ctx: ProjectedContext;
+  /** 对局模式决定胜利条件的措辞，不能写死。 */
+  mode: 'slaughter-side' | 'slaughter-all';
   persona?: string | null;
 }
 
@@ -50,6 +55,9 @@ export interface DecideResult {
   decision: Decision;
   meta: CallMeta;
 }
+
+/** 同一决策轮次已产出过 action 时返回它，而不是再产一条。 */
+export type DecideOutcome = DecideResult | { duplicate: true };
 
 function statusToCode(status: number): string {
   if (status === 429) return 'RATE_LIMITED';
@@ -63,8 +71,14 @@ function statusToCode(status: number): string {
  * `attempt` 从 1 开始；每次尝试单独产出一条 `CallMeta`（AC-12）——重试的两次是两次调用，
  * 元数据要能看出「第一次失败了」。
  */
-export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideResult> {
+export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideOutcome> {
   const { config } = deps;
+
+  // AC-6：同一轮次（同一 seq、同一席位）只允许一条 action。重试不产生第二条。
+  const key: DecisionKey = { gameId: input.gameId, seq: input.seq, seat: input.ctx.self.seat };
+  if (deps.decisionLog !== undefined && deps.decisionLog.has(key)) {
+    return { duplicate: true };
+  }
   const client = new OpenAI({
     apiKey: config.apiKey,
     baseURL: config.baseURL,
@@ -76,7 +90,10 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideR
     role: 'system' | 'user' | 'assistant';
     content: string;
   }[] = [
-    { role: 'system', content: buildSystemPrompt({ persona: input.persona ?? null }) },
+    {
+      role: 'system',
+      content: buildSystemPrompt({ persona: input.persona ?? null, mode: input.mode }),
+    },
     { role: 'user', content: buildUserMessage(input.ctx) },
   ];
 
@@ -89,7 +106,7 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideR
       seat: input.ctx.self.seat,
       seq: input.seq,
       day: input.ctx.day,
-      phase: input.ctx.phase as CallMeta['phase'],
+      phase: input.ctx.phase,
       model: config.model,
       thinking: config.thinking,
       attempt,
@@ -143,6 +160,7 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideR
       };
       deps.metaLog?.record(meta);
 
+      deps.decisionLog?.claim(key);
       return { decision: parsed.data, meta };
     } catch (error) {
       const mapped = mapError(error);

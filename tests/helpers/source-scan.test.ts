@@ -49,7 +49,7 @@ describe('collectTypeScriptFiles', () => {
     expect(files).toEqual(['phases/night.ts', 'resolve/deep/deeper/deepest.ts', 'top.ts']);
   });
 
-  it('只收 .ts，跳过 .tsx / .md / 其他', () => {
+  it('收 .ts 与 .tsx，跳过 .md / 其他', () => {
     const root = makeTree({
       'a.ts': 'x',
       'B.tsx': 'x',
@@ -57,7 +57,10 @@ describe('collectTypeScriptFiles', () => {
       'data.json': '{}',
     });
 
-    expect(collectTypeScriptFiles(root).map((file) => file.relativePath)).toEqual(['a.ts']);
+    expect(collectTypeScriptFiles(root).map((file) => file.relativePath)).toEqual([
+      'B.tsx',
+      'a.ts',
+    ]);
   });
 
   it('隐藏的 .ts 文件会被扫到（C-22：AC-13 要的是「全部 .ts」）', () => {

@@ -42,7 +42,7 @@
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Reviewed |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Reviewed |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Reviewed |
-| [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Changes requested |
+| [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Implemented |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Not started |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Not started |
@@ -379,6 +379,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.45 | RFC-006 Round 1 修复（Status → Implemented）：按 `(gameId, seq, seat)` 去重（AC-6 落地）；`toThought()` 产出 `AI_THOUGHT`；提示词渲染真实对局内容（发言/票型/死者/药水/刀口/可选动作）且胜利条件按模式生成；发言超长改为截断；`CallMeta.phase` 改用 `ProjectedPhase`；重投拒绝弃权；扫描器补 `.tsx` |
 | 2026-11-18 | v2.44 | RFC-006 Round 1 评审（Status → `Changes requested`）：门禁 54 files / 438 tests、覆盖率行 96.69% / 分支 93.33% 全绿；**C-47 ~ C-52 阻塞**——AC-6 / F11 AC-2 无实现无归属、`AI_THOUGHT` 产出被静默丢掉、`ProjectedPhase` 与 `CallMeta.phase` 口径冲突、提示只渲染事件类型且未消费 `wrapPublicUtterance`、`speech` 超长被拒绝而非截断、静态扫描跳过 `.tsx`；C-53 为 README / TEST-STRATEGY / FEATURES 文档漂移（非阻塞）。14 条 AC 中 AC-6 FAIL；AC-1 / 5 / 12 证据不足；M1–M15 探针实跑，所有改动从备份恢复，工作树 clean。详见 `reviews/REVIEW-RFC-006.md` |
 | 2026-11-18 | v2.43 | RFC-006 实现完成（Status → Implemented）：`openai@7.57.0` 客户端（唯一端点、错误脱敏、可重试分类、校验错误回喂）、`DecisionSchema`、`toAction`、提示词与规则书、`CallMeta`。AC-6（去重）属编排层，留给后续 RFC |
 | 2026-11-18 | v2.42 | RFC-007 Round 3 复核（Status → `Reviewed`）：C-44 / C-45 / C-46 关闭；C-28 / C-41 关闭；M3 / M4 / M4b / M5 / M6b / M7 分别打红，真实种子 `4_242_424` 的夜间终局投影与引擎一致；非阻塞残项见 §8.15。详见 `reviews/REVIEW-RFC-007.md` Round 3 |

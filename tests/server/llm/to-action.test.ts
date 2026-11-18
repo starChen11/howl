@@ -17,7 +17,6 @@ const BASE: DecisionContext = {
   phase: 'DAY_VOTE',
   day: 2,
   legalTargets: [1, 2, 4, 'abstain'] as (SeatId | 'abstain')[],
-  pending: 'vote',
 };
 
 function decision(partial: Partial<Parameters<typeof toAction>[0]>) {
@@ -35,6 +34,27 @@ describe('AC-9 · 投票', () => {
     const result = toAction(decision({ target: 9 }), BASE, 100);
 
     expect(result).toEqual({ reject: expect.stringContaining('不在本阶段的合法清单里') });
+  });
+
+  it('重投阶段 abstain → reject（RUL-2）', () => {
+    const runoff = { ...BASE, phase: 'DAY_VOTE_RUNOFF' as const };
+    const result = toAction(decision({ action: 'abstain' }), runoff, 100);
+
+    expect(result).toEqual({ reject: expect.stringContaining('不能弃权') });
+  });
+
+  it('发言超长被截断到 300 字，而不是整条拒绝', () => {
+    const result = toAction(
+      decision({ action: 'speak', speech: 'x'.repeat(400) }),
+      { ...BASE, phase: 'DAY_SPEECH', legalTargets: [] },
+      100,
+    );
+
+    expect('action' in result).toBe(true);
+    if (!('action' in result)) throw new Error('应当产出 action');
+    expect(result.action.type).toBe('SPEECH');
+    if (result.action.type !== 'SPEECH') throw new Error('类型窄化失败');
+    expect(result.action.text).toHaveLength(300);
   });
 
   it('abstain → target: abstain 的 VOTE', () => {
@@ -76,7 +96,7 @@ describe('AC-10 · 发言与开枪', () => {
   it('shoot 在开枪阶段 → HUNTER_SHOOT', () => {
     const result = toAction(
       decision({ action: 'shoot', target: 1 }),
-      { ...BASE, phase: 'NIGHT_HUNTER_SHOOT', legalTargets: [1], pending: 'shoot' },
+      { ...BASE, phase: 'NIGHT_HUNTER_SHOOT', legalTargets: [1] },
       100,
     );
 

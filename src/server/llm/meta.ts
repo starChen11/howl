@@ -1,4 +1,5 @@
-import type { Phase, SeatId } from '@shared/domain';
+import type { SeatId } from '@shared/domain';
+import type { ProjectedPhase } from '@shared/project';
 
 /**
  * 每次模型调用的元数据（RFC-006 §2.5）。
@@ -11,7 +12,8 @@ export interface CallMeta {
   seat: SeatId;
   seq: number;
   day: number;
-  phase: Phase;
+  /** 观察者视角的阶段（夜间折成 `'NIGHT'`，见 RFC-007 的 C-28）。 */
+  phase: ProjectedPhase;
   model: string;
   thinking: boolean;
   latencyMs: number;

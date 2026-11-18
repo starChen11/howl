@@ -1,6 +1,5 @@
 import type { Action } from '@shared/actions';
 import type { Phase, SeatId } from '@shared/domain';
-import type { PendingDecision } from '@shared/project';
 
 import type { Decision } from './schema';
 
@@ -18,8 +17,10 @@ export interface DecisionContext {
   phase: Phase;
   day: number;
   legalTargets: (SeatId | 'abstain')[];
-  pending: PendingDecision;
 }
+
+/** AI 单轮发言上限，与 PRD FR-30 / RFC-006 §2.2 的 300 字一致。 */
+export const SPEECH_LIMIT = 300;
 
 export type DecisionResult = { action: Action } | { reject: string };
 
@@ -78,16 +79,21 @@ export function toAction(decision: Decision, ctx: DecisionContext, ts: number): 
 
   switch (decision.action) {
     case 'abstain':
+      // RUL-2：重投阶段不能弃权。引擎会拒绝，但在这里挡掉，AI 才能知道自己「说了个
+      // 不允许的动作」，而不是收到一条笼统的 Rejected。
+      if (ctx.phase === 'DAY_VOTE_RUNOFF') {
+        return { reject: '重投阶段不能弃权（RUL-2）' };
+      }
       return { action: { type: 'VOTE', ts, seat: ctx.seat, target: 'abstain' } };
     case 'none':
       return { action: { type: 'WITCH_ACT', ts, seat: ctx.seat, potion: 'none' } };
     case 'speak': {
       const text = decision.speech;
-      // 超长由提示词侧截断；这里只拒绝「空的发言」——那等于没说话。
+      // 空发言等于没说话，拒绝；**超长则截断**（RFC §2.2）——因为啰嗦不该让整条决策作废。
       if (text === undefined || text.length === 0) {
         return { reject: 'speak 缺少非空 speech' };
       }
-      return { action: { type: 'SPEECH', ts, seat: ctx.seat, text } };
+      return { action: { type: 'SPEECH', ts, seat: ctx.seat, text: text.slice(0, SPEECH_LIMIT) } };
     }
     case 'skip':
       return { action: { type: 'SPEECH_SKIP', ts, seat: ctx.seat } };

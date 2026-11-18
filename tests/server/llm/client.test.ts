@@ -4,6 +4,7 @@ import type { ProjectedContext } from '@shared/project';
 
 import { decide, LlmError } from '@server/llm/client';
 import { DEFAULT_LLM_CONFIG, loadLlmConfig, type LlmConfig } from '@server/llm/config';
+import { DecisionLog } from '@server/llm/decision-log';
 import { CallMetaLog } from '@server/llm/meta';
 
 /**
@@ -71,10 +72,12 @@ describe('AC-14 · 正常路径：解析决策并写元数据', () => {
     const log = new CallMetaLog();
     const fetchImpl = (async () => chatResponse(GOOD_BODY)) as unknown as typeof fetch;
 
-    const { decision, meta } = await decide(
+    const outcome = await decide(
       { config: CONFIG, fetchImpl, metaLog: log },
-      { gameId: 'g', seq: 4, ctx: CTX },
+      { gameId: 'g', seq: 4, ctx: CTX, mode: 'slaughter-side' },
     );
+    if ('duplicate' in outcome) throw new Error('不应被判为重复');
+    const { decision, meta } = outcome;
 
     expect(decision.action).toBe('check');
     expect(decision.target).toBe(1);
@@ -93,7 +96,10 @@ describe('AC-3 · 错误信息不含响应体原文', () => {
       chatResponse({ error: { message: `boom ${secret}` } }, 500)) as unknown as typeof fetch;
 
     await expect(
-      decide({ config: CONFIG, fetchImpl }, { gameId: 'g', seq: 1, ctx: CTX }),
+      decide(
+        { config: CONFIG, fetchImpl },
+        { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+      ),
     ).rejects.toSatisfy((error: unknown) => {
       expect(error).toBeInstanceOf(LlmError);
       const message = (error as LlmError).message;
@@ -113,7 +119,10 @@ describe('AC-5 · 可重试与不可重试', () => {
     }) as unknown as typeof fetch;
 
     await expect(
-      decide({ config: CONFIG, fetchImpl, metaLog: log }, { gameId: 'g', seq: 1, ctx: CTX }),
+      decide(
+        { config: CONFIG, fetchImpl, metaLog: log },
+        { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+      ),
     ).rejects.toThrow();
 
     expect(calls).toBe(2);
@@ -128,7 +137,10 @@ describe('AC-5 · 可重试与不可重试', () => {
     }) as unknown as typeof fetch;
 
     await expect(
-      decide({ config: CONFIG, fetchImpl }, { gameId: 'g', seq: 1, ctx: CTX }),
+      decide(
+        { config: CONFIG, fetchImpl },
+        { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+      ),
     ).rejects.toThrow();
 
     expect(calls).toBe(1);
@@ -142,7 +154,10 @@ describe('AC-5 · 可重试与不可重试', () => {
     }) as unknown as typeof fetch;
 
     await expect(
-      decide({ config: CONFIG, fetchImpl }, { gameId: 'g', seq: 1, ctx: CTX }),
+      decide(
+        { config: CONFIG, fetchImpl },
+        { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+      ),
     ).rejects.toThrow();
 
     expect(calls).toBe(2);
@@ -166,12 +181,13 @@ describe('AC-8 · 格式校验失败要回喂错误', () => {
         : chatResponse(GOOD_BODY);
     }) as unknown as typeof fetch;
 
-    const { decision } = await decide(
+    const outcome = await decide(
       { config: CONFIG, fetchImpl },
-      { gameId: 'g', seq: 1, ctx: CTX },
+      { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
     );
+    if ('duplicate' in outcome) throw new Error('不应被判为重复');
 
-    expect(decision.reason).toBe('他像狼');
+    expect(outcome.decision.reason).toBe('他像狼');
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).toContain('不符合格式要求');
     expect(bodies[1]).toContain('reason');
@@ -200,5 +216,84 @@ describe('AC-4 · 配置与环境变量', () => {
 
   it('缺 key 时抛错，而不是给空串', () => {
     expect(() => loadLlmConfig({} as NodeJS.ProcessEnv)).toThrow(/DEEPSEEK_API_KEY/);
+  });
+});
+
+describe('AC-6 · 同一决策轮次至多一条 action', () => {
+  it('同一 (gameId, seq, seat) 第二次调用返回 duplicate，且不重复调用模型', async () => {
+    const log = new DecisionLog();
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      return chatResponse(GOOD_BODY);
+    }) as unknown as typeof fetch;
+
+    const input = { gameId: 'g', seq: 7, ctx: CTX, mode: 'slaughter-side' as const };
+    const first = await decide({ config: CONFIG, fetchImpl, decisionLog: log }, input);
+    const second = await decide({ config: CONFIG, fetchImpl, decisionLog: log }, input);
+
+    expect('duplicate' in first).toBe(false);
+    expect(second).toEqual({ duplicate: true });
+    expect(calls).toBe(1);
+  });
+
+  it('不同 seq（下一轮）不会被判重复', async () => {
+    const log = new DecisionLog();
+    const fetchImpl = (async () => chatResponse(GOOD_BODY)) as unknown as typeof fetch;
+
+    await decide(
+      { config: CONFIG, fetchImpl, decisionLog: log },
+      {
+        gameId: 'g',
+        seq: 7,
+        ctx: CTX,
+        mode: 'slaughter-side',
+      },
+    );
+    const next = await decide(
+      { config: CONFIG, fetchImpl, decisionLog: log },
+      {
+        gameId: 'g',
+        seq: 8,
+        ctx: CTX,
+        mode: 'slaughter-side',
+      },
+    );
+
+    expect('duplicate' in next).toBe(false);
+  });
+});
+
+describe('AC-5 · 429 与网络错误也会重试', () => {
+  it('429 重试一次', async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      return chatResponse({ error: { message: 'rate limited' } }, 429);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      decide(
+        { config: CONFIG, fetchImpl },
+        { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+      ),
+    ).rejects.toThrow();
+    expect(calls).toBe(2);
+  });
+
+  it('网络错误（非超时）重试一次', async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    await expect(
+      decide(
+        { config: CONFIG, fetchImpl },
+        { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+      ),
+    ).rejects.toThrow();
+    expect(calls).toBe(2);
   });
 });

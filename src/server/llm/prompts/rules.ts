@@ -14,11 +14,18 @@ const SEER = ROLE_LABELS.seer;
 const WITCH = ROLE_LABELS.witch;
 const HUNTER = ROLE_LABELS.hunter;
 
+/** 两种模式的胜利条件不同，必须按当前模式生成，不能写死。 */
+export function winConditionText(mode: 'slaughter-side' | 'slaughter-all'): string {
+  return mode === 'slaughter-side'
+    ? `${WOLF}阵营获胜的条件是神职全部出局，或${ROLE_LABELS.villager}全部出局。`
+    : `${WOLF}阵营获胜的条件是所有好人全部出局。`;
+}
+
 export const RULES_TEXT = [
   `这是一局 9 人身份推理对局：3 个${WOLF}、${SEER}、${WITCH}、${HUNTER}各 1 名、3 个${ROLE_LABELS.villager}。`,
   `${WOLF}每晚共同选择一名玩家袭击；${SEER}每晚查验一名玩家的阵营；${WITCH}有一瓶解药和一瓶毒药，每瓶整局只能用一次；${HUNTER}被杀或放逐时可以开枪带走一人（被毒杀时不能）。`,
   '白天所有存活玩家轮流发言，然后投票放逐一人。',
-  `好人阵营获胜的条件是${WOLF}全部出局；${WOLF}阵营获胜的条件是神职全部出局或${ROLE_LABELS.villager}全部出局。`,
+  `好人阵营获胜的条件是${WOLF}全部出局。`,
   '你只能使用自己看到的信息。不要推测自己没有看到的内容，也不要假设自己知道别人的身份。',
   '你可以选择说谎、伪装身份，但必须基于自己看到的信息。',
 ].join('\n');

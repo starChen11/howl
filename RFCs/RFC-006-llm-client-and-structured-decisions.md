@@ -89,7 +89,7 @@ function toAction(d: Decision, ctx: DecisionContext): Action | { reject: string 
 
 `toAction` 是纯函数，不读时钟、不读状态以外的输入。`ts` 由调用方在执行前填入。
 
-**去重责任**：由调用方按 `(gameId, seat, action.type)` 在**同一决策轮次内**去重；决策轮次的标识是 `(gameId, seq)`，其中 `seq` 取自该决策产生前的 `state.seq`。重试不产生第二个 action（NFR-9）。
+**去重责任**：键是 **`(gameId, seq, seat)`**，其中 `seq` 取自该决策产生前的 `state.seq`。**不要**把 `action.type` 放进键里——重试后模型可能把 `vote` 改成 `abstain`，动作类型不同但仍是同一轮、同一个席位。重试不产生第二个 action（NFR-9）。
 
 ### 2.4 提示组装
 
@@ -240,3 +240,19 @@ interface CallMeta {
 | AC-6（重试不重复 action） | 去重是**调用方**的责任（`§2.3` 的 `(gameId, seq, seat)` 键）。本 RFC 只交付客户端与契约，没有编排层可挂 | RFC-008 / 后续 |
 | 真实 API 调用 | 本 RFC 全部用假 `fetch`；真实调用只在手工验证时做（`§6`） | 手工 |
 | 流式与降级 | 不做 | RFC-010 |
+
+### 8.6 Round 1 回应（Changes requested · High）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **B1 / C-47** AC-6 只写了「已知缺口」 | 去重被推给「RFC-008 / 后续」，但 F11 是 Must 且只挂在 RFC-006；`TEST-STRATEGY` 仍把它列为 Must 的 `proposed`；§2.3 的键还写成 `(gameId, seat, action.type)`（漏了 `seq`，且动作类型一变就失效） | 新增 `decision-log.ts`：按 **`(gameId, seq, seat)`** 去重，同轮第二次调用直接返回 `{ duplicate: true }` 且**不再调用模型**。§2.3 的键描述同步改正。补两条用例（重复/下一轮） |
+| **B2 / C-48** `AI_THOUGHT` 不产出 | RFC-007 §8.6 把产出留给本 RFC，但 `src/server/llm/` 里零代码——等于复盘永远没有推理 | 新增 `thought.ts`：`toThought()` 产出 `visibleTo: 'self:<seat>'` 的事件，`claim` 原样带入。补投影用例（只有该席位可见） |
+| **B3 / C-49** 提示没给内容 | `buildUserMessage` 只列事件类型：没有发言原文、票型、死者、药水、刀口、可选动作；`wrapPublicUtterance` 从未被调用；规则书把胜利条件写死为屠边 | 重写渲染：发言经封装、票型/死者/自曝/狼聊都成可读句；补上药水、刀口、开枪、待决事项与 12 个可选动作；胜利条件按 `mode` 生成 |
+| **B4 / C-50** 发言超长被拒 | `schema.ts` 的 `.max(300)` 直接判 `too_big`，与 §2.2 的「超长截断」相反 | schema 不再限长；`toAction` 截断到 300 字。补用例 |
+| **B5 / C-51** `CallMeta.phase = 'NIGHT'` | 用 `as` 把 `ProjectedPhase` 塞进 `Phase`，值不在 `PHASES` 里 | `CallMeta.phase` 的类型改为 `ProjectedPhase`（夜间本来就只有 `'NIGHT'` 可报，这是 C-28 的直接结果） |
+| **B6 / C-52** 测试盲区 | 429 / 网络错误无重试用例；静态扫描只收 `.ts`，在 `src/client/main.tsx` 写入密钥与端点也测不出来 | 补两条重试用例；`collectTypeScriptFiles` 改为同时收 `.tsx`（并同步它自己的用例）。顺带：`dependency-direction` 加 `server → server`（服务端内部分层，禁掉会逼着复制实现） |
+| **B7 / C-53** 重投接受弃权 | `toAction` 在 `DAY_VOTE_RUNOFF` 仍产出 `abstain` 票，违反 RUL-2（引擎才拒） | 在 `toAction` 层面拒绝，并给 AI 一个明确理由。补用例 |
+
+```
+$ pnpm test → 55 files / 449 tests 全绿
+```
