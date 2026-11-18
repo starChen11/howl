@@ -293,9 +293,9 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
       gameId: startedEvent.gameId,
       seq: 2,
       ts: 0,
-      type: 'SPEECH',
-      visibleTo: 'public',
-      payload: { seat: 2, text: '嗨' },
+      type: 'WOLF_CHAT_POSTED',
+      visibleTo: 'wolves',
+      payload: { seat: 1, text: '嗨', round: 'night-chat' },
     };
 
     expect(() => replay([startedEvent, speech])).toThrow(UnknownEventError);

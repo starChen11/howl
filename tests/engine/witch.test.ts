@@ -243,7 +243,7 @@ describe('AC-10 · 解药命中刀口：当夜无人出局（RUL-8）', () => {
 
     expect(events.some((event) => event.type === 'PLAYER_DIED')).toBe(false);
     expect(after.seats.find((seat) => seat.seat === reached.killTarget)?.alive).toBe(true);
-    expect(after.phase).toBe('DAY_ANNOUNCE');
+    expect(after.phase).toBe('DAY_SPEECH');
   });
 });
 

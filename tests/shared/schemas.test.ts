@@ -97,6 +97,7 @@ describe('PAYLOAD_SCHEMAS · 登记表完整性（Round 2 评审）', () => {
   it('键集合与已登记的事件一一对应——删掉一条会红', () => {
     // 只测 schema 本体是不够的：把 PAYLOAD_SCHEMAS 里的一条删掉，别的测试照样全绿。
     expect(Object.keys(PAYLOAD_SCHEMAS).sort()).toEqual([
+      'DAY_STARTED',
       'GAME_ENDED',
       'GAME_STARTED',
       'HUNTER_SHOOT',

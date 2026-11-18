@@ -1,4 +1,4 @@
-import type { GameState, Phase, PotionUsage, Seat } from '@shared/domain';
+import type { GameState, Phase, PotionUsage, Seat, SeatId } from '@shared/domain';
 import { SEAT_IDS } from '@shared/domain';
 import type { GameEvent, GameEventType, GameStartedPayload } from '@shared/events';
 
@@ -20,6 +20,8 @@ import { InvalidEventStreamError, MissingRngStateError, UnknownEventError } from
 /** 哪些事件消耗了随机数。RFC-003/004 新增同类事件时扩充这个集合。 */
 export const RANDOM_CONSUMING_EVENTS: ReadonlySet<GameEventType> = new Set<GameEventType>([
   'GAME_STARTED',
+  // 当日无死者时，发言起点要在 `DAY_STARTED` 的入口抽一次（RFC-004 §2.1）。
+  'DAY_STARTED',
 ]);
 
 export function applyEvent(state: GameState, event: GameEvent): GameState {
@@ -70,6 +72,15 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'HUNTER_SHOOT':
       // 开枪的后果由 `PLAYER_DIED(cause: 'shoot')` 承载，这条事件只记录「谁对谁开了枪」。
       return base;
+    case 'DAY_STARTED':
+      // 消费昨夜死者（已在状态里），并把发言进度重置到本次起点。
+      return {
+        ...withoutPendingDeaths(base),
+        speech: { startSeat: event.payload.speechStartSeat, spoken: [] },
+      };
+    case 'SPEECH':
+    case 'SPEECH_SKIPPED':
+      return appendSpoken(base, event.payload.seat);
     case 'GAME_ENDED':
       return { ...base, phase: 'FINISHED' };
     default:
@@ -94,9 +105,35 @@ function applyPhaseChanged(state: GameState, payload: { from: Phase; to: Phase }
   }
 
   const next: GameState = { ...state, phase: payload.to };
+
   if (payload.to === 'NIGHT_WOLF_CHAT') {
+    // 进入新的一夜：本夜暂存与「昨夜死者」都清空，`day` 递增（夜 N 开启第 N 天）。
+    // 首个夜晚由 `GAME_STARTED` 直接设定，不经过这条转移，所以 `day` 仍从 1 开始。
     delete next.night;
+    delete next.pendingDeaths;
+    if (state.phase !== 'LOBBY') {
+      next.day = state.day + 1;
+    }
   }
+  return next;
+}
+
+/** 记一笔「这个席位说过/跳过了」。 */
+function appendSpoken(state: GameState, seatId: SeatId): GameState {
+  const speech = state.speech;
+  if (speech === undefined) {
+    throw new InvalidEventStreamError(`SPEECH 之前没有 DAY_STARTED，无法记录席位 ${seatId}`);
+  }
+  if (speech.spoken.includes(seatId)) {
+    throw new InvalidEventStreamError(`席位 ${seatId} 已经发过言，SPEECH 重复`);
+  }
+  return { ...state, speech: { ...speech, spoken: [...speech.spoken, seatId] } };
+}
+
+/** 清掉 `pendingDeaths`（`DAY_STARTED` 折叠后用）。 */
+function withoutPendingDeaths(state: GameState): GameState {
+  const next: GameState = { ...state };
+  delete next.pendingDeaths;
   return next;
 }
 

@@ -117,5 +117,15 @@ export interface GameState {
   night?: NightContext;
   /** 药水位。undefined 视为「两瓶药都没用过」。 */
   potionsUsed?: PotionUsage;
+  /**
+   * 自本夜开始以来出局的席位，按**结算顺序**（RFC-004 的 `DAY_STARTED.diedLastNight` 读它）。
+   * 进入新的一夜时清空，`DAY_STARTED` 折叠时消费并清空。
+   */
+  pendingDeaths?: SeatId[];
+  /**
+   * 当天发言进度：起点 + 已发言（或跳过）的席位。
+   * 由 `DAY_STARTED` / `SPEECH` / `SPEECH_SKIPPED` 折叠而来，可完整重建（C-18）。
+   */
+  speech?: { startSeat: SeatId; spoken: SeatId[] };
   // 注：无 stalemateDays 之类的平局兜底字段。RUL-10 已移除该规则（见 RULES.md §6）。
 }

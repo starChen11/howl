@@ -46,7 +46,7 @@ describe('AC-12 · 被狼刀的猎人进入开枪阶段', () => {
     expect(resolved.phase).toBe('NIGHT_HUNTER_SHOOT');
   });
 
-  it('提交 HUNTER_SHOOT 后产出带 source: role 的效果，并推进到 DAY_ANNOUNCE', () => {
+  it('提交 HUNTER_SHOOT 后产出带 source: role 的效果，并推进到白天', () => {
     const shot = resolveHunterShot(3);
 
     expect(shot.effects).toHaveLength(1);
@@ -64,7 +64,7 @@ describe('AC-12 · 被狼刀的猎人进入开枪阶段', () => {
     const shotEvent = events.find((event) => event.type === 'HUNTER_SHOOT');
     expect(shotEvent?.payload).toEqual({ seat: hunter, target: null });
     expect(events.some((event) => event.type === 'PLAYER_DIED')).toBe(false);
-    expect(after.phase).toBe('DAY_ANNOUNCE');
+    expect(after.phase).toBe('DAY_SPEECH');
   });
 
   it('开枪带走最后一只狼 → 触发第二次胜负判定，好人胜', () => {
@@ -223,7 +223,7 @@ describe('B1 / C-24 · 毒药指向狼刀目标（合法 action 不能崩）', (
       .map((event) => (event.type === 'PHASE_CHANGED' ? event.payload.to : ''));
 
     expect(phasePath).not.toContain('NIGHT_HUNTER_SHOOT');
-    expect(after.phase).toBe('DAY_ANNOUNCE');
+    expect(after.phase).toBe('DAY_SPEECH');
     expect(after.seats.find((seat) => seat.seat === 6)?.alive).toBe(false);
   });
 

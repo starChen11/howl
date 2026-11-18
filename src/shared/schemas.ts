@@ -190,6 +190,12 @@ export const PhaseChangedPayloadSchema = z.object({
   to: phaseSchema,
 });
 
+export const DayStartedPayloadSchema = z.object({
+  day: z.number().int().min(1),
+  diedLastNight: z.array(seatIdSchema),
+  speechStartSeat: seatIdSchema,
+});
+
 export const GameEndedPayloadSchema = z.object({
   result: z.enum(['wolf', 'good']),
   condition: z.string().min(1),
@@ -199,6 +205,7 @@ export const GameEndedPayloadSchema = z.object({
 export const PAYLOAD_SCHEMAS = {
   GAME_STARTED: GameStartedPayloadSchema,
   REJECTED: RejectedPayloadSchema,
+  DAY_STARTED: DayStartedPayloadSchema,
   WOLF_KILL_CHOSEN: WolfKillChosenPayloadSchema,
   SEER_CHECKED: SeerCheckedPayloadSchema,
   WITCH_POTION_USED: WitchPotionUsedPayloadSchema,

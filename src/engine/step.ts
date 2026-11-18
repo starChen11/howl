@@ -7,6 +7,7 @@ import type { EffectApplierMap } from './effects';
 import type { Modifier } from './effects';
 import { UnhandledTransitionError } from './errors';
 import { AUTO_PHASE_ENTRIES, AUTO_PHASE_LIMIT } from './phases/auto-table';
+import { DAY_HANDLERS } from './phases/day';
 import { NIGHT_HANDLERS } from './phases/night';
 import { phaseChangedDraft } from './phases/visibility';
 import { DEATH_APPLIERS } from './resolve/deaths';
@@ -134,7 +135,11 @@ const startHandler: ActionHandlerFor<'START'> = (state, action) => {
   ];
 };
 
-export const DEFAULT_HANDLERS: HandlerTable = { START: startHandler, ...NIGHT_HANDLERS };
+export const DEFAULT_HANDLERS: HandlerTable = {
+  START: startHandler,
+  ...NIGHT_HANDLERS,
+  ...DAY_HANDLERS,
+};
 
 /**
  * 默认的效果 applier 表。

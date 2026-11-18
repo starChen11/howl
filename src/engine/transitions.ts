@@ -29,8 +29,9 @@ export const DEFAULT_TRANSITIONS: TransitionTable = {
   NIGHT_HUNTER_SHOOT: ['HUNTER_SHOOT'],
 
   // 白天阶段归 RFC-004。空数组意味着「拒绝」而不是「未实现」，见 RFC-002 §2.3 的判据。
+  // DAY_ANNOUNCE 是自动阶段（天亮由 step 的自动循环推进），所以它没有允许的 action。
   DAY_ANNOUNCE: [],
-  DAY_SPEECH: [],
+  DAY_SPEECH: ['SPEECH', 'SPEECH_SKIP'],
   DAY_VOTE: [],
   DAY_VOTE_RUNOFF: [],
   DAY_LYNCH: [],

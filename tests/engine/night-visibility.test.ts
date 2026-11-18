@@ -28,6 +28,8 @@ function leaksOf(events: ReturnType<typeof run>['events']) {
     if (event.type === 'GAME_ENDED') return false;
     // 开枪是公开动作：全场都看得见「谁带走了谁」。
     if (event.type === 'HUNTER_SHOOT') return false;
+    // 天亮公布昨夜死者（payload 只有天数、死者、发言起点，没有死因）。
+    if (event.type === 'DAY_STARTED') return false;
     if (event.type === 'PHASE_CHANGED' && !event.payload.to.startsWith('NIGHT_')) return false;
     return true;
   });
@@ -79,7 +81,7 @@ describe('C-23 · 一整夜没有**泄漏性**公开事件', () => {
 
     // 「天亮了」的相位推进是公开的，但它只含 from/to，不含任何身份或死因。
     expect(leaksOf(all)).toEqual([]);
-    expect(afterWitch.state.phase).toBe('DAY_ANNOUNCE');
+    expect(afterWitch.state.phase).toBe('DAY_SPEECH');
   });
 });
 
@@ -110,7 +112,7 @@ describe('C-23 · 三个具体泄漏点', () => {
 
     const { events, state: after } = run(state, { type: 'SEER_CHECK', ts: 1, seat: seer, target });
 
-    expect(after.phase).toBe('DAY_ANNOUNCE');
+    expect(after.phase).toBe('DAY_SPEECH');
     expect(leaksOf(events)).toEqual([]);
   });
 
@@ -163,9 +165,10 @@ describe('C-23 · 三个具体泄漏点', () => {
     });
 
     const toDay = events.filter(
-      (event) => event.type === 'PHASE_CHANGED' && event.payload.to === 'DAY_ANNOUNCE',
+      (event) => event.type === 'PHASE_CHANGED' && event.payload.to.startsWith('DAY_'),
     );
-    expect(toDay).toHaveLength(1);
-    expect(toDay[0]?.visibleTo).toBe('public');
+    expect(toDay.length).toBeGreaterThanOrEqual(1);
+    // 天亮与「进入发言」都是公开的：它们不含任何身份或死因
+    expect(toDay.every((event) => event.visibleTo === 'public')).toBe(true);
   });
 });

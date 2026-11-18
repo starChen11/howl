@@ -1,6 +1,7 @@
 import type { Phase } from '@shared/domain';
 
 import type { AutoPhaseEntry } from './auto';
+import { dayAnnounceEntry } from './day';
 import { resolveNightEntry } from './night';
 
 /**
@@ -12,6 +13,7 @@ import { resolveNightEntry } from './night';
  */
 export const AUTO_PHASE_ENTRIES: Partial<Record<Phase, AutoPhaseEntry>> = {
   NIGHT_RESOLVE: resolveNightEntry,
+  DAY_ANNOUNCE: dayAnnounceEntry,
 };
 
 /** 自动阶段推进的循环上限。正常情况下一次 action 最多推进两三个自动阶段。 */
