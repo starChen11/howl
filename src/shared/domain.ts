@@ -118,7 +118,7 @@ export interface GameState {
   /** 药水位。undefined 视为「两瓶药都没用过」。 */
   potionsUsed?: PotionUsage;
   /**
-   * 自本夜开始以来出局的席位，按**结算顺序**（RFC-004 的 `DAY_STARTED.diedLastNight` 读它）。
+   * 自本夜开始以来出局的席位，按**结算顺序**（这是内部顺序；公开的 `DAY_STARTED.diedLastNight` 会按座位重排，C-31）。
    * 进入新的一夜时清空，`DAY_STARTED` 折叠时消费并清空。
    */
   pendingDeaths?: SeatId[];

@@ -197,7 +197,7 @@ D-1 让 `DAY_ANNOUNCE` 不再停留。RFC-003 的 AC-16 断言「夜晚结束后
 | 7 | 同上 · 唯一最高票出局，`PLAYER_DIED.cause === 'lynch'` | PASS |
 | 8 | 同上 · 并列进重投、`runoff` 恰为并列者；投非并列者或弃权 → `INVALID_RUNOFF_TARGET` | PASS |
 | 9 | 同上 · 重投仍并列 → 当日无人出局进下一夜；全员弃权同理 | PASS |
-| 10 | `lynch.test.ts` + `win.test.ts` · 屠边三种（狼死于刀 / 毒 / 放逐）与屠城两种 | PASS |
+| 10 | `lynch.test.ts`「放逐最后一只 wolf → `GAME_ENDED(good / all-wolves-dead)`」+ `win.test.ts` 的屠边 / 屠城谓词用例 | PASS |
 | 11 | 同上 · 屠城两条 | PASS |
 | 12 | `lynch.test.ts` · 放逐最后一名神（hunter）→ 第一次判定即狼胜，事件流无 `HUNTER_SHOOT` | PASS |
 | 13 | 同上 · 放逐 hunter 后开枪带走最后一狼 → 第二次判定好人胜；放弃开枪 → 入夜 | PASS |
@@ -264,3 +264,19 @@ $ pnpm typecheck/lint/format:check/build → 全 0
 $ pnpm test → Test Files 41 passed (41) · Tests 342 passed (342)
 $ coverage → 行 96.75% / 分支 92.90%
 ```
+
+### 9.5 Round 2 回应（Changes requested · Medium）
+
+Round 2 复核了 Round 1 的修复，结论仍是 **Changes requested**，但只剩一项：
+
+**C-31 的第二条路径（发言起点）回归测试是空断言。** 我原来的夹具取「存活非 wolf 的最小/最大座位」，而这一夜里两个候选的「下一位存活者」恰好都绕回 2 —— 于是「取最小」「取结算顺序」「取最大」三种实现得到同一个起点，`M2`（把起点改回 `deaths[0]`）与 `M3`（改成最大）都不会让测试变红。
+
+修法：
+
+- 夹具改为「wolf 刀一个村民、witch 毒一只 wolf」，保证 seer 与 witch 都活着、夜间流程走得完，且公告顺序与结算顺序**不同**（`diedLastNight` 不等于 `[kill, poison]`）；
+- 起点规则改为对 `dayAnnounceEntry` 的**直接断言**：构造 `pendingDeaths: [7, 3]` 与 `[3, 7]` 两种顺序，要求 `speechStartSeat` 都是 4（若按结算顺序会是 8、若按最大死者的下一位会是 8）。
+- 反向复验：M2 与 M3 各自都让这条用例变红。
+
+同轮修掉的非阻塞项：`events.ts` / `domain.ts` / `apply.ts` / `deaths.ts` / `day.ts` 里「结算顺序」的过时注释；§8.5 的 AC-2 / AC-10 证据表；`PRD` FR-5 与 D34、`FEATURES` F4 AC-2 里的「首个死者」统一成「死者中座位最小者」；`TEST-STRATEGY` 补 AC-4b 行并同步版本引用；README 的进度描述。
+
+**提交归属更正**：C-31 的代码修复实际落在 `4693649`（`fix(rfc-004): 修掉死亡公告的死因泄漏与三处测试缺口`）；`eeceb96` 是流程文档提交，与 C-31 无关。

@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import type { GameState } from '@shared/domain';
+
 import { replay } from '@engine/replay';
-import { speechOrder } from '@engine/phases/day';
+import { dayAnnounceEntry, speechOrder } from '@engine/phases/day';
 import { step } from '@engine/step';
 
 import { reachDay, speakAll } from '../fixtures/day';
 import { twoDeaths } from '../fixtures/day';
-import { lobbyState, startActionOf } from '../fixtures/states';
+import { FIXTURE_ROLES, lobbyState, startActionOf, stateWithRoles } from '../fixtures/states';
 
 /**
  * AC-1 ~ AC-4：天亮与发言顺序（RFC-004 §2.1 / §2.2）。
@@ -120,23 +122,38 @@ describe('AC-1 · 发言顺序是单循环，不重不漏', () => {
 });
 
 describe('C-31 · 公开的死亡公告不携带死因顺序', () => {
-  it('两名死者时 diedLastNight 按座位升序，与「谁被刀、谁被毒」无关', () => {
-    // 场景 A：wolf 刀高号、witch 毒低号；场景 B 反过来。
-    // 若公告按结算顺序，两者会得到相反的数组——那就是泄漏。
-    const a = twoDeaths({ kill: 'high', poison: 'low' });
-    const b = twoDeaths({ kill: 'low', poison: 'high' });
+  it('真实夜间路径：两名死者时 diedLastNight 按座位升序，与谁被刀无关', () => {
+    const night = twoDeaths();
 
-    expect(a.diedLastNight).toHaveLength(2);
-    expect(a.diedLastNight).toEqual([...a.diedLastNight].sort((x, y) => x - y));
-    expect(b.diedLastNight).toEqual(a.diedLastNight);
+    expect(night.diedLastNight).toHaveLength(2);
+    expect(night.diedLastNight).toEqual([...night.diedLastNight].sort((a, b) => a - b));
+    // 结算顺序是「刀口先、毒药后」，公告必须与它无关
+    expect(night.diedLastNight).not.toEqual([night.killTarget, night.poisonTarget]);
   });
 
-  it('发言起点只看「座位最小的死者」，不依赖死因顺序', () => {
-    const a = twoDeaths({ kill: 'high', poison: 'low' });
-    const b = twoDeaths({ kill: 'low', poison: 'high' });
+  it('发言起点取「座位最小的死者」的下一位——两种 pendingDeaths 顺序得到同一结果', () => {
+    // 直接对规则函数断言。用 3 与 7 这一对：它们「下一位存活者」不同（4 vs 8），
+    // 所以三种候选实现（最小 / 结算顺序 / 最大）会得到三个不同答案。
+    const base = stateWithRoles(FIXTURE_ROLES, 'slaughter-side');
+    const state: GameState = { ...base, phase: 'DAY_ANNOUNCE', day: 2, seq: 20 };
 
-    // 两个场景的死者集合相同（3 与 9），所以起点必须相同
-    expect(a.speechStartSeat).toBe(b.speechStartSeat);
+    const evening = dayAnnounceEntry({ ...state, pendingDeaths: [7, 3] });
+    const reversed = dayAnnounceEntry({ ...state, pendingDeaths: [3, 7] });
+
+    const payloadOf = (drafts: ReturnType<typeof dayAnnounceEntry>) => {
+      const started = drafts.find((draft) => draft.type === 'DAY_STARTED');
+      if (started?.type !== 'DAY_STARTED') throw new Error('没有 DAY_STARTED');
+      return started.payload;
+    };
+
+    const a = payloadOf(evening);
+    const b = payloadOf(reversed);
+
+    expect(a.diedLastNight).toEqual([3, 7]);
+    expect(b.diedLastNight).toEqual([3, 7]);
+    // 最小死者的下一位存活席位是 4；若按结算顺序（7 在前）会得到 8。
+    expect(a.speechStartSeat).toBe(4);
+    expect(b.speechStartSeat).toBe(4);
   });
 });
 

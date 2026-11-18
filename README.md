@@ -8,7 +8,7 @@ Howl 是狼在夜里的长嚎，也是玩家在白天的"喊话"——两个词�
 
 ## 状态
 
-v0.12 · **引擎能跑完一整局（不含 AI）。** RFC-001 四轮评审后 `Reviewed`（[`CHANGE-REQUEST-003`](changes/CHANGE-REQUEST-003.md) 统一 payload、[`CHANGE-REQUEST-004`](changes/CHANGE-REQUEST-004.md) 定派生状态）；RFC-002 三轮评审后 `Reviewed`；RFC-003 四轮评审后 `Reviewed`——Round 1/2/3 的阻塞项分别在 [`CHANGE-REQUEST-005`](changes/CHANGE-REQUEST-005.md) 落榜 RUL-11「毒药优先」、[`CHANGE-REQUEST-006`](changes/CHANGE-REQUEST-006.md) 落榜 RUL-12「狼刀在先」，Round 4 无阻塞。**三个 RFC 的代码已合入 `main`。**342 个用例全绿，引擎覆盖率行 96.8% / 分支 92.9%。[`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC（3 个 `Reviewed`、1 个 `Spec changed`、1 个 `Implemented`、11 个 `Not started`），[`TEST-STRATEGY.md`](TEST-STRATEGY.md) 覆盖全部 222 条验收标准，[`RULES.md`](RULES.md) 77 条工程规则（含 `RUL-1`~`RUL-12` 裁决），[`FEATURES.md`](FEATURES.md) 57 个功能，[`PRD.md`](PRD.md) 58 条需求。
+v0.12 · **引擎能跑完一整局（不含 AI）**：发牌 → 夜间行动与结算 → 天亮 → 发言 → 投票与放逐 → 终局。 RFC-001 四轮评审后 `Reviewed`（[`CHANGE-REQUEST-003`](changes/CHANGE-REQUEST-003.md) 统一 payload、[`CHANGE-REQUEST-004`](changes/CHANGE-REQUEST-004.md) 定派生状态）；RFC-002 三轮评审后 `Reviewed`；RFC-003 四轮评审后 `Reviewed`——Round 1/2/3 的阻塞项分别在 [`CHANGE-REQUEST-005`](changes/CHANGE-REQUEST-005.md) 落榜 RUL-11「毒药优先」、[`CHANGE-REQUEST-006`](changes/CHANGE-REQUEST-006.md) 落榜 RUL-12「狼刀在先」，Round 4 无阻塞。**三个 RFC 的代码已合入 `main`。**342 个用例全绿，引擎覆盖率行 96.8% / 分支 92.9%。[`RFCS.md`](RFCS.md) + `RFCs/` 下 16 个 RFC（3 个 `Reviewed`、1 个 `Spec changed`、1 个 `Implemented`、11 个 `Not started`），[`TEST-STRATEGY.md`](TEST-STRATEGY.md) 覆盖全部 222 条验收标准，[`RULES.md`](RULES.md) 77 条工程规则（含 `RUL-1`~`RUL-12` 裁决），[`FEATURES.md`](FEATURES.md) 57 个功能，[`PRD.md`](PRD.md) 58 条需求。
 
 已有代码：`src/shared/`（跨层类型契约）、`src/engine/`（纯函数状态机、事件流折叠、种子、效果管道、胜负谓词）、`src/server/`（Fastify 骨架 + `/api/health`）、`src/client/`（占位页）。引擎现在能跑完**第一夜**：发牌 → 狼刀 → 查验 → 用药 → 死亡结算 →（猎人开枪）→ 天亮。白天与投票是 RFC-004 的活。
 
@@ -36,7 +36,7 @@ pnpm test       # 342 个用例，含五条命令与覆盖率门禁
 RFC-001 工程骨架    Reviewed（四轮）
 RFC-002 引擎内核    Reviewed（三轮）
 RFC-003 夜晚与规则  Spec changed（被 RFC-004 的自动阶段取代了 AC-16）
-RFC-004 白天与投票  Implemented，等待评审
+RFC-004 白天与投票  Implemented（Round 1 / 2 修复后）
 下一步：/review-rfc 004（第一次用 subagent 跑评审）
 ```
 

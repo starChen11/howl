@@ -80,7 +80,8 @@ export function resolveNight(input: NightResolutionInput): NightResolution {
    * **顺序即结算顺序**（RFC-003 §2.3 第 3、4 步：先狼刀、后毒药），不是座位顺序。
    *
    * 一开始这里按座位排过序，那是错的（评审 C-26）：RFC-004 的 `DAY_STARTED.diedLastNight`
-   * 与「发言起点」都依赖死亡结算顺序。归并用的 `Map` 保留首次插入的位置，所以同一座位
+   * 依赖这个**内部**顺序；公开的死亡公告与发言起点只看座位（C-31），不吃结算顺序。
+   * 归并用的 `Map` 保留首次插入的位置，所以同一座位
    * 既被刀又被毒时，那条死亡仍排在狼刀的位置上（死因已改记为毒药）。
    */
   const deaths: Death[] = [...causes.entries()].map(([seat, cause]) => ({ seat, cause }));

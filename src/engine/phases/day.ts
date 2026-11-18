@@ -36,7 +36,7 @@ function nextAliveSeat(state: GameState, from: SeatId): SeatId {
  * 算出发言起点与（可能消耗后的）生成器状态。
  *
  * 规则（RFC-004 §2.1）：
- * - 昨夜有死者 → 取**结算顺序第一位**死者的下一位存活席位；
+ * - 昨夜有死者 → 取**座位最小的死者**的下一位存活席位（不吃结算顺序，C-31）；
  * - 昨夜无死者 → 用 `state.rng` 在存活席位中抽一个。
  */
 export function speechStartOf(state: GameState): { seat: SeatId; rng: GameState['rng'] } {

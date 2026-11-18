@@ -67,7 +67,7 @@ export interface GameStartedPayload {
  */
 export interface DayStartedPayload {
   day: number;
-  /** 按死亡结算顺序。 */
+  /** **按座位升序**（不得携带死因顺序，C-31）。 */
   diedLastNight: SeatId[];
   /** 发言起点。 */
   speechStartSeat: SeatId;

@@ -357,3 +357,211 @@ MISSING SPEECH,SPEECH_SKIPPED,VOTE_CAST,VOTE_REVEALED,WOLF_CHAT_POSTED,SELF_EXPO
 - **变异探针 P1 / P3 / P8 的结论是「没有测试变红」**——这本身就是结论（测试不设防），不是「跑不起来」。
 
 **本次评审对仓库的改动**：只新增本文件，并把 `RFCS.md` 的 RFC-004 状态改为 `Changes requested`、登记 C-31 / C-32 / C-33、关闭 C-29、版本 +1。没有改 `src/`、`RULES.md`、`PRD.md`、`FEATURES.md`，没有 commit。
+
+---
+
+## Round 2 -- 2026-11-18
+
+> 评审方式：`/review-rfc 004`（独立 subagent，全新上下文，`reasoning_effort: max`）。本会话没有参与本仓库任何代码 / RFC / 测试的写作。
+> 基线：`main` @ `4693649`，评审开始时 `git status --porcelain` 为空。
+> 本轮按用户要求**只复核 Round 1 的两个阻塞项（C-31、B2）与三条「测试不设防」**；Round 1 已判定 PASS 或已关闭的项不再重查。权威顺序仍为 `PRD.md > FEATURES.md > RULES.md > RFC > 计划`。
+
+结论：**Changes requested** · Overall Risk Level: **Medium**
+
+**一句话**：死因泄漏的**代码**已经修对，`diedLastNight` 与 `speechStartSeat` 两个公开字段都只依赖「谁死了」；但 **C-31 的第二条路径（`speechStartSeat`）没有一条会因旧实现复活而变红的测试**——现有回归用例的死者恰好是 1 与 9，顺时针绕回后两种规则得到同一个起点，反向探针（M2 / M3）跑完整套 342 个用例仍全绿。按 `REVIEW-PROMPT.md` §3「只做第 1 条的，按未关闭处理」，C-31 仍按未关闭处理。B2 与三条「测试不设防」本轮确认关闭。
+
+### R2.1 门禁实跑（真实输出）
+
+本机 macOS / Node 22.22.2 / pnpm 10.33.0，工作树干净（`4693649`）。
+
+```
+$ pnpm typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit
+EXIT:0
+
+$ pnpm lint
+> eslint .
+EXIT:0
+
+$ pnpm format:check
+> prettier --check .
+All matched files use Prettier code style!
+EXIT:0
+
+$ pnpm build
+vite v8.3.8 building client environment for production...
+✓ 14 modules transformed.
+dist/client/assets/index-DTkfWeVY.js  219.65 kB │ gzip: 68.71 kB
+✓ built in 63ms
+vite v8.3.8 building ssr environment for production...
+✓ 3 modules transformed.
+dist/server/index.js  1.25 kB │ gzip: 0.86 kB
+✓ built in 9ms
+EXIT:0
+
+$ pnpm test
+ Test Files  41 passed (41)
+      Tests  342 passed (342)
+EXIT:0
+
+$ pnpm exec vitest run --project unit --coverage
+ Test Files  34 passed (34)
+      Tests  308 passed (308)
+All files        |   96.44 |    92.9 |   96.92 |   96.75 |
+ engine         |   97.74 |   94.59 |     100 |   97.53 |
+ engine/phases  |   94.44 |   90.62 |   92.45 |   95.38 |
+  day.ts        |   96.15 |   79.41 |     100 |   97.61 | 25
+  lynch.ts      |   92.85 |   83.33 |     100 |   92.85 | 26
+  vote.ts       |      85 |   83.33 |   78.94 |   86.53 | 52-55,73,76,138
+EXIT:0
+```
+
+- 与 RFC-004 §9.4 自称的 `342 / 行 96.75 / 分支 92.90` **逐项一致**；`README.md:11` 的 342 与 96.8 / 92.9 也一致（取整）。
+- `TEST-2` 门禁（`src/engine/` 行 ≥90 / 分支 ≥85）达标：**97.53 / 94.59**。
+- `auto.ts` 0% 仍是只有 `type` 导出的类型文件，不是未测分支。
+- **不适用（已实跑核对）**：`pnpm test:e2e` → exit 0，`skipped：tests/e2e/ 下没有用例`（Playwright 从 RFC-012 起生效）；`pnpm selfplay` → exit 1，`pnpm selfplay 未实现（RFC-015）`（RFC-001 C-5 已登记的临时偏离）。Windows / 浏览器 / LLM / 服务端路径本 RFC 不涉及，未验证。
+
+### R2.2 C-31 · 第一条路径已修，第二条路径未设防（阻塞）
+
+#### 复现 Round 1 的攻击路径（现在已不再泄漏）
+
+用 Round 1 的同一条真实路径：`makeNightState({ phase: 'NIGHT_WITCH', night: { killTarget: 9 } })`，女巫 5 号毒 3 号；再把刀口与毒口对调。
+
+```
+kill=9 poison=3 public=[
+  PHASE_CHANGED {"from":"NIGHT_RESOLVE","to":"DAY_ANNOUNCE"},
+  DAY_STARTED   {"day":2,"diedLastNight":[3,9],"speechStartSeat":4},
+  PHASE_CHANGED {"from":"DAY_ANNOUNCE","to":"DAY_SPEECH"}
+]
+kill=3 poison=9 public=[
+  PHASE_CHANGED {"from":"NIGHT_RESOLVE","to":"DAY_ANNOUNCE"},
+  DAY_STARTED   {"day":2,"diedLastNight":[3,9],"speechStartSeat":4},
+  PHASE_CHANGED {"from":"DAY_ANNOUNCE","to":"DAY_SPEECH"}
+]
+```
+
+两组公开 payload **逐字相同**，`PLAYER_DIED` 仍只在 `server` 侧（未出现在 public 列表里）。第一条泄漏路径（`diedLastNight` 顺序）确实修好了；Round 1 的 `[9,3] / start 1` 已不再出现。
+
+#### 反向探针（每条都先断言目标字符串恰好出现 1 次，跑完 `git checkout --` 并断言 `git diff --quiet`）
+
+| # | 改动 | 定向测试 | 结果 | 结论 |
+|---|---|---|---|---|
+| M1 | `day.ts` 去掉 `diedLastNight` 的 `.sort((a,b)=>a-b)` | `day.test.ts` | **1 failed / 11 passed**（C-31 的 `diedLastNight` 用例） | 第一条路径**有效** |
+| **M2** | `day.ts` 的 `speechStartOf` 从「座位最小」改回 `deaths[0]`（结算顺序第一位） | **`pnpm test` 全套** | **41 files / 342 tests 全绿** | **第二条路径不设防（阻塞）** |
+| **M3** | `day.ts` 的 `speechStartOf` 从「座位最小」改成「座位最大」 | **`pnpm test` 全套** | **41 files / 342 tests 全绿** | AC-2 的「最小」也没有锁 |
+| M4 | `day.ts` 的 `pivot` 固定为 `-1` | `day.test.ts` | **1 failed / 11 passed** | Round 1 P1 已关闭 |
+| M5 | `day.ts` 的无死者分支固定取 `ordered[0]`（仍消费 rng） | `day.test.ts` | **1 failed / 11 passed** | Round 1 P3 已关闭 |
+| M6 | `lynch.ts` 对被放逐的 wolf 跳过 `checkWin` | `lynch.test.ts` | **1 failed / 7 passed** | Round 1 P8 已关闭 |
+| M6b | `lynch.ts` 的 `checkWin` 固定为 `null` | `lynch.test.ts` | **2 failed / 6 passed** | 与 RFC §9.2 的「两条变红」一致 |
+| M8 | 从 `PAYLOAD_SCHEMAS` 删掉 `SPEECH` | `schemas.test.ts` + `events.test.ts` | **1 failed / 25 passed**（2 files / 26 tests） | B2 的登记表**有效** |
+| M7 | `SpeechPayloadSchema.text` 改成 `z.number()` | **`pnpm test` 全套** | **41 files / 342 tests 全绿** | 新 schema 无行为测试（非阻塞，见 R2.4） |
+
+探针结束后 `git status --porcelain` 为空；全套 342 个用例在干净树上再跑一遍仍全绿。
+
+#### 为什么 M2 / M3 全绿：夹具的死者是 1 和 9，绕回后起点相同
+
+`tests/fixtures/day.ts:94-101` 的 `twoDeaths` 取「存活非 wolf 的**号码最小者与最大者**」。当前固定种子下实际是 **1 与 9**（临时探针打印：`C-31 A: {"diedLastNight":[1,9],"speechStartSeat":2}`），而 `tests/engine/day.test.ts:138` 的注释写的是「3 与 9」——注释与夹具不符。
+
+- 结算顺序起点若取「第一位死者」：狼刀 9 → `nextAliveSeat(9)` 绕回 **2**；狼刀 1 → `nextAliveSeat(1)` 也是 **2**。
+- 座位最大规则：两种场景都取 9 → 仍是 **2**。
+- 座位最小规则（现行）：两种场景都取 1 → 仍是 **2**。
+
+于是 `expect(a.speechStartSeat).toBe(b.speechStartSeat)`（`day.test.ts:134-140`）在三种实现下都通过。它不是「断言了正确规则」，只是「断言了两个相同的输入得到相同的输出」。
+
+同一问题也覆盖了 AC-2：`day.test.ts:18-33` 的标题仍写「结算顺序第一位死者的下一位」，用的 `reachDay()` 只有**一个**死者（单死者时最小 = 结算顺序第一位），所以 M2 / M3 下也全绿。**AC-2 在 4b 之前的新定义「座位最小的死者」目前没有任何会红的测试。**
+
+#### 一个能区分三条规则的直接探针
+
+用两名死者 **3 与 7**（不跨绕回边界）构造 `DAY_ANNOUNCE`，`pendingDeaths: [7,3]`：
+
+```
+DAY_STARTED {"day":2,"diedLastNight":[3,7],"speechStartSeat":4}
+```
+
+- 座位最小（现行）：3 → 下一个存活 4；
+- 结算顺序第一位：7 → 下一个存活 8；
+- 座位最大：7 → 8。
+
+临时用例断言 `speechStartSeat === 4` 后，在 M2 下**变红**（实跑输出：`× 两名死者 3 与 7：起点必须取座位最小者 3 的下一位（4）…`）；把它删掉后，仓库自带的 342 个用例在 M2 下全绿。**修复只需要把回归夹具换成不跨边界的死者对，并直接断言「最小死者的下一位」这个期望值**，而不是只断言两个场景互相相等。
+
+#### C-31 结论
+
+- **实现正确**：`src/engine/phases/day.ts:46-49` 用 `reduce(min)` 取最小死者；`:70` 对公开数组按座位升序排序；两个公开字段都不再依赖死因顺序。
+- **回归测试不完整**：第二条路径的测试是空断言；把修复改回去，全套测试不红。按 `REVIEW-PROMPT.md` §3，C-31 **不算关闭**。
+
+### R2.3 B2 · 四个 payload schema 已落地并登记（关闭）
+
+`src/shared/schemas.ts:193-208` 新增 `SpeechPayloadSchema` / `SpeechSkippedPayloadSchema` / `VoteCastPayloadSchema` / `VoteRevealedPayloadSchema`，`:226-229` 登记进 `PAYLOAD_SCHEMAS`（10 → 14）。剩下的 `WOLF_CHAT_POSTED` / `SELF_EXPOSE` / `AI_THOUGHT` / `DEGRADED` 分属 RFC-005/006/007/010，不在本 RFC 范围。
+
+- **反向探针 M8**：删掉 `SPEECH` 登记 → `schemas.test.ts` 的键集合用例红（连同 `events.test.ts` 共 1 failed / 25 passed）。登记表本身是有效的。
+- **真实事件校验**（只读临时探针，跑完即删）：用真实路径走完「发言 / 跳过 / 投票 / 公布」一整天，得到事件类型 `["SPEECH","SPEECH_SKIPPED","PHASE_CHANGED","VOTE_CAST","VOTE_REVEALED"]`；逐条用 `makeEventEnvelopeSchema(PAYLOAD_SCHEMAS[type])` 校验，全部通过，`MISSING: []`。说明四个 schema 与真实 payload 形状一致。
+- **但**（非阻塞，见 R2.4 N1）：`tests/shared/schemas.test.ts` 只断言「登记了哪些键」与「有 `safeParse`」；`tests/engine/events.test.ts:179-187` 只跑一条**夜间**路径，`SPEECH` 等四个事件根本不会出现，且 `:181` 的注释还写着「如 SPEECH 归 RFC-004」。M7 把 `text` 改成 `z.number()` 后全套仍绿，证明 schema 的行为没有被锁。
+
+**结论：B2 关闭。** 缺 schema 的阻塞已消除；schema 的行为测试是新登记的非阻塞项。
+
+### R2.4 非阻塞项（Round 2）
+
+1. **N1（测试）· 四个新 schema 没有行为测试**：`tests/shared/schemas.test.ts` 只查登记键；真实路径校验只覆盖夜间。M7 全绿。建议：
+   - 每个新 schema 一对正反例（`SPEECH.text` 非字符串、`VOTE_CAST.target` 越界 / 非 `abstain` 字符串、`VOTE_REVEALED.votes` 元素缺字段）；
+   - 把真实一天（发言 → 投票 → 公布）的每条事件过 `makeEventEnvelopeSchema`，按 `GAME_EVENT_TYPES` 中「已有 schema 的类型」表驱动，而不是再写死 14 个键。
+2. **N2（测试 / 夹具）· AC-2 的「座位最小」与 C-31 起点路径**：见 R2.2，这是本轮唯一的阻塞项，修复建议也写在那里。
+3. **N3（文档）· 关键注释仍写着旧的泄漏行为**（直接和 C-31 相反）：
+   - `src/shared/events.ts:70`：`/** 按死亡结算顺序。 */`（这是 `DayStartedPayload.diedLastNight` 的权威类型注释）；
+   - `src/engine/phases/day.ts:39`：`取**结算顺序第一位**死者的下一位存活席位`（函数自己的 docblock）；
+   - `src/engine/resolve/deaths.ts:83`：`DAY_STARTED.diedLastNight 与「发言起点」都依赖死亡结算顺序`；
+   - `src/engine/apply.ts:235`：`昨夜死者按结算顺序累积（DAY_STARTED.diedLastNight 读它）`；
+   - `src/shared/schemas.ts:12-13,144`：仍只提 `GameStartedPayload` / `DayStartedPayload` 两个归属，未提 RFC-004 新增的四个；
+   - `tests/engine/day.test.ts:18` 的用例标题、`:138` 的「3 与 9」；
+   - `tests/engine/events.test.ts:181` 的「如 SPEECH 归 RFC-004」。
+   这些不是功能缺陷，但 `events.ts:70` / `day.ts:39` 是下一个实现者最可能照着写的地方，**建议与阻塞项一起修**。
+4. **N4（文档）· RFC-004 §8.5 的证据表仍写旧规则**：`:192` 的 AC-2 仍写「起点 = 结算顺序第一位死者的下一位存活席位」；`:200` 的 AC-10 仍把 `win.test.ts` 算成死因用例（`win.test.ts` 是纯谓词表；「狼死于放逐」的新用例在 `lynch.test.ts:60-81`）；`:97` 仍把 `win.test.ts` 说成「两次判定的时序」（实际在 `lynch.test.ts` / `death-resolve.test.ts`）。§8.6 的 337 / 96.42 / 92.85 是 Round 1 的历史输出，可保留，但不要当成当前数。
+5. **N5（文档 / 流程）· `RFCS.md` 的 C-31 / C-32 行是 5 个单元格、且没有行尾 `|`**：这两行在「已修复」后面追加了一个第 5 格，原来的第 4 格仍写着 `Open`；部分 Markdown 渲染与 `/workflow-status` 会把它们读成未关闭。本轮已在 `RFCS.md` 里修正（C-31 标成「Round 1 → Round 2 未关闭」，C-32 标成 Closed）。
+6. **N6（测试计划）· `TEST-STRATEGY.md` 的 RFC-004 小节没有 AC-4b**：`:201-215` 的 criteria 只有 `1、2、3、4`，且仍写「有死者时起点为死者下一位」；`:3` 的来源仍是 `RFCS.md v2.26`（当前 v2.28+）。新 AC 与 C-31 回归没有进计划。建议补一行 `4b / C-31` 并同步措辞。
+7. **N7（规格）· PRD / FEATURES 的「首个死者」仍未定义成「座位最小」**：`PRD.md:149`（FR-5）、`PRD.md:343`（D34）、`FEATURES.md:65`（F4 AC-2）都只说「首个死者」；`CHANGE-REQUEST-008` §3.1 说「并同步 PRD 对首个死者的解释」，但落地清单与提交里没有 PRD。当前 RFC 的「座位最小」不与 PRD 文字冲突（PRD 没规定顺序），但同一句歧义正是 C-31 的起因；建议 `/manage-changes` 或一次 docs 提交把它写死。
+8. **N8（文档）· README 仍说只能跑第一夜**：`README.md:13`「引擎现在能跑完**第一夜**……白天与投票是 RFC-004 的活」已经与 `Implemented` / `Reviewed` 的 RFC-004 矛盾；`:11` 的「3 个 `Reviewed`、1 个 `Implemented`」在本次状态变更后也会过期。这是 Round 1 N9 的残留，非阻塞。
+9. **N9（提交纪律，非代码）**：C-31 的代码修复实际落在 `eeceb96`（提交信息是 `docs(process): ...`），而不是 `4693649`（`fix(rfc-004)` 只含 schema / 测试 / 文档）；`4693649` 的说明「修掉死因泄漏」在 `git show` 里看不到 `day.ts`。不影响行为，但下一次审计 / revert 容易漏。建议后续把安全修复单独提交。
+
+### R2.5 维度结论
+
+| 维度 | 结论 | 说明 |
+|---|---|---|
+| 1. RFC 符合度 | **NEEDS WORK** | `diedLastNight`（AC-4b）与代码行为符合新 §2.1；但 AC-2 的「座位最小的死者」没有会红的测试，C-31 第二条路径未被反向验证，按 Round 1 的关闭标准仍阻塞。 |
+| 2. RULES 合规 | **NEEDS WORK（TEST-1 / DOC-1）** | ARCH-3/4/5/6/11、DATA-2、STYLE-1~7 未受本轮改动影响且仍 PASS；TEST-1 在 AC-2 上缺一条有效测试；DOC-1 有多处与 C-31 相反的注释。 |
+| 3. 安全 | **PASS（有保留）** | 当前没有可复现的死因泄漏：两组相反死因顺序的公开 payload 完全相同，`PLAYER_DIED` 仍为 `server`。保留：`speechStartSeat` 的回归锁缺失，无法阻止将来改回结算顺序。 |
+| 4. 性能 | **N/A** | 纯函数，9 席；新增的 `reduce(min)` / `sort` 都是 O(死者数) ≤ O(9)，无 I/O。 |
+| 5. 可维护性 | **NEEDS WORK（非阻塞）** | 夹具注释与真实座位不符；`twoDeaths` 取最小 / 最大座位导致回归用例退化为「相同输入相同输出」；多处注释仍描述旧行为。 |
+
+**跳过的检查（显式）**：PRD Product Type 仍是 game + web app；本 RFC 无 UI / HTTP / LLM / 存储 / 浏览器运行路径，A11Y、响应式、首屏预算、SEO、认证、Playwright 冒烟全部 N/A（`RULES.md:33-43` 的跳过表同样适用）。Round 1 已 PASS 的 AC 与已关闭的 C-29 / C-30 不重查；C-33 保持 Open（非阻塞，跨 RFC）。
+
+### R2.6 阻塞项（必须修复后才能合并）
+
+**B1（Round 2）· C-31 的 `speechStartSeat` 回归用例是空断言**
+
+- **位置**：`tests/engine/day.test.ts:134-140`、`tests/fixtures/day.ts:94-101`、`tests/engine/day.test.ts:18-33`。
+- **复现**：把 `src/engine/phases/day.ts:48` 的 `reduce(min)` 改成 `deaths[0] as SeatId`（结算顺序第一位），`pnpm test` → **41 files / 342 tests 全绿**；改成 `reduce(max)` 也全绿。也就是「改对改错都不红」。
+- **原因**：`twoDeaths` 取存活非 wolf 的最小 / 最大座位 = 1 / 9；在 `nextAliveSeat` 的绕回规则下，`nextAliveSeat(1)` 与 `nextAliveSeat(9)` 都等于 2，所以两种死因顺序、三种起点规则都产出同一个 `speechStartSeat`。测试注释的「3 与 9」也与实际不符。
+- **修复**：
+  1. 让回归夹具使用**不跨绕回边界**的两名死者（如 3 与 7），或让 `twoDeaths` 接受显式座位；
+  2. 断言 `DAY_STARTED.speechStartSeat` 等于「座位最小死者的下一位存活者」这个**独立算出的期望值**（不是两个场景互相相等）；
+  3. 同时保留「交换死因顺序 → 公开 payload 完全相同」的断言；
+  4. 把 `day.test.ts:18` 的 AC-2 用例改成双死者（或补一条双死者用例），标题改为「座位最小的死者」；
+  5. 更新 `events.ts:70` / `day.ts:39` / `deaths.ts:83` / `apply.ts:235` 等与旧顺序相关的注释，避免下一个实现者照着写回泄漏。
+- **验收**：M2（`deaths[0]`）与 M3（`max`）必须让新用例变红；M1（去掉 sort）继续让 `diedLastNight` 用例变红；干净树 342 + 新用例全绿。
+
+### R2.7 我实际验证了什么 / 没验证什么
+
+**实际跑了、并贴了真实输出的**：
+
+- 五条门禁 + `test:e2e` / `selfplay`（见 R2.1）；`pnpm test` 342 / 41 files；unit 308 / 34 files；覆盖率 96.44 / 92.9 / 96.92 / 96.75（engine 97.74 / 94.59）。
+- 9 条写代码的变异探针（M1~M8 + M6b）+ 每条注入前的「目标字符串恰好 1 处」断言 + 每次 `git checkout --` 恢复；结束时 `git status --porcelain` 为空。M2 / M3 / M7 都额外跑了**全套** `pnpm test`，确认不是「只跑一个文件」的偶然。
+- 三个只读临时探针（跑完删除）：C-31 的公开 payload 复现（3/9 与 9/3 两组）；3 与 7 的中点起点（`speechStartSeat: 4`）；真实一天的四类 RFC-004 事件过 `makeEventEnvelopeSchema`（全部通过）。
+- `git show` 核对 Round 1 修复实际落点：`day.ts` 的 C-31 改动在 `eeceb96`，`4693649` 只含 schema / 测试 / 文档（见 N9）。
+
+**没能验证的**：
+
+- **Windows**：本机 macOS，未复跑；`tests/helpers/source-scan.ts` 的 POSIX 归一化是 RFC-002 的既有结论，本轮没有 Windows 证据。
+- **浏览器 / UI / Playwright**：本 RFC 无 UI；`tests/e2e/` 无用例，TEST-6 从 RFC-012 起生效。
+- **真实 LLM / 服务端 / 投影**：本 RFC 不涉及；`project()` 仍归 RFC-007，AC-5 / 可见性矩阵的投影侧未验证。
+- **M2 / M3 的结论是「没有测试变红」**——这本身就是本轮阻塞的结论，不是「跑不起来」。
+
+**本次评审对仓库的改动**：追加本 Round 2 到 `reviews/REVIEW-RFC-004.md`；把 `RFCS.md` 的 RFC-004 状态改为 `Changes requested`，修正 C-31 / C-32 两行（C-31 标成未关闭、C-32 标成 Closed），版本 +1 并追加变更历史。没有改 `src/`、`tests/`、`RULES.md`、`PRD.md`、`FEATURES.md`，没有 commit；所有变异探针已恢复，`git status --porcelain` 只剩这两个文档文件。

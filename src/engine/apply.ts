@@ -232,7 +232,7 @@ function applyPlayerDied(state: GameState, seatId: import('@shared/domain').Seat
     seats: state.seats.map((candidate) =>
       candidate.seat === seatId ? { ...candidate, alive: false, diedSeq: state.seq } : candidate,
     ),
-    // 昨夜死者按结算顺序累积（`DAY_STARTED.diedLastNight` 读它）。白天放逐的死亡也会进来，
+    // 昨夜死者按**结算顺序**累积（内部顺序；公开的 `DAY_STARTED.diedLastNight` 会重新按座位排序，C-31）。白天放逐的死亡也会进来，
     // 但它会在下一次入夜时被清空，不会污染下一天。
     pendingDeaths: [...(state.pendingDeaths ?? []), seatId],
   };

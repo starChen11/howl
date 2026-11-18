@@ -87,24 +87,20 @@ export function voteAll(
  *
  * 用来验证 C-31——公告与发言起点都不能依赖结算顺序（狼刀先、毒药后）。
  */
-export function twoDeaths(options: { kill: 'low' | 'high'; poison: 'low' | 'high' }): {
+export function twoDeaths(): {
   diedLastNight: number[];
   speechStartSeat: number;
+  killTarget: number;
+  poisonTarget: number;
 } {
   const atWolves = nightStart();
-  // 选两个**存活的非 wolf** 席位：号码最小的与号码最大的。用真实角色，避免刀到自己人。
-  const goodSeats = atWolves.seats
-    .filter((seat) => seat.alive && seat.role !== 'wolf')
-    .map((seat) => seat.seat)
-    .sort((a, b) => a - b);
-  const low = goodSeats[0];
-  const high = goodSeats[goodSeats.length - 1];
-  if (low === undefined || high === undefined || low === high) {
-    throw new Error('可用的好席位不足两个');
+  // wolf 刀一个村民、witch 毒一只 wolf：两种死因都被用到，而且 seer / witch 都还活着，
+  // 夜间流程能正常走完（杀掉 seer 或 witch 会让后续阶段没人行动）。
+  const killTarget = atWolves.seats.find((seat) => seat.alive && seat.role === 'villager')?.seat;
+  const poisonTarget = atWolves.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat;
+  if (killTarget === undefined || poisonTarget === undefined) {
+    throw new Error('夹具缺村民或 wolf');
   }
-
-  const killTarget = options.kill === 'low' ? low : high;
-  const poisonTarget = options.poison === 'low' ? low : high;
 
   const wolf = roleSeat(atWolves, 'wolf');
   const afterKill = run(atWolves, { type: 'WOLF_KILL', ts: 1, seat: wolf, target: killTarget });
@@ -136,5 +132,7 @@ export function twoDeaths(options: { kill: 'low' | 'high'; poison: 'low' | 'high
   return {
     diedLastNight: [...started.payload.diedLastNight],
     speechStartSeat: started.payload.speechStartSeat,
+    killTarget,
+    poisonTarget,
   };
 }

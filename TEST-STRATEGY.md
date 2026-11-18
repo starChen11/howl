@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.15 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.26 · 最后更新 2026-11-18
+> 版本 v1.16 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.30 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -203,6 +203,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
 | 1、2、3、4 | `tests/engine/day.test.ts`：发言序列单循环不重不漏；有死者时起点为死者下一位；无死者时同 seed 起点相同且写在 `DAY_STARTED.payload`；起点不是死者 | unit | existing: tests/engine/day.test.ts | Must |
+| 4b（C-31） | `tests/engine/day.test.ts`：真实夜间路径下 `diedLastNight` 按座位升序；`pendingDeaths` 两种顺序得到同一 `speechStartSeat`（按结算顺序会是另一个值） | unit | existing: tests/engine/day.test.ts | Must |
 | 5、6 | `tests/engine/vote.test.ts`：`VOTE_CAST.visibleTo === 'self:<seat>'`；最后一张票之前没有任何公开事件；`VOTE_REVEALED` 覆盖全部存活席位与 `abstain`（「投影」用 `isVisibleTo` 表达，见 RFC-004 §8.1） | unit | existing: tests/engine/vote.test.ts | Must |
 | 7 | 同上：唯一最高票出局，`PLAYER_DIED.cause === 'lynch'` | unit | existing: tests/engine/vote.test.ts | Must |
 | 8、9 | 同上：并列进重投、`runoff` 仅并列者；弃权或投非并列者 → `INVALID_RUNOFF_TARGET`；重投仍并列 / 全员弃权 → 当日无人出局入夜 | unit | existing: tests/engine/vote.test.ts | Must |
@@ -447,6 +448,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.16 | RFC-004 Round 2 回填：补 AC-4b 行（C-31 的第二条路径）、同步版本引用 |
 | 2026-11-18 | v1.15 | RFC-004 Round 1 回填：C-31 / B2 / 三条不设防测试补齐；基线 337 → 342 |
 | 2026-11-18 | v1.14 | RFC-004 实现后回填：16 条 AC 全部 `existing`；夹具改为 `tests/fixtures/day.ts`（无 `scripted-game.ts`）；基线用例数 309 → 337 |
 | 2026-11-18 | v1.13 | RFC-003 Round 4 回填（C-30 / 测试缺口）：基线用例数 307 → 309；AC-2 的证据归属改为「`events.test.ts` 真实事件」 |
