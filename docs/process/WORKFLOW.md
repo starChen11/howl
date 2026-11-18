@@ -26,6 +26,8 @@
 
 **为什么是 subagent**：它能自己开、且不继承实现者的对话——「干净上下文」这个目的达到了，人也不用每轮手开一次会话。代价是它与实现者同模型（当前仓库只有一个可用模型），所以评审固定跑 `reasoning_effort: max`，并靠「双向验证」这种机械证据补上判断力的缺口。详见 [`REVIEW-PROMPT.md`](REVIEW-PROMPT.md) §8。
 
+**怎么起、要等多久、拿到结论后怎么验证**：见 [`SUBAGENT-REVIEW.md`](SUBAGENT-REVIEW.md)。提示词只需两行（斜杠命令 + 项目约定），不要去复述技能正文——subagent 能看到技能目录与 `AGENTS.md`。
+
 ---
 
 ## 3. 阶段总表

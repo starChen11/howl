@@ -21,14 +21,16 @@
 ```ts
 type DayStartedPayload = {
   day: number;
-  diedLastNight: SeatId[];       // 按死亡结算顺序
+  diedLastNight: SeatId[];       // **按座位升序**——公开的死讯不得携带死因顺序（C-31）
   speechStartSeat: SeatId;       // 发言起点，见下
 };
 ```
 
 **发言起点的确定性**（这是冷读抓到的坑）：`speechStart` 若临时抽随机数，就破坏了「纯函数」与「可重放」。做法是**在进入 `DAY_ANNOUNCE` 时抽一次**，结果写进 `DAY_STARTED.payload.speechStartSeat`；之后所有阶段只读该字段。
 
-规则：若 `diedLastNight` 非空，取其中**结算顺序第一位**的下一位存活席位；若为空，用 `state.rng` 在存活席位中抽一个（抽取结果写入 payload）。
+规则：若 `diedLastNight` 非空，取其中**座位最小的死者**的下一位存活席位；若为空，用 `state.rng` 在存活席位中抽一个（抽取结果写入 payload）。
+
+**为什么不能按结算顺序**（C-31）：结算顺序固定是「狼刀先、毒药后」，而这条 payload 是公开的——顺序一公开，全场就能读出「第一位死者是被刀的、第二位是被毒的」，女巫用没用毒、解药还在不在，全都推得出来（`FR-9`）。真实牌桌按号码报死者，正是为了让人分不清死因；发言起点同理，不能挂在结算顺序上。
 
 「下一位」若恰好是死者，继续顺时针跳过，直到遇到存活席位。
 
@@ -104,9 +106,10 @@ type DayStartedPayload = {
 ## 5. 验收标准
 
 1. 发言顺序是单一顺时针循环：每轮恰好遍历所有存活席位一次，无重复、无遗漏
-2. 首日有死者时，`DAY_STARTED.speechStartSeat` 等于「结算顺序第一位死者的下一位存活席位」
+2. 首日有死者时，`DAY_STARTED.speechStartSeat` 等于「**座位最小的死者**的下一位存活席位」
 3. 当日无死者时，`speechStartSeat` 由 `state.rng` 决定并记录在 `DAY_STARTED` payload 中；同 `seed` 两次运行该字段相同
 4. 起点席位恰好是死者时，起点继续顺时针推进到下一个存活席位；已出局玩家不出现在发言队列中
+4b. **公开的 `DAY_STARTED` 不得泄漏死因**：两名死者时，`diedLastNight` 按座位升序，与「谁被刀、谁被毒」无关；两种死因顺序得到同一个 payload 顺序
 5. 每张票以 `VOTE_CAST` 事件记录，`visibleTo === 'self:<投票者>'`；投票结算前任意观察者的投影中不含他人票型
 6. 投票结算后产出一条 `VOTE_REVEALED` 公开事件，含全部投票者与其选择（首轮弃权者标注为 `abstain`）
 7. 唯一最高票者出局，产出 `PLAYER_DIED` 且 `cause === 'lynch'`

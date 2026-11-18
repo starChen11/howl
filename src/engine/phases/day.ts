@@ -43,8 +43,10 @@ export function speechStartOf(state: GameState): { seat: SeatId; rng: GameState[
   const deaths = state.pendingDeaths ?? [];
 
   if (deaths.length > 0) {
-    // 不消耗随机数：此时 rng 原样返回，`DAY_STARTED` 的 `rngAfter` 等于当前值。
-    return { seat: nextAliveSeat(state, deaths[0] as SeatId), rng: state.rng };
+    // 取**座位最小**的死者，而不是结算顺序的第一位（C-31）：结算顺序是「狼刀先、毒药后」，
+    // 用它当起点等于把死因漏给全场。
+    const first = deaths.reduce((min, seat) => (seat < min ? seat : min));
+    return { seat: nextAliveSeat(state, first), rng: state.rng };
   }
 
   const alive = aliveSeats(state);
@@ -64,7 +66,8 @@ export function dayAnnounceEntry(state: GameState): EventDraft[] {
       visibleTo: 'public',
       payload: {
         day: state.day,
-        diedLastNight: [...(state.pendingDeaths ?? [])],
+        // 按座位升序：公开的死讯不得携带死因顺序（C-31 / FR-9）。真实牌桌也是按号码报死者。
+        diedLastNight: [...(state.pendingDeaths ?? [])].sort((a, b) => a - b),
         speechStartSeat: seat,
       },
       // 即使在「有死者、不抽随机数」的分支里也要带上——否则 `replay` 无法判断这次转移
