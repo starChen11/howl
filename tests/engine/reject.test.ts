@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Action } from '@shared/actions';
 
 import { step } from '@engine/step';
+import { DEFAULT_TRANSITIONS } from '@engine/transitions';
 
 import { lobbyState, playerSeatOf, startedState, startActionOf } from '../fixtures/states';
 
@@ -118,6 +119,15 @@ describe('AC-8 · 拒绝路径', () => {
     const { event } = rejectionOf(lobby, mismatched);
 
     expect(event.payload.code).toBe('START_STATE_MISMATCH');
+  });
+
+  it('FINISHED 阶段拒绝一切 action（RFC §6 的边界）', () => {
+    const finished = { ...startedState(), phase: 'FINISHED' as const };
+
+    const { event } = rejectionOf(finished, { type: 'VOTE', ts: 9, seat: 2, target: 3 });
+
+    expect(event.payload.code).toBe('PHASE_MISMATCH');
+    expect(DEFAULT_TRANSITIONS.FINISHED).toEqual([]);
   });
 
   it('被拒后状态仍是 LOBBY，可以重新提交合法的 START', () => {

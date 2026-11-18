@@ -38,7 +38,9 @@ export function collectTypeScriptFiles(rootDir: string): ScannedFile[] {
 
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      if (entry.name === 'node_modules') continue;
+      // 只跳过隐藏**目录**（工具缓存），隐藏的 `.ts` 文件是合法源码，必须扫到（C-22）。
+      if (entry.isDirectory() && entry.name.startsWith('.')) continue;
 
       const absolutePath = join(dir, entry.name);
       if (entry.isDirectory()) {

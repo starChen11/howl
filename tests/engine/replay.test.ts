@@ -210,6 +210,28 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     expect(playerSeats).toHaveLength(1);
   });
 
+  it('非随机事件即使带了 rngAfter 也不改生成器状态（评审 Round 3 遗留）', () => {
+    const started = step(lobbyState({ seed: 777 }), startActionOf(lobbyState({ seed: 777 })));
+    const first = started.events[0];
+    if (first === undefined) throw new Error('缺少 GAME_STARTED');
+
+    // REJECTED 不在 RANDOM_CONSUMING_EVENTS 里——它没有消费随机数，就不能动 rng。
+    const withStrayRng: GameEvent = {
+      gameId: first.gameId,
+      seq: 2,
+      ts: 0,
+      type: 'REJECTED',
+      visibleTo: 'public',
+      rngAfter: { __rng: 1 },
+      payload: { actionType: 'START', code: 'PHASE_MISMATCH', message: 'x' },
+    };
+
+    const replayed = replay([first, withStrayRng]);
+
+    expect(replayed.rng).toEqual(started.state.rng);
+    expect(replayed.rng).not.toEqual({ __rng: 1 });
+  });
+
   it('未实现折叠的事件类型抛 UnknownEventError（不静默忽略）', () => {
     const [startedEvent] = eventsOfStart();
     if (startedEvent === undefined) throw new Error('缺少 GAME_STARTED');

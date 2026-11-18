@@ -60,6 +60,15 @@ describe('collectTypeScriptFiles', () => {
     expect(collectTypeScriptFiles(root).map((file) => file.relativePath)).toEqual(['a.ts']);
   });
 
+  it('隐藏的 .ts 文件会被扫到（C-22：AC-13 要的是「全部 .ts」）', () => {
+    const root = makeTree({ 'ok.ts': 'x', '.hidden.ts': 'export const noise = Math.random();' });
+
+    const files = collectTypeScriptFiles(root);
+
+    expect(files.map((file) => file.relativePath).sort()).toEqual(['.hidden.ts', 'ok.ts']);
+    expect(findFilesContaining(files, 'Math.random(')).toEqual(['.hidden.ts']);
+  });
+
   it('跳过隐藏目录与 node_modules', () => {
     const root = makeTree({
       'ok.ts': 'x',

@@ -29,10 +29,6 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     );
   }
 
-  if (RANDOM_CONSUMING_EVENTS.has(event.type) && event.rngAfter === undefined) {
-    throw new MissingRngStateError(event.type);
-  }
-
   // 空状态的 gameId 是 ''（`replay` 的起点），首个事件把它填上；之后必须一直一致，
   // 否则说明把两局的事件流拼在了一起。
   if (state.gameId !== '' && state.gameId !== event.gameId) {
@@ -42,8 +38,16 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
   }
 
   const withSeq: GameState = { ...state, seq: event.seq, gameId: event.gameId };
-  const base: GameState =
-    event.rngAfter === undefined ? withSeq : { ...withSeq, rng: event.rngAfter };
+
+  // `rngAfter` 只对**声明消耗随机数**的事件生效（评审 Round 3 遗留）：否则一个非随机事件
+  // 顺带带上 `rngAfter` 就会悄悄改掉生成器状态，而没有任何规则允许它这么做。
+  let base: GameState = withSeq;
+  if (RANDOM_CONSUMING_EVENTS.has(event.type)) {
+    if (event.rngAfter === undefined) {
+      throw new MissingRngStateError(event.type);
+    }
+    base = { ...withSeq, rng: event.rngAfter };
+  }
 
   switch (event.type) {
     case 'GAME_STARTED':
