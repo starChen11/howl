@@ -48,7 +48,8 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     const replayed = replay(stream);
 
     expect(replayed).toEqual(rejected.state);
-    expect(replayed.seq).toBe(2);
+    // GAME_STARTED + PHASE_CHANGED（RFC-003 起 START 推两相位）+ REJECTED
+    expect(replayed.seq).toBe(3);
   });
 
   it('空事件流抛 InvalidEventStreamError', () => {

@@ -21,16 +21,17 @@ describe('AC-6 · seq 与事件类型', () => {
     const lobby = lobbyState();
     const started = step(lobby, startActionOf(lobby));
 
-    expect(started.events).toHaveLength(1);
-    expect(started.events[0]?.seq).toBe(1);
-    expect(started.state.seq).toBe(1);
+    // RFC-003 起 START 产出两条事件：GAME_STARTED + PHASE_CHANGED（夜聊在本 RFC 被跳过）
+    expect(started.events).toHaveLength(2);
+    expect(started.events.map((event) => event.seq)).toEqual([1, 2]);
+    expect(started.state.seq).toBe(2);
 
     const rejected = step(started.state, { type: 'VOTE', ts: 2_000, seat: 2, target: 'abstain' });
-    expect(rejected.events[0]?.seq).toBe(2);
-    expect(rejected.state.seq).toBe(2);
+    expect(rejected.events[0]?.seq).toBe(3);
+    expect(rejected.state.seq).toBe(3);
 
     const another = step(rejected.state, { type: 'SPEECH_SKIP', ts: 3_000, seat: 4 });
-    expect(another.events[0]?.seq).toBe(3);
+    expect(another.events[0]?.seq).toBe(4);
   });
 
   it('每条事件的 type 都落在运行时事件类型集合内', () => {
@@ -74,12 +75,14 @@ describe('AC-6 · seq 与事件类型', () => {
 });
 
 describe('post-START 的相位与天数（评审 N5 / P22）', () => {
-  it('开局后进入第一夜的 NIGHT_WOLF_CHAT，day === 1', () => {
+  it('开局后进入第一夜的第一个可行动阶段，day === 1', () => {
     // P22：把 GAME_STARTED 之后的 phase 改成 DAY_ANNOUNCE，全套 12 个引擎测试仍然全绿。
+    // RFC-003 起：GAME_STARTED 把相位设成 NIGHT_WOLF_CHAT，紧接着一条 PHASE_CHANGED 推进到
+    // NIGHT_WOLVES——夜聊在本 RFC 里是跳过的（RFC-005 才会真正停在那里）。
     const lobby = lobbyState();
     const started = step(lobby, startActionOf(lobby)).state;
 
-    expect(started.phase).toBe('NIGHT_WOLF_CHAT');
+    expect(started.phase).toBe('NIGHT_WOLVES');
     expect(started.day).toBe(1);
   });
 
@@ -92,7 +95,7 @@ describe('post-START 的相位与天数（评审 N5 / P22）', () => {
     const lobby = lobbyState();
     const result = step(lobby, startActionOf(lobby));
 
-    expect(replay(result.events).phase).toBe('NIGHT_WOLF_CHAT');
+    expect(replay(result.events).phase).toBe('NIGHT_WOLVES');
     expect(replay(result.events).day).toBe(1);
   });
 });

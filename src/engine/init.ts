@@ -1,7 +1,7 @@
 import type { GameState, Role, Seat, SeatId, WinMode } from '@shared/domain';
 import { SEAT_IDS } from '@shared/domain';
 
-import { initialStateFromSeed, shuffle } from './rng';
+import { dealRoles } from './deal';
 
 /**
  * 开局前构造状态（RFC-002 §2.2）。
@@ -10,19 +10,6 @@ import { initialStateFromSeed, shuffle } from './rng';
  * 一旦 `START` 被处理、`GAME_STARTED` 事件产生，**事件 payload 里的 `roles` 就是唯一权威**
  * （`applyEvent` 以它为准，不再自行发牌）。所以这里的结果只是候选，不是真相。
  */
-
-/** 固定板子：9 人标准局（RFC-003 §2.1）。FR-2 / F17：玩家席位不优待，拿到什么是什么。 */
-export const DECK: readonly Role[] = [
-  'wolf',
-  'wolf',
-  'wolf',
-  'seer',
-  'witch',
-  'hunter',
-  'villager',
-  'villager',
-  'villager',
-];
 
 export interface CreateInitialStateInput {
   gameId: string;
@@ -37,17 +24,17 @@ export interface CreateInitialStateInput {
  */
 export function createInitialState(
   input: CreateInitialStateInput,
-  deck: readonly Role[] = DECK,
+  deck?: readonly Role[],
 ): GameState {
-  const dealt = shuffle(initialStateFromSeed(input.seed), deck);
+  const dealt = dealRoles(input.seed, deck);
 
-  if (dealt.items.length !== SEAT_IDS.length) {
+  if (dealt.roles.length !== SEAT_IDS.length) {
     // DECK 与座位表漂移了。宁可启动即失败，也不要发一手牌。
-    throw new Error(`板子规模 ${dealt.items.length} 与座位数 ${SEAT_IDS.length} 不一致`);
+    throw new Error(`板子规模 ${dealt.roles.length} 与座位数 ${SEAT_IDS.length} 不一致`);
   }
 
   const seats: Seat[] = SEAT_IDS.map((seat, index) => {
-    const role = dealt.items[index];
+    const role = dealt.roles[index];
     if (role === undefined) {
       throw new Error(`座位 ${seat} 没有分到身份`);
     }

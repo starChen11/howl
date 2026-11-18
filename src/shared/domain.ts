@@ -82,6 +82,24 @@ export interface RngState {
   readonly __rng: number;
 }
 
+/**
+ * 本夜的暂存（RFC-003）。**只由 `applyEvent` 写**，进入新的一夜时清空（`C-18` 的派生字段规则）。
+ *
+ * 它是「事件折叠出来的物化视图」，不是第二权威：三个目标分别来自 `WOLF_KILL_CHOSEN` 与
+ * `WITCH_POTION_USED`，重放必然得到同一结果。
+ */
+export interface NightContext {
+  killTarget?: SeatId;
+  healTarget?: SeatId;
+  poisonTarget?: SeatId;
+}
+
+/** 整局药水位（RUL-3 / FR-17：每种药全局只能用一次）。同样只由 `applyEvent` 写。 */
+export interface PotionUsage {
+  heal: boolean;
+  poison: boolean;
+}
+
 export interface GameState {
   gameId: string;
   seed: number;
@@ -95,5 +113,9 @@ export interface GameState {
   seats: Seat[];
   /** 已产生事件的最大 `seq`。 */
   seq: number;
+  /** 本夜暂存。undefined 表示「还没有任何夜间信息」。 */
+  night?: NightContext;
+  /** 药水位。undefined 视为「两瓶药都没用过」。 */
+  potionsUsed?: PotionUsage;
   // 注：无 stalemateDays 之类的平局兜底字段。RUL-10 已移除该规则（见 RULES.md §6）。
 }

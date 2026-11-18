@@ -1,5 +1,5 @@
 import type { Action } from './actions';
-import type { Role, RngState, SeatId, WinMode } from './domain';
+import type { Phase, Role, RngState, SeatId, WinMode } from './domain';
 
 /**
  * 可见性。事件的 `visibleTo` 决定谁能在投影里看到它。
@@ -119,6 +119,16 @@ export interface GameEventMap {
   WOLF_CHAT_POSTED: { seat: SeatId; text: string; round: 'night-chat' };
   SELF_EXPOSE: { seat: SeatId };
   /** `claim` 是结构化载荷而非 `unknown`：复盘与判定都要在编译期知道该读什么（AI-5 / CR-003 C3）。 */
+  /**
+   * 阶段推进（RFC-003 引入）。
+   *
+   * 为什么需要一个事件：`NIGHT_WITCH` 收到 `potion: 'none'` 时**什么也没发生**，没有别的
+   * 事件可承载「这一阶段结束了」。没有它，相位推进只能靠「隐式推导」，而「无事发生」的
+   * 转移无处安放，`replay` 也就重建不出阶段序列。
+   *
+   * `applyEvent` 会校验 `from === state.phase`：不一致说明事件流被拼错了。
+   */
+  PHASE_CHANGED: { from: Phase; to: Phase };
   AI_THOUGHT: { reason: string; claim?: Claim; decisionSeq: number };
   GAME_ENDED: { result: 'wolf' | 'good'; condition: string };
   DEGRADED: { seat: SeatId };
@@ -149,6 +159,7 @@ export const GAME_EVENT_TYPES = [
   'VOTE_REVEALED',
   'WOLF_CHAT_POSTED',
   'SELF_EXPOSE',
+  'PHASE_CHANGED',
   'AI_THOUGHT',
   'GAME_ENDED',
   'DEGRADED',

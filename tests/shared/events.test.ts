@@ -143,8 +143,8 @@ describe('F1 · GameEvent 与 GAME_EVENT_TYPES', () => {
   it('GAME_EVENT_TYPES 与 GameEventMap 的键完全一致', () => {
     // 双向精确比较：运行时可枚举清单漏一个成员、或多写一个，都会编译失败。
     expectTypeOf<keyof GameEventMap>().toEqualTypeOf<(typeof GAME_EVENT_TYPES)[number]>();
-    expect(GAME_EVENT_TYPES).toHaveLength(17);
-    expect(new Set(GAME_EVENT_TYPES).size).toBe(17);
+    expect(GAME_EVENT_TYPES).toHaveLength(18);
+    expect(new Set(GAME_EVENT_TYPES).size).toBe(18);
   });
 });
 

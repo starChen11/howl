@@ -1,11 +1,13 @@
 import type { Action } from '@shared/actions';
-import type { GameState, RngState, SeatId } from '@shared/domain';
+import type { GameState, RngState } from '@shared/domain';
 import type { GameEvent, GameEventMap, GameEventType, Visibility } from '@shared/events';
 
 import { applyEvent } from './apply';
 import type { EffectApplierMap } from './effects';
 import type { Modifier } from './effects';
 import { UnhandledTransitionError } from './errors';
+import { NIGHT_HANDLERS } from './phases/night';
+import { rejectionDraft, seatOf } from './reject';
 import { assertCompleteTransitionTable, DEFAULT_TRANSITIONS } from './transitions';
 import type { TransitionTable } from './transitions';
 
@@ -121,10 +123,18 @@ const startHandler: ActionHandlerFor<'START'> = (state, action) => {
         personas: state.seats.map((seat) => seat.personaId ?? null),
       },
     },
+    // 发牌后进入 NIGHT_WOLF_CHAT（RFC-003 §2.2 的阶段图从这里开始）。夜聊由 RFC-005 实现，
+    // 本 RFC 直接推进到第一个「有人要行动」的阶段——每个相位推进都是一条事件，所以
+    // replay 能把这段路径原样重建出来。
+    {
+      type: 'PHASE_CHANGED',
+      visibleTo: 'public',
+      payload: { from: 'NIGHT_WOLF_CHAT', to: 'NIGHT_WOLVES' },
+    },
   ];
 };
 
-export const DEFAULT_HANDLERS: HandlerTable = { START: startHandler };
+export const DEFAULT_HANDLERS: HandlerTable = { START: startHandler, ...NIGHT_HANDLERS };
 
 /**
  * RFC-002 不定义任何具体效果类型（`Effect.type` 的取值归 RFC-003/004），所以默认表是空的。
@@ -132,25 +142,6 @@ export const DEFAULT_HANDLERS: HandlerTable = { START: startHandler };
  * 而不是假装结算成功。
  */
 export const DEFAULT_APPLIERS: EffectApplierMap = {};
-
-/** 违反 §2.3 第二条（规则拒绝），产出 `Rejected` 事件而不是抛错。 */
-function rejectDraft(
-  action: Action,
-  code: string,
-  message: string,
-  seat: SeatId | undefined,
-): EventDraft {
-  return {
-    type: 'REJECTED',
-    visibleTo: seat === undefined ? 'public' : `self:${seat}`,
-    payload: { actionType: action.type, code, message },
-  };
-}
-
-/** 取 action 里的提交者席位；`START` 没有席位。 */
-function seatOf(action: Action): SeatId | undefined {
-  return 'seat' in action ? action.seat : undefined;
-}
 
 /**
  * 给草稿盖上信封字段。
@@ -215,18 +206,14 @@ export function createEngine(config: EngineConfig): Engine {
     const allowed = config.transitions[state.phase];
 
     if (!allowed.includes(action.type)) {
-      const events = stampEvents(
-        state,
-        [
-          rejectDraft(
-            action,
-            'PHASE_MISMATCH',
-            `阶段 ${state.phase} 不接受 ${action.type}`,
-            seatOf(action),
-          ),
-        ],
-        action.ts,
-      );
+      const seat = seatOf(action);
+      const draft = rejectionDraft({
+        action,
+        code: 'PHASE_MISMATCH',
+        message: `阶段 ${state.phase} 不接受 ${action.type}`,
+        ...(seat === undefined ? {} : { seat }),
+      });
+      const events = stampEvents(state, [draft], action.ts);
       return { state: foldEvents(state, events), events };
     }
 

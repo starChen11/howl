@@ -29,14 +29,25 @@ describe('AC-9 · 声明与实现一致', () => {
     expect(Object.keys(DEFAULT_TRANSITIONS)).toHaveLength(PHASES.length);
   });
 
-  it('RFC-002 的边界：只声明 LOBBY 与 FINISHED（其余由后续 RFC 追加）', () => {
+  it('声明随 RFC 推进而扩张：RFC-003 之后夜晚阶段已登记', () => {
+    // RFC-002 §6 原文：「其余阶段由后续 RFC 追加到同一张表，测试自动覆盖」。
     const declared = Object.entries(DEFAULT_TRANSITIONS)
       .filter(([, actions]) => actions.length > 0)
       .map(([phase]) => phase);
 
-    expect(declared).toEqual(['LOBBY']);
+    expect(declared).toEqual([
+      'LOBBY',
+      'NIGHT_WOLVES',
+      'NIGHT_SEER',
+      'NIGHT_WITCH',
+      'NIGHT_HUNTER_SHOOT',
+    ]);
     expect(DEFAULT_TRANSITIONS.LOBBY).toEqual(['START']);
     expect(DEFAULT_TRANSITIONS.FINISHED).toEqual([]);
+    // 无 action 的阶段：夜聊（RFC-005）与自动结算、以及白天（RFC-004）
+    expect(DEFAULT_TRANSITIONS.NIGHT_WOLF_CHAT).toEqual([]);
+    expect(DEFAULT_TRANSITIONS.NIGHT_RESOLVE).toEqual([]);
+    expect(DEFAULT_TRANSITIONS.DAY_ANNOUNCE).toEqual([]);
   });
 
   it('表里每个允许对都有 handler', () => {
