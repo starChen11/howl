@@ -458,3 +458,194 @@ M1~M6b 的源码改动全部用临时副本恢复；P1~P3 与 K1~K4 的临时文
   5. 同步 RFC §2.2（`phase: ProjectedPhase`）、§8.4（AC-8/9/15 的真实测试）与 §8.5（48 files / 400 tests）。
   6. 修复 `RFCS.md` C-28 / C-41 的尾注与 `TEST-STRATEGY.md` 的 `existing` 标记；本轮已在 §8.14 登记 C-44 / C-45 / C-46。
 - **状态**：`RFCS.md` → **`Changes requested`**；**C-28 / C-41 仍未关闭**（见新增 **C-44 / C-45 / C-46**）；C-7 / C-40 / C-42 / C-43 本轮未改动。**本评审没有修改任何产品代码，也没有 git commit。**
+
+## Round 3 -- 2026-11-18
+
+**评审会话**：独立 subagent，全新上下文；本会话没有参与本仓库任何代码 / RFC / 测试的写作。
+**日期**：2026-11-18
+**分支 / HEAD**：`main` / `27f46ef`（评审开始时 `git status --porcelain` 无输出）
+**范围**：按用户指定，只复核 Round 2 的三项修复——终局视为全部死亡已揭示（含夜间直接终局）、`aliveSeats` / `legalTargets` 的已知存活/排除自己口径、新增 `partition.test.ts` 与 `thought.test.ts`——以及上轮点名的回归锁（`aliveSeats`、`legalTargets`、AC-8/9、AC-15）。C-7 / C-40 / C-42 / C-43，以及 Round 1 / 2 已核对或已关闭的 AC-11 / AC-14 / AC-16 不再重查。
+**结论**：**Reviewed**
+**整体风险**：**Low**
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。HEAD `27f46ef`。
+
+```
+$ pnpm typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit
+EXIT:0
+
+$ pnpm lint
+> eslint .
+EXIT:0
+
+$ pnpm format:check
+> prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+EXIT:0
+
+$ pnpm build
+✓ 14 modules transformed.
+dist/client/assets/index-DTkfWeVY.js  219.65 kB │ gzip: 68.71 kB
+✓ 3 modules transformed.
+dist/server/index.js  1.25 kB │ gzip: 0.86 kB
+EXIT:0
+
+$ pnpm test
+ Test Files  50 passed (50)
+      Tests  412 passed (412)
+EXIT:0
+
+$ pnpm exec vitest run --project unit --coverage
+ Test Files  43 passed (43)
+      Tests  378 passed (378)
+All files        |   96.69 |    93.33 |   97.14 |   96.97 |
+EXIT:0（覆盖率阈值 90 / 85，只统计 src/engine/）
+```
+
+`pnpm test:e2e` 未跑：本轮改动仍是服务端纯函数、引擎折叠与测试，没有 UI 改动（`TEST-6` 从 RFC-012 起生效）。`pnpm selfplay` 未跑：仍是 RFC-015 的占位。
+
+**Product Type**：`PRD.md` 是 **game（主）+ web app（交付形态）**。本轮只改投影、引擎 no-op 折叠与测试，因此只适用游戏规则、可见性、安全与纯函数检查；显式跳过 UI / A11Y / 浏览器兼容 / 首屏性能 / Playwright 检查。
+
+### 1. 五个复核项
+
+#### 1.1 终局视为全部死亡已揭示（含夜间直接终局）：PASS
+
+- 实现：`src/server/project/index.ts:64-70` 在 `state.phase === 'FINISHED'` 时把 `state.seats` 里全部 `alive === false` 的席位并入 `knownDead`；`aliveSeats` 仍由同一个 `knownDead` 推导（`:72-74`），因此终局的 `aliveSeats` / `deadSeats` 自动互补。
+- 测试：`tests/server/project/night-visibility.test.ts:154-169` 把 `NIGHT_HUNTER_SHOOT` 的状态改到 `FINISHED`，断言 hunter 进入 `deadSeats`。
+- 反向探针 **M7**：删掉整个 `FINISHED` 分支 → `night-visibility.test.ts` **1 failed / 7 passed**，报错 `expected [] to include 5`；恢复后全绿。这条锁成立。
+- 真实路径复核 **P-R3**（不是新增用例，是本评审的临时探针）：用 `tests/engine/full-game.test.ts` 的固定种子 `4_242_424` 走到 `FINISHED`（最后一次相位是 `NIGHT_SEER`，没有 `DAY_STARTED`）：
+
+```
+engineDead      [1,2,3,4,6]
+ctx.deadSeats   [1,2,3,4,6]
+ctx.aliveSeats  [5,7,8,9]
+last events     69:PHASE_CHANGED:server 70:SEER_CHECKED:seer 71:PHASE_CHANGED:server
+                72:PLAYER_DIED:server 73:GAME_ENDED:public
+```
+
+Round 2 的 P3 正是在这里缺 `6`；本轮已一致，真实路径的缺陷关闭。
+
+**非阻塞**：新增用例是「手工改到 `FINISHED`」，不是 `4_242_424` 的真实路径；用例注释里「用 FIXTURE 构造……不行（要走真实路径）」与函数体也自相矛盾。建议把 M7 的夹具换成真实种子（或再加一条），减少对「实现读 `state.phase` 而不是折叠后的 cursor」这一细节的耦合。
+
+#### 1.2 `aliveSeats` 改观察者已知存活：PASS（夜间方向），另有两处非阻塞缺口
+
+- 实现：`src/server/project/index.ts:50-74` 的 `knownDead` 只来自可见的 `PLAYER_DIED` 与 `DAY_STARTED.diedLastNight`；`aliveSeats = 全部座位 − knownDead`。夜间的 `PLAYER_DIED` 是 `server` 事件，因此当夜死者仍在 `aliveSeats` 里（观察者还不知道），天亮后才移出。
+- 测试：`tests/server/project/night-visibility.test.ts:113-122` 在 `NIGHT_HUNTER_SHOOT` 断言 `aliveSeats` 仍包含 hunter，并先用 `throw` 锁住夹具前提（引擎里 hunter 已出局）。
+- 反向探针 **M3**：把 `aliveSeats` 改回 `state.seats.filter(seat => seat.alive)` → `tests/server/project` + `tests/server/inject` **2 failed / 41 passed**（`aliveSeats` 与 `legalTargets` 两条同时红）；恢复后全绿。C-28 要求的「夜间当夜死亡不进公共字段」有锁。
+- **非阻塞缺口 1（反方向无锁）**：探针 **M8** 把 `aliveSeats` 改成 `state.seats.map(seat => seat.seat)`（完全忽略 `knownDead`）→ `tests/server/project` + `tests/server/inject` **43/43 全绿**。这说明「天亮后/放逐后已公布的死者必须从 `aliveSeats` 移出」没有断言。当前实现是对的，但未来回归不会红。
+- **非阻塞缺口 2（观察者自己的夜间死亡）**：死者是 20_261_117 的 hunter 时，以 hunter 自己为观察者、`pending: 'shoot'` 投影得到：
+
+```
+self.alive  false
+aliveSeats  [1,2,3,4,5,6,7,8,9]   ← 5 是已出局的自己
+deadSeats   []
+canShoot    true
+```
+
+`self.alive === false` 与 `aliveSeats` 包含自己、`deadSeats` 不含自己互相矛盾。这不是泄漏（他知道自己死了），但 RFC-006 消费投影时会出现「已死的自己仍在存活名单里」的上下文。可选修法：把 `self.alive === false` 的自己预置进 `knownDead`；或明确 `aliveSeats` 是「公共已知存活」而不是「观察者已知存活」，并在 RFC §2.2 写清楚。
+
+#### 1.3 `legalTargets` 改已知存活 + 排除自己：PASS（夜间与 shoot/vote），另有两处非阻塞缺口
+
+- 实现：`src/server/project/targets.ts:20` 用 `aliveSeats.filter(seat => seat !== observer)`；`:29` 的首轮投票为 `[...alive, 'abstain']`，重投为 `state.runoff`。
+- 测试：`night-visibility.test.ts:124-132` 断言当夜死者（hunter）仍在候选里（目标消失=泄漏）；`:134-140` 断言 `pending: 'shoot'` 时不含已出局的 hunter 自己；`:142-151` 断言 vote 清单含 `'abstain'` 且不含观察者自己。
+- 反向探针：
+  - **M4**：`legalTargets` 改回引擎 `alive` → **1 failed / 42 passed**（夜里当夜死者从候选消失）。
+  - **M4b**：删掉 `filter(seat => seat !== observer)` → **2 failed / 6 passed**（shoot 自己、vote 自己各一条）。
+  - 两个 C-28 修复腿都有区分性回归锁。
+- 行为探针 **P-R3b**：真实路径走到 `DAY_VOTE_RUNOFF`，`runoff === [2,3]`，观察者 2 的 `legalTargets === [2,3]`——**重投分支没有排除观察者自己**；而首轮 `vote` 分支排除了。`targets.ts:29` 直接返回 `state.runoff`，绕过了 `:20` 的过滤。引擎允许自投（`src/engine/phases/vote.ts:120-138` 只校验「是并列者」），所以这不是崩溃或泄漏，但不满足本轮「排除自己」的统一口径。建议重投分支也过滤 observer，或明确「重投允许自投」并补一条测试。
+- 同一探针确认 D-4 的行为正确：重投清单不含 `'abstain'`（`legalTargets` 为 `[2,3]`），但没有永久测试。
+- **非阻塞缺口（反方向无锁）**：探针 **M9** 把 `legalTargets` 改成「全部座位 − observer」（完全忽略 `knownDead`）→ **43/43 全绿**。已公布的死者不会出现在候选名单里这件事没有断言；当前实现正确，但未来回归不会红。建议补一条「天亮/放逐后，已知死者不在 `legalTargets`」的断言。
+
+#### 1.4 `partition.test.ts` 的独立折叠与 server 事件：PASS
+
+- `tests/server/project/partition.test.ts:116-132` 在测试里用 `createEmptyState` + `applyEvent` + `isVisibleTo` **独立折叠一遍**，得到期望的 `publicSeqs` / `privateSeqs`；`:136-158` 对 9 个观察者逐条比较投影输出的 `seq` 序列，不再拿输出和自己比。
+- `:160-172` 断言两个桶不含任何 `visibleTo === 'server'` 事件，并单独断言不含 `GAME_STARTED`（含全员 `roles`）。
+- `:174-183` 断言两个桶的 `seq` 无交集。
+- 反向探针 **M6b**：在 `project()` 里把 `events[0]`（真实 `GAME_STARTED`）塞进每个观察者的 `privateEvents` → `partition.test.ts` **2 failed / 1 passed**；恢复后 3/3 全绿。Round 2 的 M6b 泄漏现在会红，AC-8 / AC-9 的独立对照成立。
+- **非阻塞**：AC-9 的「扣除 `excludeSeq`」没有在 `partition.test.ts` 里覆盖（`project.test.ts:274-302` 只测了一条事件）。当前 `project()` 在 `:37` 先剔除 `excludeSeq` 再判定可见性，行为正确；但独立折叠对照没有覆盖这个参数。
+
+#### 1.5 `thought.test.ts` 的 `AI_THOUGHT` 投影与折叠：PASS
+
+- `tests/server/project/thought.test.ts:21-36` 用真实 `step` 产生 `GAME_STARTED` 前缀，再追加合成 `AI_THOUGHT`（`self:3`，payload 含 `reason` / `decisionSeq`）。
+- `:39-43` 断言 `replay` 不抛错；`:45-56` 对 9 个观察者断言只有座位 3 看得到；`:58-67` 断言它不在 `publicEvents`、只在座位 3 的 `privateEvents`，且 `JSON.stringify(state)` 不含 `reason`；`:69-76` 断言 `applyEvent` 是空折叠（除 `seq` 外状态一致）。
+- 实现：`src/engine/apply.ts:84-87` 的 `case 'AI_THOUGHT': return base;`；`base` 已推进 `seq`。
+- 反向探针 **M5**：删掉 `applyEvent` 的 `AI_THOUGHT` 分支 → `thought.test.ts` **4 failed**，`replay.test.ts` 仍 18/18 通过（它已改用 `DEGRADED` 作为未实现事件样本）；恢复后全绿。AC-15 的投影用例现在真的能变红。
+- **非阻塞**：`tests/server/inject/injection.test.ts:57` 的 `describe('AC-15 · 固定声明句逐字存在')` 仍是错标（内容是 AC-11）；C-45 的处理列要求改回 AC-11，未做。`thought.test.ts` 的合成事件用 `as unknown as GameEvent`，可改成 `GameEvent` 的构造辅助函数以减少类型逃逸。
+
+### 2. 反向探针与临时探针
+
+**基线**：`pnpm test` → **50 files / 412 tests** 全绿；`pnpm typecheck` / `lint` / `format:check` / `build` 均 exit 0。
+
+| # | 改动 | 结果 | 结论 |
+|---|---|---|---|
+| M3 | `aliveSeats` 改回引擎 `alive` | 2 failed / 41 passed | aliveSeats 夜间方向有锁 |
+| M4 | `legalTargets` 改回引擎 `alive` | 1 failed / 42 passed | legalTargets 夜间方向有锁 |
+| M4b | 删掉 `filter(seat => seat !== observer)` | 2 failed / 6 passed | shoot / vote 的排除自己有锁 |
+| M5 | 删除 `applyEvent` 的 `AI_THOUGHT` case | 4 failed / 18 passed（`thought.test.ts` 4 红，`replay.test.ts` 18 绿） | AC-15 有锁 |
+| M6b | 把 `GAME_STARTED` 塞进每个观察者的 `privateEvents` | partition 2 failed / 1 passed | AC-8/9 有锁 |
+| M7 | 删除 `FINISHED` 终局揭示分支 | night-visibility 1 failed / 7 passed | 终局分支有锁 |
+| M8 | `aliveSeats` 恒为全部座位（忽略 knownDead） | 43/43 passed | **反方向无锁（非阻塞）** |
+| M9 | `legalTargets` 恒为全部座位 − observer（忽略 knownDead） | 43/43 passed | **反方向无锁（非阻塞）** |
+| P-R3 | 固定种子 `4_242_424` 真实路径到 `FINISHED` | 引擎 `[1,2,3,4,6]` = 投影 `[1,2,3,4,6]`；alive `[5,7,8,9]` | 夜间终局已修 |
+| P-R3b | 真实路径 `DAY_VOTE_RUNOFF`，observer=2 | `runoff [2,3]`；`legalTargets [2,3]` 含自己 | 重投分支未排除自己（非阻塞） |
+| P-R3c | `NIGHT_HUNTER_SHOOT`，observer=已出局 hunter | `self.alive=false`；`aliveSeats` 含自己；`deadSeats=[]` | 自身夜间死亡口径不一致（非阻塞） |
+
+M3~M9 的源码改动全部用 `/tmp` 文件备份恢复；P-R3 / P-R3b / P-R3c 的临时测试已删除。探针结束后 `git status --porcelain` 对 `src/` 与 `tests/` 无输出；本评审只改本文件、`RFCS.md`、`TEST-STRATEGY.md` 与 `README.md` 的状态 / 计划描述，没有改产品代码，也没有 `git commit`。
+
+### 3. 五个维度
+
+#### 3.1 RFC ADHERENCE — PASS
+
+- Round 2 的三个阻塞项（C-44 / C-45 / C-46）全部关闭：终局揭示、`aliveSeats` / `legalTargets` 的夜间口径、AC-8/9 独立折叠、AC-15 投影用例均有能变红的测试。
+- `FINISHED` 的语义与 RFC §2.3 的「按事件折叠」是**有意的例外**；代码注释与 §8.8 都记录了，用户也在 Round 2 指令中确认，算已登记偏离。
+- 非阻塞偏离记录：`legalTargets` 的「排除自己」目前只在非重投分支统一应用，`targets.ts:29` 的重投分支没有过滤 observer；RFC §8.2 的 D-4 只写了「重投只给并列者、不含弃权」，没有写自投。若产品决定「重投也排除自己」，需要补一行实现说明与用例；若决定「重投允许自投」，则首轮 vote 的排除自己反而需要解释。
+- 非阻塞文档漂移：RFC §8.4 的 AC-15 证据仍写「由 `visibility` 的 `self:` 规则保证（RFC-005 已测）」（`:242`），§8.5 仍写 46 files / 389 tests（`:249`），与 §8.8 的 50 / 412 不一致；§8.3 的 FILES CHANGED 没有列新增的 `partition.test.ts` / `thought.test.ts`（只有 §8.8 提到）。按 `DOC-1` 应在下一次文档提交同步。
+
+#### 3.2 RULES COMPLIANCE — PASS
+
+- **ARCH-1 / ARCH-3**：`src/engine/` 仍不 import `src/server/`；依赖方向测试通过。
+- **ARCH-8**：`project()` 仍是纯函数，不读时钟 / 环境 / 网络；AC-1 用例通过。
+- **ARCH-2**：`ProjectedPhase` 仍是纯类型；C-42 的 `src/shared/injection.ts` 例外不在本轮范围，未新增违规。
+- **SEC-3 / SEC-5**：投影仍是唯一可见性路径；`GAME_STARTED` 的全员角色只存在于 `server` 事件，M6b 已能打红。
+- **TEST-1**：本轮的 AC-1 ~ AC-16 中，AC-2 的「1000 局面 × 9 观察者」属性测试仍未落地（`TEST-STRATEGY.md:253` 计划的 `tests/server/project/property.test.ts` 不存在）；这是 Round 2 已记录的非阻塞项，本轮未新增，也不影响本轮三个修复的结论。其余本轮复核的 AC 均有能变红的测试。
+- **DOC-1**：见 3.1 的文档漂移；无未记录的代码行为变更（排除自己、终局例外都在 §8.8 / 代码注释里）。
+
+#### 3.3 SECURITY — PASS
+
+- 夜间子阶段折叠、当夜 `deadSeats` / `aliveSeats` / `legalTargets` 的隐藏死亡、`GAME_STARTED` 的全员身份、`AI_THOUGHT` 的越权可见性，这五类在反向探针下都能变红（M1 / M2 见 Round 2；M3 / M4 / M6b / M5 本轮实跑）。
+- `aliveSeats` / `legalTargets` 的反方向缺口（M8 / M9）是**多给已公布死者**，不是泄漏隐藏信息；不构成「AI 不作弊」的破坏，因此不阻塞。
+- 观察者自己是夜间死者时，`aliveSeats` 包含自己 / `deadSeats` 为空，属于自我认知不一致，不向他人泄漏。
+- 未发现密钥、原始 LLM 响应、DOM / 网络依赖或直接序列化完整状态的新路径。
+
+#### 3.4 PERFORMANCE — PASS
+
+`project()` 仍是一次 O(events) 折叠 + 一次 O(events) 的 `visible` 扫描；终局分支多一次 O(9) 的座位扫描。没有新增网络、数据库、N+1 或缓存。一局数百条事件，远低于 LLM 调用成本。
+
+#### 3.5 MAINTAINABILITY — PASS（有非阻塞建议）
+
+- 新测试文件可读性良好：`partition.test.ts` 的独立折叠注释明确说明了「为什么不能拿输出和自己比」；`thought.test.ts` 用一个真实开局前缀 + 合成事件，足够小。
+- 非阻塞：
+  1. `night-visibility.test.ts:142` 的标题写「投票阶段」，但夹具停在 `DAY_SPEECH`；建议改标题或在 `DAY_VOTE` 下重测。
+  2. `injection.test.ts:57` 的 AC-15 错标（见 1.5）。
+  3. `project.test.ts:206-220` 的同义反复旧测试仍在；`partition.test.ts` 已覆盖，建议删掉或改成「弱断言只查互斥」并明确它不承担 AC-8/9。
+  4. `src/server/project/index.ts:109-111` 的 `observes()` 仍是未使用导出（Round 1 N4 遗留）。
+  5. `src/shared/project.ts:34` 的 `ProjectedPhase` 仍未真正收窄（`Exclude<Phase, 'LOBBY' | 'FINISHED'>` 仍含 `NIGHT_*`），类型上仍可把 `'NIGHT_SEER'` 赋给投影阶段；运行时折叠正确，但类型洞会误导 RFC-006。
+
+### 4. 最终判断
+
+- **Overall Risk Level: Low**
+- **Summary**：Round 2 的三个阻塞项都已闭环，且不是「代码碰巧对」：C-44 的 `aliveSeats` / `legalTargets` 夜间口径、`FINISHED` 终局揭示，分别被 M3 / M4 / M4b / M7 打红；C-46 的 `partition.test.ts` 用测试内独立折叠 + server 事件断言，M6b 打红；C-45 的 `thought.test.ts` 覆盖 `AI_THOUGHT` 的 replay / 投影 / 空折叠，M5 打红。真实路径 `4_242_424` 的夜间终局现在得到与引擎一致的 `[1,2,3,4,6]`。剩余问题都是非阻塞的：反方向的存活/候选名单没有锁、重投分支没有排除自己、已死观察者的自身死亡口径不一致、终局测试是手工状态而非真实路径，以及若干文档/测试标题漂移。
+- **Blocking Issues**：无。
+- **Improvement Suggestions**（非阻塞）：
+  1. 补 `aliveSeats` / `legalTargets` 的反方向断言（天亮或放逐后，已知死者必须移出；M8 / M9 现在全绿）。
+  2. `targets.ts:29` 的重投分支过滤 observer，或明确重投允许自投并写进 RFC §8.2 / D-4；补一条重投用例。
+  3. `knownDead` 预置 `!self.alive` 的观察者自己，或把「`aliveSeats` 是公共已知存活」写进 RFC §2.2，解决 hunter 夜间自视角的矛盾。
+  4. 用真实种子 `4_242_424` 替换/补充 `night-visibility.test.ts:154-169` 的手工 `FINISHED` 用例。
+  5. 把 `injection.test.ts:57` 的 AC-15 标题改回 AC-11；修 `night-visibility.test.ts:142` 的「投票阶段」标题；删掉或降级 `project.test.ts:206-220` 的同义反复。
+  6. 补 AC-2 的 1000 局面属性测试（`tests/server/project/property.test.ts`），并把 `TEST-STRATEGY.md:253/262` 的 `existing` 标记改准。
+  7. 同步 RFC §8.4 / §8.5、§8.3 的 FILES CHANGED 与 `RFCS.md` 的 C-28 / C-41 尾注；收窄 `ProjectedPhase`。
+- **状态**：`RFCS.md` → **`Reviewed`**；**C-28 / C-41 关闭**（原阻塞 RFC-007 的部分）；**C-44 / C-45 / C-46 关闭**；C-42 / C-43 仍为非阻塞 Open（本轮未改动）。**本评审没有修改任何产品代码，也没有 `git commit`。**
