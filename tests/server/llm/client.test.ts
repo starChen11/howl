@@ -298,7 +298,7 @@ describe('AC-5 · 429 与网络错误也会重试', () => {
 });
 
 describe('B4 · 301 字发言在 decide 层被截断（不是被拒）', () => {
-  it('模型返回 301 字发言 → schema 通过 → toAction 截断到 300', async () => {
+  it('模型返回 301 字发言 → schema 通过（不拒绝）', async () => {
     const fetchImpl = (async () =>
       chatResponse({
         id: 'x',
@@ -363,5 +363,33 @@ describe('B6 · 重试分类要能区分错误码', () => {
         { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
       ),
     ).rejects.toSatisfy((error: unknown) => (error as LlmError).code === 'NETWORK');
+  });
+});
+
+describe('C-55 · 真实超时路径（AbortSignal.timeout）', () => {
+  it('假 fetch 在 signal abort 时拒绝 → 归为 TIMEOUT 而不是 SERVER_ERROR', async () => {
+    const log = new CallMetaLog();
+    // 关键：不主动抛错，而是**等 signal 真的 abort**。SDK 会把这种取消包成
+    // `APIUserAbortError`，与「立即抛一个 TimeoutError」是两条不同路径。
+    const fetchImpl = ((_url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init.signal;
+        if (signal === null || signal === undefined) {
+          reject(new Error('缺少 signal'));
+          return;
+        }
+        signal.addEventListener('abort', () => {
+          reject(signal.reason ?? new DOMException('timeout', 'TimeoutError'));
+        });
+      })) as unknown as typeof fetch;
+
+    await expect(
+      decide(
+        { config: { ...CONFIG, timeoutMs: 10 }, fetchImpl, metaLog: log },
+        { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+      ),
+    ).rejects.toSatisfy((error: unknown) => (error as LlmError).code === 'TIMEOUT');
+
+    expect(log.all().every((meta) => meta.errorCode === 'TIMEOUT')).toBe(true);
   });
 });

@@ -204,6 +204,16 @@ function mapError(error: unknown): LlmError {
 
   // 顺序有讲究：SDK 把「超时」包成 `APIConnectionTimeoutError`（属于连接错误的一种），
   // 先判连接错误会把超时误归成 NETWORK，重试分类与日志都会跟着错。
+  // 真实超时路径：我们传的是 `AbortSignal.timeout`，SDK 会把它表现成
+  // `APIUserAbortError`（`APIError` 的子类、`status` 未定义），原始原因挂在 `cause` 上。
+  // 不单独识别它，超时就会被归成 500 → SERVER_ERROR（C-55）。
+  if (error instanceof OpenAI.APIUserAbortError) {
+    const cause = (error as { cause?: { name?: string } }).cause;
+    return cause?.name === 'TimeoutError'
+      ? new LlmError('TIMEOUT', '调用超时')
+      : new LlmError('ABORTED', '调用被取消');
+  }
+
   if (error instanceof OpenAI.APIConnectionTimeoutError) {
     return new LlmError('TIMEOUT', '调用超时');
   }

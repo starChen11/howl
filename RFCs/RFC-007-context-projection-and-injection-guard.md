@@ -207,7 +207,7 @@ function wrapPublicUtterance(input: { seat: SeatId; text: string }): string;
 | # | 决定 | 为什么 |
 |---|---|---|
 | **D-1** | `wrapPublicUtterance` 放在 `src/server/project/inject.ts`，不是 RFC 原写的 `src/server/llm/inject.ts` | `src/server/llm/` 是 RFC-006 的目录，本 RFC 先做，建一个空目录给它没有意义。006 落地时可以挪，也可以就地引用 |
-| **D-2** | 常量（`INJECTION_NOTICE` / `UTTERANCE_LIMIT` / 转义函数）放 `src/shared/injection.ts`，函数放服务端 | 常量要被执行本 RFC 测试的客户端与服务端共用，且它们是**纯常量与纯函数**，符合 `ARCH-2` 对 `shared` 的要求 |
+| **D-2（已被 RFC-006 修订）** | ~~常量放 shared、函数放服务端~~ → **函数也移到了 `src/shared/injection.ts`**：RFC-006 的提示组装需要复用它，而 `server → server` 的引用违反 RFC-001 AC-11 的依赖方向（C-54 / C-57）。`shared` 已有 `visibility.ts` 这个纯函数先例 | 常量要被执行本 RFC 测试的客户端与服务端共用，且它们是**纯常量与纯函数**，符合 `ARCH-2` 对 `shared` 的要求 |
 | **D-3** | `legalTargets` 对 `kill` 只给存活席位，**不**替引擎筛掉 wolf | 投影给的是「可指向的范围」，最终合法性由引擎拒绝。投影替引擎做判断会让两处规则漂移（RFC-002 的教训） |
 | **D-4** | 重投阶段（`DAY_VOTE_RUNOFF`）的 `legalTargets` 只给并列者，**不含弃权** | RUL-2：重投不能弃权。这也让 AI 的选项清单与引擎的接受集合一致 |
 | **D-5** | `checks[].day` 用「第几条查验」编号，而不是真实天数 | `SEER_CHECKED` 的 payload 不带天数，而投影不能凭事件 `seq` 猜天数（死亡与相位会扭曲）。若将来复盘需要真实天数，应给 payload 加字段，而不是在投影里补算 |

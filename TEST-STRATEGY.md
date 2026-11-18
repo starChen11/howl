@@ -234,14 +234,14 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2、3 | `tests/security/llm-isolation.test.ts`：扫描 `src/` 断言 `api.deepseek.com` 字面量只出现在 `client.ts`；断言 `DEEPSEEK_API_KEY` 只被 `config.ts` 读取；构造带敏感内容的 500 响应，断言错误 message 不含原文 | security | proposed | Must |
-| 4、5 | `tests/server/llm/retry.test.ts`：假 `fetch` 依次返回超时/网络错误/429/5xx，断言各重试一次；4xx 不重试；环境变量覆盖生效 | unit | proposed | Must |
-| 6 | 同上：同一 `(gameId, seat)` 同一决策轮次内，重试后只产生一个 action | unit | proposed | Must |
-| 7、8 | `tests/server/llm/schema.test.ts`：缺 `reason` 被拒；校验失败后第二次请求消息中含首次错误文本 | unit | proposed | Must |
-| 9、10 | `tests/server/llm/to-action.test.ts`：`vote`+合法 target → `VOTE`；非法 target → `{reject}`；`abstain` → `target:'abstain'`；`speak`+空文本 → `{reject}`；非猎人阶段 `shoot` → `{reject}` | unit | proposed | Must |
-| 11 | `tests/security/prompt-identity.test.ts`：`buildSystemPrompt` 输出断言不含 `human`/`真人`/`你是 AI`/`助手`/`玩家是用户` | security | proposed | Must |
-| 12、13 | `tests/server/llm/meta.test.ts`：断言 `CallMeta` 13 个字段齐全；`attempt` 在重试时递增；业务代码除 `config.ts` 外无 `'deepseek-flash'` 字面量 | unit | proposed | Must |
-| 14 | 同上：假 `fetch` 返回固定 JSON，断言 `Decision` 被解析且 `CallMeta` 被写 | unit | proposed | Should |
+| 1、2、3 | `tests/security/llm-isolation.test.ts`：扫描 `src/` 断言 `api.deepseek.com` 字面量只出现在 `client.ts`；断言 `DEEPSEEK_API_KEY` 只被 `config.ts` 读取；构造带敏感内容的 500 响应，断言错误 message 不含原文 | security | existing: tests/server/llm + tests/security | Must |
+| 4、5 | `tests/server/llm/retry.test.ts`：假 `fetch` 依次返回超时/网络错误/429/5xx，断言各重试一次；4xx 不重试；环境变量覆盖生效 | unit | existing: tests/server/llm + tests/security | Must |
+| 6 | 同上：同一 `(gameId, seat)` 同一决策轮次内，重试后只产生一个 action | unit | existing: tests/server/llm + tests/security | Must |
+| 7、8 | `tests/server/llm/schema.test.ts`：缺 `reason` 被拒；校验失败后第二次请求消息中含首次错误文本 | unit | existing: tests/server/llm + tests/security | Must |
+| 9、10 | `tests/server/llm/to-action.test.ts`：`vote`+合法 target → `VOTE`；非法 target → `{reject}`；`abstain` → `target:'abstain'`；`speak`+空文本 → `{reject}`；非猎人阶段 `shoot` → `{reject}` | unit | existing: tests/server/llm + tests/security | Must |
+| 11 | `tests/security/prompt-identity.test.ts`：`buildSystemPrompt` 输出断言不含 `human`/`真人`/`你是 AI`/`助手`/`玩家是用户` | security | existing: tests/server/llm + tests/security | Must |
+| 12、13 | `tests/server/llm/meta.test.ts`：断言 `CallMeta` 13 个字段齐全；`attempt` 在重试时递增；业务代码除 `config.ts` 外无 `'deepseek-flash'` 字面量 | unit | existing: tests/server/llm + tests/security | Must |
+| 14 | 同上：假 `fetch` 返回固定 JSON，断言 `Decision` 被解析且 `CallMeta` 被写 | unit | existing: tests/server/llm + tests/security | Should |
 
 > **RFC-006 Round 1 评审（2026-11-18）**：本表仍全部为 `proposed`，与落地不符——实际用例在 `tests/server/llm/{client,to-action,prompts}.test.ts` 与 `tests/security/llm-isolation.test.ts`。AC-5 的「网络错误 / 429 各重试一次」与 AC-6 的「重试不重复 action」没有用例；`.tsx` 未被 `collectTypeScriptFiles` 扫描，AC-1 / AC-2 / AC-13 对 `src/client/main.tsx` 是空断言。详见 `reviews/REVIEW-RFC-006.md` §2 / §3 / B6。补齐前不要把对应行改回 `existing`。
 
