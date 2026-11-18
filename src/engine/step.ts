@@ -6,6 +6,7 @@ import { applyEvent } from './apply';
 import type { EffectApplierMap } from './effects';
 import type { Modifier } from './effects';
 import { UnhandledTransitionError } from './errors';
+import { AUTO_PHASE_ENTRIES, AUTO_PHASE_LIMIT } from './phases/auto-table';
 import { NIGHT_HANDLERS } from './phases/night';
 import { phaseChangedDraft } from './phases/visibility';
 import { DEATH_APPLIERS } from './resolve/deaths';
@@ -220,13 +221,24 @@ export function createEngine(config: EngineConfig): Engine {
       return { state: foldEvents(state, events), events };
     }
 
-    const drafts = invokeHandler(config.handlers, state, action, {
-      modifiers,
-      appliers: config.appliers,
-    });
+    const context: HandlerContext = { modifiers, appliers: config.appliers };
+    const drafts = invokeHandler(config.handlers, state, action, context);
     const events = stampEvents(state, drafts, action.ts);
+    let next = foldEvents(state, events);
 
-    return { state: foldEvents(state, events), events };
+    // 自动阶段（RFC-004 的 B 方案）：没有 action 可提交的阶段，由这里接着推进，
+    // 直到停在一个等待输入的位置。上限防止 entry 之间互相跳转时死循环。
+    for (let guard = 0; guard < AUTO_PHASE_LIMIT; guard += 1) {
+      const entry = AUTO_PHASE_ENTRIES[next.phase];
+      if (entry === undefined) break;
+
+      const autoDrafts = entry(next, context);
+      const autoEvents = stampEvents(next, autoDrafts, action.ts);
+      events.push(...autoEvents);
+      next = foldEvents(next, autoEvents);
+    }
+
+    return { state: next, events };
   }
 
   function reduce(state: GameState, action: Action): GameState {

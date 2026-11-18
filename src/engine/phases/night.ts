@@ -1,8 +1,6 @@
 import type { GameState, Phase, SeatId } from '@shared/domain';
 
-import type { EventDraft } from '../step';
-import type { ActionHandlerFor } from '../step';
-import type { EffectApplierMap } from '../effects';
+import type { ActionHandlerFor, EventDraft, HandlerContext } from '../step';
 import { applyEffects } from '../effects';
 import { phaseChangedDraft } from './visibility';
 import { resolveHunterShot, resolveNight } from '../resolve/deaths';
@@ -28,22 +26,13 @@ import { checkWin } from '../win';
  * 3. 相位推进一律产出 `PHASE_CHANGED`（RFC-003 D-1），包括「witch 选 none」这种无事发生的转移。
  */
 
-/**
- * 本夜的结算参数。
- *
- * 刀口通常已经在状态里（`WOLF_KILL_CHOSEN` 折叠过），但**这一次 wolf 行动也可能直接触发结算**
- * ——当 seer 与 witch 都已出局时，这次下刀之后就是 `NIGHT_RESOLVE`，而那条 `WOLF_KILL_CHOSEN` 还只是
- * 草稿、尚未折叠。所以调用方必须把「本次刚产出的刀口」显式传进来，不能只读状态。
- */
-function nightParams(
-  state: GameState,
-  extra: { killTarget?: SeatId; healTarget?: SeatId; poisonTarget?: SeatId } = {},
-) {
-  const killTarget = extra.killTarget ?? state.night?.killTarget;
+/** 本夜的结算参数：三个目标都已在 `state.night` 里（自动阶段开始时已折叠）。 */
+function nightParams(state: GameState) {
+  const { killTarget, healTarget, poisonTarget } = state.night ?? {};
   return {
     ...(killTarget === undefined ? {} : { killTarget }),
-    ...(extra.healTarget === undefined ? {} : { healTarget: extra.healTarget }),
-    ...(extra.poisonTarget === undefined ? {} : { poisonTarget: extra.poisonTarget }),
+    ...(healTarget === undefined ? {} : { healTarget }),
+    ...(poisonTarget === undefined ? {} : { poisonTarget }),
   };
 }
 
@@ -68,15 +57,19 @@ function nextAfterSeer(state: GameState): Phase {
  * 「谁死了」。公开广播由 RFC-004 的 `DAY_STARTED.diedLastNight` 承担，那里没有 `cause`，
  * 不会泄漏。
  */
-function finishNight(
-  from: Phase,
-  state: GameState,
-  extra: { killTarget?: SeatId; healTarget?: SeatId; poisonTarget?: SeatId },
-  appliers: EffectApplierMap,
-): EventDraft[] {
-  const resolution = resolveNight(nightParams(state, extra));
-
-  const drafts: EventDraft[] = [phaseChangedDraft(from, 'NIGHT_RESOLVE')];
+/**
+ * `NIGHT_RESOLVE` 的自动推进（RFC-004 的 B 方案）。
+ *
+ * 它**只在状态里读**本夜的目标：刀口来自 `WOLF_KILL_CHOSEN`、解药/毒药来自 `WITCH_POTION_USED`，
+ * 此时都已经折叠进 `state.night`。RFC-003 时代需要把「本次 action 刚选的目标」作为参数传进来，
+ * 因为那条事件还只是草稿；自动阶段把这一步省掉了。
+ *
+ * 产出顺序就是规则顺序（RFC-003 §2.3 第 4–8 步）：
+ * `PLAYER_DIED*` →（`GAME_ENDED` 或 `PHASE_CHANGED(→…)`）。
+ */
+export function resolveNightEntry(state: GameState, context: HandlerContext): EventDraft[] {
+  const resolution = resolveNight(nightParams(state));
+  const drafts: EventDraft[] = [];
 
   for (const death of resolution.deaths) {
     drafts.push({
@@ -87,20 +80,18 @@ function finishNight(
   }
 
   // 第 5 步：死亡应用完毕后立刻判胜负（RUL-1）。已分出胜负 → 对局结束，不进开枪阶段。
-  const afterDeaths = applyEffects(state, resolution.effects, appliers);
+  const afterDeaths = applyEffects(state, resolution.effects, context.appliers);
   const win = checkWin(afterDeaths);
   if (win !== null) {
     drafts.push({ type: 'GAME_ENDED', visibleTo: 'public', payload: win });
     return drafts;
   }
 
-  // 第 6 步：被狼刀出局的 hunter 进入开枪阶段；被毒杀的不进（FR-17）。
+  // 第 6 步：被刀出局的 hunter 进入开枪阶段；被毒杀的不进（FR-17）。
   const hunterKilledByWolf = resolution.deaths.some(
     (death) => death.cause === 'wolf' && seatAt(state, death.seat).role === 'hunter',
   );
 
-  // 走 `phaseChangedDraft`：夜间相位是 `server`。这里曾经硬编码 `public`，于是
-  // 「进入开枪阶段」就等于告诉全场「hunter 死于狼刀而非毒杀」（评审 B-R2-1）。
   drafts.push(
     phaseChangedDraft('NIGHT_RESOLVE', hunterKilledByWolf ? 'NIGHT_HUNTER_SHOOT' : 'DAY_ANNOUNCE'),
   );
@@ -108,21 +99,13 @@ function finishNight(
   return drafts;
 }
 
-/** 结束当前夜晚阶段：要么推进到下一个夜阶段，要么（已是最后一个）进入结算。 */
-function advanceOrFinish(
-  state: GameState,
-  from: Phase,
-  next: Phase,
-  extra: { killTarget?: SeatId },
-  appliers: EffectApplierMap,
-): EventDraft[] {
-  return next === 'NIGHT_RESOLVE'
-    ? finishNight(from, state, extra, appliers)
-    : [phaseChangedDraft(from, next)];
+/** 推进到下一个夜晚阶段（或者进入自动结算阶段 `NIGHT_RESOLVE`）。 */
+function advanceOrFinish(from: Phase, next: Phase): EventDraft[] {
+  return [phaseChangedDraft(from, next)];
 }
 
 /** `WOLF_KILL`（`NIGHT_WOLVES`）。 */
-const wolfKill: ActionHandlerFor<'WOLF_KILL'> = (state, action, context) => {
+const wolfKill: ActionHandlerFor<'WOLF_KILL'> = (state, action) => {
   const actor = seatAt(state, action.seat);
   if (!actor.alive || actor.role !== 'wolf') {
     return [
@@ -157,18 +140,12 @@ const wolfKill: ActionHandlerFor<'WOLF_KILL'> = (state, action, context) => {
 
   return [
     { type: 'WOLF_KILL_CHOSEN', visibleTo: 'wolves', payload: { target: action.target } },
-    ...advanceOrFinish(
-      state,
-      'NIGHT_WOLVES',
-      nextAfterWolves(state),
-      { killTarget: action.target },
-      context.appliers,
-    ),
+    ...advanceOrFinish('NIGHT_WOLVES', nextAfterWolves(state)),
   ];
 };
 
 /** `SEER_CHECK`（`NIGHT_SEER`）。 */
-const seerCheck: ActionHandlerFor<'SEER_CHECK'> = (state, action, context) => {
+const seerCheck: ActionHandlerFor<'SEER_CHECK'> = (state, action) => {
   const actor = seatAt(state, action.seat);
   if (!actor.alive || actor.role !== 'seer') {
     return [
@@ -199,12 +176,12 @@ const seerCheck: ActionHandlerFor<'SEER_CHECK'> = (state, action, context) => {
       visibleTo: 'seer',
       payload: { target: action.target, result: isWolf ? 'wolf' : 'not-wolf' },
     },
-    ...advanceOrFinish(state, 'NIGHT_SEER', nextAfterSeer(state), {}, context.appliers),
+    ...advanceOrFinish('NIGHT_SEER', nextAfterSeer(state)),
   ];
 };
 
 /** `WITCH_ACT`（`NIGHT_WITCH`）。 */
-const witchAct: ActionHandlerFor<'WITCH_ACT'> = (state, action, context) => {
+const witchAct: ActionHandlerFor<'WITCH_ACT'> = (state, action) => {
   const actor = seatAt(state, action.seat);
   if (!actor.alive || actor.role !== 'witch') {
     return [
@@ -220,7 +197,7 @@ const witchAct: ActionHandlerFor<'WITCH_ACT'> = (state, action, context) => {
   const used = state.potionsUsed ?? { heal: false, poison: false };
 
   if (action.potion === 'none') {
-    return finishNight('NIGHT_WITCH', state, {}, context.appliers);
+    return advanceOrFinish('NIGHT_WITCH', 'NIGHT_RESOLVE');
   }
 
   if (action.potion === 'heal') {
@@ -263,7 +240,7 @@ const witchAct: ActionHandlerFor<'WITCH_ACT'> = (state, action, context) => {
         visibleTo: 'witch',
         payload: { potion: 'heal', target: action.target },
       },
-      ...finishNight('NIGHT_WITCH', state, { healTarget: action.target }, context.appliers),
+      ...advanceOrFinish('NIGHT_WITCH', 'NIGHT_RESOLVE'),
     ];
   }
 
@@ -294,7 +271,7 @@ const witchAct: ActionHandlerFor<'WITCH_ACT'> = (state, action, context) => {
       visibleTo: 'witch',
       payload: { potion: 'poison', target: action.target },
     },
-    ...finishNight('NIGHT_WITCH', state, { poisonTarget: action.target }, context.appliers),
+    ...advanceOrFinish('NIGHT_WITCH', 'NIGHT_RESOLVE'),
   ];
 };
 
