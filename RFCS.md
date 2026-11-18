@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.22 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.2 · 最后更新 2026-11-18
+> 版本 v2.23 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.2 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
