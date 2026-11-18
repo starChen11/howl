@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.12 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.25 · 最后更新 2026-11-18
+> 版本 v1.14 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.26 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -29,8 +29,8 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  37 passed (37)     # unit 30 个 + meta 7 个
-      Tests  309 passed (309)
+ Test Files  41 passed (41)     # unit 34 个 + meta 7 个
+      Tests  337 passed (337)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -202,16 +202,16 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2、3、4 | `tests/engine/day.test.ts`：断言发言序列是单循环不重不漏；有死者时起点为死者下一位；无死者时起点取自 `DAY_STARTED.payload` 且同 seed 相同；起点是死者时跳至下一存活者 | unit | proposed | Must |
-| 5、6 | `tests/engine/vote.test.ts`：断言 `VOTE_CAST.visibleTo === 'self:<seat>'`；结算前投影不含他人票型；结算后 `VOTE_REVEALED` 含全部投票与弃权标记 | unit | proposed | Must |
-| 7 | 同上：唯一最高票者出局，`PLAYER_DIED.cause === 'lynch'` | unit | proposed | Must |
-| 8、9 | 同上：并列 → 进重投，选项集仅并列者；提交 `abstain` 或非并列者 → `REJECTED` + `INVALID_RUNOFF_TARGET`；重投仍并列 → 当日无人出局进下一夜；首轮全员弃权 → 同上 | unit | proposed | Must |
-| 10、11 | `tests/engine/win.test.ts`：屠边三种局面（狼死于刀/毒/放逐）与屠城两种局面各断言 `result` | unit | proposed | Must |
-| 12、13 | 同上：猎人被刀且是最后一个神 → 狼胜且无 `HUNTER_SHOOT`；猎人被刀但好人仍存 → 开枪带走最后一狼后好人胜（第二次判定） | unit | proposed | Must |
-| 14 | 同上：全部胜负用例断言 `result ∈ {'wolf','good'}`，事件流无 `'draw'`；类型层断言 `GameState` 无 `stalemateDays` | unit | proposed | Must |
-| 15、16 | `tests/engine/full-game.test.ts`：固定 seed + 预置动作脚本跑到 `FINISHED`；`FINISHED` 后再提交断言 `REJECTED`+`PHASE_MISMATCH` 且除 `seq` 外不变；`replay` 得同一终局 | integration | proposed | Must |
+| 1、2、3、4 | `tests/engine/day.test.ts`：发言序列单循环不重不漏；有死者时起点为死者下一位；无死者时同 seed 起点相同且写在 `DAY_STARTED.payload`；起点不是死者 | unit | existing: tests/engine/day.test.ts | Must |
+| 5、6 | `tests/engine/vote.test.ts`：`VOTE_CAST.visibleTo === 'self:<seat>'`；最后一张票之前没有任何公开事件；`VOTE_REVEALED` 覆盖全部存活席位与 `abstain`（「投影」用 `isVisibleTo` 表达，见 RFC-004 §8.1） | unit | existing: tests/engine/vote.test.ts | Must |
+| 7 | 同上：唯一最高票出局，`PLAYER_DIED.cause === 'lynch'` | unit | existing: tests/engine/vote.test.ts | Must |
+| 8、9 | 同上：并列进重投、`runoff` 仅并列者；弃权或投非并列者 → `INVALID_RUNOFF_TARGET`；重投仍并列 / 全员弃权 → 当日无人出局入夜 | unit | existing: tests/engine/vote.test.ts | Must |
+| 10、11 | `tests/engine/win.test.ts` + `tests/engine/lynch.test.ts`：屠边三种（狼死于刀 / 毒 / 放逐）与屠城两种 | unit | existing: 两个文件 | Must |
+| 12、13 | `tests/engine/lynch.test.ts`：放逐最后一名神（hunter）→ 第一次判定狼胜、无 `HUNTER_SHOOT`；放逐 hunter 后开枪带走最后一狼 → 第二次判定好人胜 | unit | existing: tests/engine/lynch.test.ts | Must |
+| 14 | `tests/engine/lynch.test.ts`：无 `draw`；`GameState` 无 `stalemateDays` | unit | existing: tests/engine/lynch.test.ts | Must |
+| 15、16 | `tests/engine/full-game.test.ts`：固定 seed 脚本从 `LOBBY` 跑到 `FINISHED`；终局后提交 → `PHASE_MISMATCH` 且除 `seq` 外不变；`replay` 得同一终局 | integration | existing: tests/engine/full-game.test.ts | Must |
 
-**依赖与夹具**：RFC-003 的夜晚。夹具 `tests/fixtures/scripted-game.ts` 保存一份可复现的动作脚本。
+**依赖与夹具**：RFC-003 的夜晚。实际用 `tests/fixtures/day.ts`（沿真实路径走到 `DAY_SPEECH` / 投票），没有 `scripted-game.ts`——脚本内联在 `full-game.test.ts` 里，因为它只服务那一条用例。
 
 ---
 
@@ -447,6 +447,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.14 | RFC-004 实现后回填：16 条 AC 全部 `existing`；夹具改为 `tests/fixtures/day.ts`（无 `scripted-game.ts`）；基线用例数 309 → 337 |
 | 2026-11-18 | v1.13 | RFC-003 Round 4 回填（C-30 / 测试缺口）：基线用例数 307 → 309；AC-2 的证据归属改为「`events.test.ts` 真实事件」 |
 | 2026-11-18 | v1.12 | RFC-003 Round 3 修复后回填：C-27 落榜为 RUL-12（wolf 胜）并补真实路径用例；基线用例数 295 → 307 |
 | 2026-11-18 | v1.11 | RFC-003 Round 3 评审回填：C-23 的公开白名单补合法的 `HUNTER_SHOOT`；RFC-003 加 **C-27**（同时满足两阵营胜利条件）计划行，RFC-007 加 **C-28**（投影的夜间相位 / 死亡泄漏）计划行；引用 `RFCS.md` v2.22 |

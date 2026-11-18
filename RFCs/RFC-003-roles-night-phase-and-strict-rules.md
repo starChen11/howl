@@ -116,7 +116,7 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
 13. 毒杀的猎人出局后**不**进入 `NIGHT_HUNTER_SHOOT`：事件流中不含任何 `HUNTER_SHOOT` 事件
 14. **胜负先于开枪**：构造「被刀的猎人正是最后一个神（屠边）」的局面，断言对局在第一次 `checkWin` 处结束为狼胜，且事件流中**不含** `NIGHT_HUNTER_SHOOT` 阶段与 `HUNTER_SHOOT` 事件
 15. 夜晚结算产出的每条 `Effect` 的 `source` 均为 `'role'`；解药的 `order` 小于狼刀与毒药的 `order`，猎人开枪的 `order` 大于二者的 `order`（可据此断言 RUL-8 的时序）
-16. 未分出胜负时，夜晚结束后 `phase === 'DAY_ANNOUNCE'`；此时对本 phase 提交任何 action 均抛 `UnhandledTransitionError`（RFC-004 尚未实现该阶段）——**已由 §8.3 修正为 `Rejected`（`PHASE_MISMATCH`）**，见该节的理由
+16. 未分出胜负时，夜晚结束后进入白天。**（本 AC 已由 RFC-004 取代两次）**：第一次改成 `Rejected`（`PHASE_MISMATCH`，见 §8.3）；第二次因为 RFC-004 的「自动阶段」机制（`DAY_ANNOUNCE` 不停留），夜晚现在停在 `phase === 'DAY_SPEECH'`，对该阶段的非法 action 仍产出 `Rejected` 且状态除 `seq` 外不变
 
 ## 6. 边界与测试
 

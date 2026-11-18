@@ -134,3 +134,90 @@ type DayStartedPayload = {
 | Q-004-1 | 重投时非并列者能否投票 | **(assumption)** 能；选项集只限制被投目标，不限制投票人 |
 | Q-004-3 | 猎人被自曝夜里的刀杀死能否开枪 | **(assumption)** 能；只有「被毒杀」与「被放逐时放弃」两种例外 |
 | Q-004-4 | ~~同时达成判平局~~ | **已关闭（结论不变：不判平局）**：夜间同批死亡同时达成时按 **RUL-12** 判 wolf 胜（`CHANGE-REQUEST-006`）；`draw` 分支与 RUL-10 均已移除（`CHANGE-REQUEST-002`） |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。分支 `main`（RFC-001/002/003 已合入）。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| `DAY_ANNOUNCE` 怎么驱动 | 选 **B 方案**：把「自动阶段」做成 `step` 的一等能力（用户裁决：选更对的方案） |
+| AC-5 的「投影」 | 按 `isVisibleTo` 解释（投影归 RFC-007，本 RFC 不实现） |
+| Q-004-1 | 保持假设：重投时**非并列者可以投票**（选项集只限制被投目标） |
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+| **D-1** | 新增「自动阶段」机制：`step` 折叠完一条 action 的事件后，若当前阶段登记在 `AUTO_PHASE_ENTRIES` 里，就调用其 entry 产出并折叠事件，直到停在一个等待输入的位置（上限 8 次） | `NIGHT_RESOLVE` 与 `DAY_ANNOUNCE` 都没有 action 可提交。RFC-003 的解法是让前一个 handler 一次吐完后续事件，逻辑错位、还要把上一条 action 的参数手工传下去。B 方案把这件事正名，并顺手消掉了那个参数 |
+| **D-2** | `DAY_LYNCH` 也是自动阶段：谁被放逐由 `VOTE_REVEALED` 折叠进 `state.lynched` | 放逐不需要玩家输入，和天亮同构 |
+| **D-3** | 发言起点**只在 `DAY_STARTED` 入口抽一次**，结果写进 payload 与 `rngAfter`；`DAY_STARTED` 登记进 `RANDOM_CONSUMING_EVENTS` | 每次现抽就破坏「同 seed 同结果」与 `replay`。有死者时不抽，但 `rngAfter` 仍要带上——省略它 `replay` 会以为这次转移没动过生成器 |
+| **D-4** | 票价：`votes` / `runoff` / `lynched` / `speech` 全部是**派生字段**，只由 `applyEvent` 写 | C-18：派生字段可以存在，但必须能完整重建。不存「判断结果」的副本 |
+| **D-5** | 进入下一夜要发**两条** `PHASE_CHANGED`：先 `→NIGHT_WOLF_CHAT`（它负责 `day++`、清空 `night` 与 `pendingDeaths`），再 `→NIGHT_WOLVES` | 夜聊归 RFC-005。与 `START` 跳过夜聊的做法一致，同时保住那些清理逻辑只有一个入口 |
+| **D-6** | 新增拒绝码 `ALREADY_VOTED`（同一轮重复投票）；`INVALID_RUNOFF_TARGET` 覆盖「弃权」与「投非并列者」两种 | RFC-004 没有拒绝码表（不像 RFC-003 §4），这两个由实现选定。`INVALID_RUNOFF_TARGET` 是 AC-8 明确要求的 |
+| **D-7** | `PLAYER_DIED` 的可见性随场景：夜间 `server`（死因天亮才公布）、白天放逐与白天开枪 `public` | 这是 C-29 的 N9 提醒：夜间之所以不公开是因为天亮前没人该知道，白天放逐不适用 |
+| **D-8** | 白天开枪的收尾是**入夜**，夜间开枪的收尾是**天亮** | 同一个 `HUNTER_SHOOT` handler 按 `state.phase` 分流 |
+
+### 8.3 连带改动：RFC-003 → `Spec changed`
+
+D-1 让 `DAY_ANNOUNCE` 不再停留。RFC-003 的 AC-16 断言「夜晚结束后 `phase === 'DAY_ANNOUNCE'`」因此不再成立——夜晚现在停在 `DAY_SPEECH`。
+
+- RFC-003 §5 的 AC-16 与 §2.3 第 8 步已更新，并注明「由 RFC-004 取代」；
+- `tests/engine/{night,witch,death-resolve,night-visibility}.test.ts` 的四处相位断言随之改为 `DAY_SPEECH`；
+- **被拒的 action 不触发自动推进**，因此 RFC-002 的 AC-8（除 `seq` 外状态不变）继续成立——这条有专门的用例守着。
+
+### 8.4 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 引擎新增 | `src/engine/phases/auto.ts`（自动阶段契约）、`auto-table.ts`（登记表）、`day.ts`、`vote.ts`、`lynch.ts` |
+| 引擎修改 | `step.ts`（自动阶段循环 + 并入白天 handler）、`apply.ts`（折叠 5 个事件、`DAY_STARTED` 计入随机消耗）、`transitions.ts`（填白天阶段）、`phases/night.ts`（夜间结算改为自动阶段的 entry；白天开枪收尾分流） |
+| 共享修改 | `src/shared/domain.ts`（4 个派生字段）、`src/shared/schemas.ts`（`DAY_STARTED` schema + 登记） |
+| 测试新增 | `tests/engine/{day,vote,lynch,full-game}.test.ts`；夹具 `tests/fixtures/day.ts` |
+| 测试修改 | `tests/engine/{night,witch,death-resolve,night-visibility,transitions,replay}.test.ts`、`tests/shared/schemas.test.ts`（相位与键集合随 B 方案更新） |
+| 文档 | 本文件 §8、`RFCs/RFC-003`、`RFCS.md`、`TEST-STRATEGY.md`、`README.md` |
+
+### 8.5 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `day.test.ts` · 按 `speechOrder` 逐个发言，每人恰好一次，结束后进 `DAY_VOTE` | PASS |
+| 2 | 同上 · 起点 = 结算顺序第一位死者的下一位存活席位 | PASS |
+| 3 | 同上 · 无死者时同 seed 两次运行起点相同；`DAY_STARTED.payload.speechStartSeat` 与 `replay` 一致 | PASS |
+| 4 | 同上 · 起点不是死者；已出局者不在序列里 | PASS |
+| 5 | `vote.test.ts` · `VOTE_CAST.visibleTo === 'self:<seat>'`；最后一张票之前**没有任何公开事件** | PASS |
+| 6 | 同上 · `VOTE_REVEALED` 覆盖全部存活席位，弃权标记为 `abstain` | PASS |
+| 7 | 同上 · 唯一最高票出局，`PLAYER_DIED.cause === 'lynch'` | PASS |
+| 8 | 同上 · 并列进重投、`runoff` 恰为并列者；投非并列者或弃权 → `INVALID_RUNOFF_TARGET` | PASS |
+| 9 | 同上 · 重投仍并列 → 当日无人出局进下一夜；全员弃权同理 | PASS |
+| 10 | `lynch.test.ts` + `win.test.ts` · 屠边三种（狼死于刀 / 毒 / 放逐）与屠城两种 | PASS |
+| 11 | 同上 · 屠城两条 | PASS |
+| 12 | `lynch.test.ts` · 放逐最后一名神（hunter）→ 第一次判定即狼胜，事件流无 `HUNTER_SHOOT` | PASS |
+| 13 | 同上 · 放逐 hunter 后开枪带走最后一狼 → 第二次判定好人胜；放弃开枪 → 入夜 | PASS |
+| 14 | 同上 · 无 `draw`；`GameState` 无 `stalemateDays` | PASS |
+| 15 | `full-game.test.ts` · 终局后提交 → `Rejected`（`PHASE_MISMATCH`），状态除 `seq` 外不变 | PASS |
+| 16 | 同上 · 固定种子整局脚本从 `LOBBY` 到 `FINISHED`，`replay` 得同一终局 | PASS |
+
+### 8.6 验证输出（实跑）
+
+```
+$ pnpm typecheck    → exit 0
+$ pnpm lint         → exit 0
+$ pnpm format:check → exit 0
+$ pnpm build        → exit 0
+$ pnpm test         → Test Files 41 passed (41) · Tests 337 passed (337)  exit 0
+$ pnpm exec vitest run --project unit --coverage
+  All files | % Stmts 96.42 | % Branch 92.85 | % Funcs 96.87 | % Lines 96.73
+```
+
+### 8.7 已知缺口（交给后续 RFC）
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| `NIGHT_WOLF_CHAT` 仍被跳过 | 入夜时发两条相位事件直接到 `NIGHT_WOLVES`（D-5） | RFC-005 |
+| AC-5 的「投影」措辞 | 本 RFC 用 `isVisibleTo` 表达，没有实现 `project()` | RFC-007 |
+| 白天投票的可见性矩阵 | 只测了「结算前无公开事件」，没做 9 观察者 × 事件的矩阵 | RFC-007 |

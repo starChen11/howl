@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.25 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
+> 版本 v2.26 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -39,8 +39,8 @@
 |---|---|---|---|---|
 | [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Reviewed |
 | [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
-| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Reviewed |
-| [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Not started |
+| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Spec changed |
+| [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Implemented |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Not started |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Not started |
@@ -279,6 +279,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.26 | RFC-004 实现完成（Status → Implemented）：新增「自动阶段」机制（B 方案）承载 `NIGHT_RESOLVE` / `DAY_ANNOUNCE` / `DAY_LYNCH`；投票暗投与 `VOTE_REVEALED`；平票重投（RUL-2 / RUL-9）；放逐后两次胜负判定。**RFC-003 转 `Spec changed`**：其 AC-16 断言「夜晚停在 `DAY_ANNOUNCE`」被自动阶段取代，现停在 `DAY_SPEECH`（见 RFC-003 §5 与 RFC-004 §8.3） |
 | 2026-11-18 | v2.25 | C-29 落地（`CHANGE-REQUEST-007`）：F6 AC-4、RUL-1 依据句、C-6 / OQ-C6、RFC-004 §2.6 / Q-004-4 / Rules 头全部同步 RUL-12。代码与 RFC Status 未动 |
 | 2026-11-18 | v2.24 | RFC-003 Round 4 评审（Status → Reviewed）：C-27 关闭（复现 + 反向探针 M1/M1b）；307 用例 / 覆盖率 98.14 / 96.66 全绿；16 条 AC 均有测试，14 条经变异探针确认会红（AC-2 / AC-8 为直接断言）。新登记 **C-29**（旧「同时达成不可能」表述与 RUL-12 冲突；非阻塞 RFC-003、阻塞 RFC-004）与 **C-30**（README / TEST-STRATEGY 版本头 / `visibility.ts` 注释 / RFC §4 / AC-2 证据归属的文档漂移；非阻塞）。详见 `reviews/REVIEW-RFC-003.md` Round 4 |
 | 2026-11-18 | v2.23 | RFC-003 Round 3 修复（Status → Implemented）：C-27 落榜为 **RUL-12「狼刀在先」**（CR-006），`checkWin` 改为先算 wolf 侧条件；补同时达成的谓词用例与真实夜间路径用例（反向探针 4 条变红）；顺带核对「witch 被刀仍可开毒」与真实规则一致；B3 真实事件覆盖、AC-6 / AC-15 断言补强 |
