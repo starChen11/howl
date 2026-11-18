@@ -98,7 +98,8 @@ AI 的 `reason` 不能出现在公开事件里（AI-5 / SEC-5），但复盘要�
 
 ```
 visibleTo: 'self:<seat>'
-payload: { reason, claimedRole?, claimedChecks?, accuses?, decisionSeq }
+payload: { reason, claim?, decisionSeq }
+// claim: { role?, checks?, accuses? } —— 形状归 RFC-006 §2.2，类型见 RFC-001 §2.3 的 Claim（CR-003 C3）
 ```
 
 它进事件流（因此可重放、可复盘），但**永不出现在任何其他观察者的投影里**。`SPEECH` 事件只带 `text`，不带 `reason`。

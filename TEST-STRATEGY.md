@@ -1,13 +1,15 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.0 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.1 / `RFCS.md` v2.2 · 生成日期 2026-11-17
+> 版本 v1.11 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.2 / `RFCS.md` v2.22 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
 
 ## 0. STEP 0 · 基线
 
-**当前不存在任何测试套件。** 实测输出：
+### 0.1 制定计划时（2026-11-17，阶段 6）
+
+当时仓库里没有任何代码，实测：
 
 ```
 $ ls package.json src tests
@@ -16,13 +18,24 @@ $ ls package.json src tests
   ✗ 无 tests/
 
 $ pnpm test
-ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or package.json5)
-  was found in "/Users/chenxin/Desktop/project/dsh-project/howl".
+ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND
 ```
 
-因此本文件里 **`Exists?` 列全部是 `proposed`**，没有 `existing`。等 RFC-001 落地后出现第一批测试，后续更新应把已存在的标为 `existing: <文件>`。
+所以本文件初稿里 `Exists?` 列全部是 `proposed`。
 
-覆盖统计：**16 个 RFC、222 条验收标准、0 条已实现**。
+### 0.2 RFC-001/002 落地后（v1.2 / v1.7 回填）
+
+RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情况回填（`existing: <文件>`）。当前实测：
+
+```
+$ pnpm test
+ Test Files  37 passed (37)     # unit 30 个 + meta 7 个
+      Tests  307 passed (307)
+
+$ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
+```
+
+覆盖统计：**16 个 RFC、222 条验收标准、其中 RFC-001 的 16 条全部已实现（`existing`）**，其余 15 个 RFC 仍为 `proposed`。
 
 ---
 
@@ -80,7 +93,7 @@ ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or packag
 
 | RFC | 验收标准 | 计划测试行 | 需人工检查 |
 |---|---|---|---|
-| RFC-001 工程骨架与共享契约 | 16 | 11 | 0 |
+| RFC-001 工程骨架与共享契约 | 16 | 14 | 0 |
 | RFC-002 引擎内核 | 16 | 11 | 0 |
 | RFC-003 板子与夜晚 | 16 | 10 | 0 |
 | RFC-004 白天与胜负 | 16 | 8 | 0 |
@@ -102,60 +115,86 @@ ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or packag
 
 ## RFC-001: 工程骨架与共享契约
 
+> v1.2 回填：本 RFC 已实现，`Exists?` 一律为 `existing`。测试分成两个 Vitest project：
+> `unit`（纯函数与静态扫描，毫秒级）与 `meta`（起子进程跑 `pnpm` 命令，串行）。
+
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1 | `tests/meta/commands.test.ts`：依次执行 5 条 `pnpm` 命令并断言退出码 0；`start` 用子进程起后请求 `/api/health` 再 SIGTERM。失败点：任一命令非 0 | integration | proposed | Must |
-| 2、3、4 | `tests/meta/tsconfig.test.ts`：读取 `package.json` 与三份 tsconfig，断言 `packageManager`/`engines`/`type` 与四个严格开关；再临时写出关掉 `strict` 的配置跑 `tsc --noEmit` 断言报错 | unit | proposed | Must |
-| 5、7 | `tests/shared/contracts.test.ts`：断言 `Phase` 取值集合恰为 14 个、`EventEnvelope` 的 `visibleTo`/`seq`/`gameId` 必填（用 `expectTypeOf` 或反例对象编译失败断言） | unit | proposed | Must |
-| 6 | `tests/shared/effects.test.ts`：构造去掉 `target` 的 `Effect` 断言类型错误；断言 `ORDER` 常量三个分区边界为 0 / 100 / 900 | unit | proposed | Must |
-| 8 | `tests/shared/terms.test.ts`：断言 `TERMS` 的键集合覆盖 PRD 术语表 13 条，`TermKey` 能穷举；`ROLE_LABELS` 含 5 个身份 | unit | proposed | Must |
-| 9 | `tests/security/no-hardcoded-terms.test.ts`：扫描 `src/**/*.{ts,tsx}`（排除 `terms.ts`），断言不含五个身份名字面量。失败点：任何组件里写死「狼人」 | security | proposed | Must |
-| 10、11 | `tests/meta/dependency-direction.test.ts`：解析各文件 import，断言 `shared` 不引用其它层、`engine` 只引用 `shared`、`client` 只引用 `shared`、`server` 只引用 `engine`+`shared`；断言 `shared` 除 `zod` 外无运行时依赖 | unit | proposed | Must |
-| 12 | `tests/server/health.test.ts`：`fastify.inject()` 请求 `/api/health` 断言 200 与 `{ok:true}`；另用 Playwright 请求 `http://localhost:5173/api/health` 断言代理生效 | integration | proposed | Must |
-| 13 | `tests/meta/build.test.ts`：跑 `pnpm build` 后断言 `dist/client/index.html` 与 `dist/server/index.js` 存在；递归读 `dist/client` 全部文件断言不含 `DEEPSEEK_API_KEY` | integration | proposed | Must |
-| 14、15 | `tests/meta/lint.test.ts`：读取 ESLint 配置断言两条规则为 `error`；跑 `pnpm lint`、`pnpm format:check`、`pnpm test:e2e` 断言退出码 0 | integration | proposed | Must |
-| 16 | `tests/meta/selfplay-placeholder.test.ts`：跑 `pnpm selfplay` 断言退出码 1 且 stderr 含 `RFC-015` | integration | proposed | Must |
+| 1 | `tests/meta/commands.test.ts`（5 例）：跑 `typecheck` / `lint` / `vitest --project unit` / `build`，再用 3999 端口起 `pnpm start` 探活并关掉。内层用 `--project unit` 避免递归（T-4） | integration | existing: tests/meta/commands.test.ts | Must |
+| 2、3、4 | `tests/meta/tsconfig.test.ts`：`package.json` 三个字段、三份配置存在与 `moduleResolution`/`target`、`include` 边界、别名与 `configs/alias.ts` 一致；五个严格开关用**两向夹具**证明（开启必失败、关闭必通过，C-11 已推翻原文方向） | unit | existing: tests/meta/tsconfig.test.ts + tests/meta/fixtures/ | Must |
+| 5、7 | `tests/shared/domain.test.ts`（`PHASES` 恰 14 且逐项相等、`expectTypeOf<Phase>()` 等值）+ `tests/shared/events.test.ts`（`EventEnvelope` 三字段缺失夹具） | unit | existing: domain.test.ts, events.test.ts | Must |
+| 6 | `tests/shared/effects.test.ts`：省略 `target` 编译失败、`target: null` 合法、四个分区边界（C-12 由三改四）+ `expectTypeOf<typeof EFFECT_ORDER>()` 字面量断言 | unit | existing: tests/shared/effects.test.ts | Must |
+| 8 | `tests/shared/terms.test.ts`：13 条键与标签逐项等于 PRD 术语表、`ROLE_LABELS` 5 项顺序等于 `ROLES` | unit | existing: tests/shared/terms.test.ts | Must |
+| 9 | `tests/security/no-hardcoded-terms.test.ts`：扫 `src/**/*.{ts,tsx}`（排除 `terms.ts`），身份名集合从 `ROLE_LABELS` 反查 | security | existing: tests/security/no-hardcoded-terms.test.ts | Must |
+| 10、11 | `tests/dependency-direction.test.ts`（路径按 RFC §3，T-6）+ `tests/helpers/import-scan.ts` 及其回归测试：静态 / 仅副作用 / 动态 `import()` / `require()` 四种写法都扫，防的是「动态导入绕过 `shared → server`」（评审 F5） | unit | existing: tests/dependency-direction.test.ts, tests/helpers/import-scan.test.ts | Must |
+| 12 | `tests/server/health.test.ts`（`inject`）+ `tests/meta/dev-proxy.test.ts`：起真实 `pnpm dev`，`localhost:3000` 直连与 `localhost:5173` 代理都要 200 且 `{"ok":true}`。**不用 Playwright**（T-5：代理规则不需要浏览器内核） | integration | existing: 两文件 | Must |
+| 13 | `tests/meta/build.test.ts`：跑 `pnpm build` 后断言 `dist/client/index.html` 与 `dist/server/index.js` 存在；递归扫 `dist/client` 无 `DEEPSEEK_API_KEY`、无 `@fastify/static` | integration | existing: tests/meta/build.test.ts | Must |
+| 14、15 | `tests/meta/lint.test.ts`：用 ESLint API 问 `.ts` 与 `.tsx` 的**生效**等级（M8 的缺口）、`pnpm lint` / `format:check` / `test:e2e` 退出 0，且 `test:e2e` 的 stdout 含 `skipped`（M9） | integration | existing: tests/meta/lint.test.ts | Must |
+| 16 | `tests/meta/selfplay-placeholder.test.ts`：退出码 1，stderr 同时含「未实现」与 `RFC-015`（M10） | integration | existing: tests/meta/selfplay-placeholder.test.ts | Must |
+| F1（评审新增） | `tests/shared/events.test.ts`：`GameEvent` 的未知 type / 错误 payload 负向夹具、`GameEvent` 与 `EventEnvelope` 各一份（B3）、`GAME_EVENT_TYPES` 与 `keyof GameEventMap` 双向等值、`EventSchema` 拒绝假 type | unit | existing: tests/shared/events.test.ts | Must |
+| F2（评审新增） | `tests/shared/actions.test.ts`：`WITCH_ACT` 三种非法组合在类型与 Zod 两侧都被拒、三种合法组合通过 | unit | existing: tests/shared/actions.test.ts | Must |
+| F7（评审新增） | `domain.test.ts`（`SEAT_IDS` / `ROLES` / `FACTION_OF` / `FACTIONS` / `WIN_MODES`）、`effects.test.ts`（`EFFECT_SOURCES`）、`events.test.ts`（`SELF_VISIBILITY_PREFIX`） | unit | existing: 三个文件 | Should |
+| CR-003（变更） | `tests/shared/events.test.ts`：三个 payload 形状——`REJECTED.actionType` 非法值编译失败、`VOTE_CAST` 缺 `seat` 编译失败、`AI_THOUGHT` 顶层 `claimedRole` 编译失败、嵌套 `claim` 通过 | unit | existing: tests/shared/events.test.ts | Must |
 
-**依赖与夹具**：无前置。需要能起子进程的测试超时（建议 120s）。`tests/meta/` 下全部用 `execa` 或 `node:child_process`。
+**依赖与夹具**：无前置。`tests/meta/` 会起子进程，两个 wait 超时分别是 30s（`start`）与 60s（`dev`），单例上限 180s。
 
 ---
 
 ## RFC-002: 引擎内核：状态机、事件流、种子与效果管道
 
+> v1.5 回填：RFC-002 已实现，`Exists?` 全部 `existing`。计划 10 个文件，实际 12 个（多了
+> `replay-parity.test.ts` 与 `no-network.test.ts`，少了独立的 `coverage.test.ts`——覆盖率
+> 门禁挪进了 `tests/meta/`，因为它是会起子进程的门禁而不是引擎单测）。
+
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2 | `tests/engine/step.test.ts`：参数化覆盖每种 `Action`；断言 `reduce(s,a)` 与 `step(s,a).state` 深相等；`Object.freeze(state)` 后调用不抛；连调两次结果相等 | unit | proposed | Must |
-| 3 | `tests/engine/serialization.test.ts`：往返 JSON 断言深度相等；递归断言每个值原型为 `Object.prototype` 或 `Array`，无 `Date`/`Map`/`Set`/函数 | unit | proposed | Must |
-| 4、5 | `tests/engine/replay.test.ts`：固定 `seed` 跑一段 action 序列得事件流，`replay` 后与最终状态深相等；同 seed 跑两次事件流逐条相等（忽略 `ts`） | unit | proposed | Must |
-| 6、7 | `tests/engine/events.test.ts`：断言 `seq` 从 1 严格递增无跳号；首事件为 `GAME_STARTED` 且 payload 含 `seed`/`mode`/`playerSeat`/`roles`/`personas` | unit | proposed | Must |
-| 8 | `tests/engine/reject.test.ts`：`PLAYERS` 阶段提交 `START` 以外的 action，断言产出 `REJECTED` 且 `code === 'PHASE_MISMATCH'`，除 `seq` 外状态不变 | unit | proposed | Must |
-| 9 | `tests/engine/transitions.test.ts`：遍历 `transitions` 表每个 `(phase, action)` 允许对，断言存在 handler；对一个故意缺失 handler 的假表断言抛 `UnhandledTransitionError` | unit | proposed | Must |
-| 10 | `tests/engine/effects.test.ts`：构造乱序 `Effect[]`，断言应用后按 `order` 升序、同级按 `id` 字典序；同数组两次应用结果相等 | unit | proposed | Must |
-| 11 | `tests/engine/effects.test.ts`：注册假 modifier 到 `VOTE_RESOLVE` 注入「票无效」效果，断言最终状态因此改变；再断言不注册时结果与基线相等 | unit | proposed | Must |
-| 12 | `tests/engine/rng.test.ts`：同 seed 两次抽序列相等；扫描 `src/engine/**.ts` 断言无 `Math.random(` | unit | proposed | Must |
-| 13、14、16 | `tests/engine/coverage.test.ts` 由 `pnpm test` 的覆盖率报告断言阈值；引擎测试运行时把 `fetch` 换成抛错桩，全部通过 | integration | proposed | Must |
-| 15 | `tests/engine/win.test.ts`：构造屠边/屠城局面各一，断言 `checkWin` 返回值与 `condition` 文案；断言调用不产生事件、不改状态 | unit | proposed | Must |
+| 1、2 | `tests/engine/step.test.ts`：10 种 action 样本逐一断言 `reduce === step().state`；`Object.freeze` 后调用不抛；不修改 action | unit | existing: tests/engine/step.test.ts | Must |
+| 3 | `tests/engine/serialization.test.ts`：JSON 往返 + 递归原型断言（含 `Date`/`Map`/`Set` 反例） | unit | existing: tests/engine/serialization.test.ts | Must |
+| 4 | `tests/engine/replay.test.ts`：只传事件流重建；seq 跳号 / 首事件不对 / 缺 `rngAfter` / 未知类型 / gameId 混流各有否定用例 | unit | existing: tests/engine/replay.test.ts | Must |
+| 5 | `tests/engine/determinism.test.ts`：同 seed + 同序列两次事件流逐条相等；不同 seed 发牌不同 | unit | existing: tests/engine/determinism.test.ts | Must |
+| 6、7 | `tests/engine/events.test.ts`：seq 严格递增无跳号；首事件 `GAME_STARTED` 且 payload 四个字段齐全、可见性 `server`、带 `rngAfter` | unit | existing: tests/engine/events.test.ts | Must |
+| 8 | `tests/engine/reject.test.ts`：phase 不匹配 → `Rejected`（`PHASE_MISMATCH`）且除 seq 外状态不变；另覆盖 `START_STATE_MISMATCH` | unit | existing: tests/engine/reject.test.ts | Must |
+| 9 | `tests/engine/transitions.test.ts`：表覆盖 14 phase、每个允许对都有 handler、假表缺 handler 抛 `UnhandledTransitionError` | unit | existing: tests/engine/transitions.test.ts | Must |
+| 10、11、12 | `tests/engine/effects.test.ts`：顺序（order + id）、两次应用相等、假 modifier 注入改变终态、无 modifier 时仅规范化 | unit | existing: tests/engine/effects.test.ts | Must |
+| 13 | `tests/engine/rng.test.ts`（递归扫描 + 接线可注入，含临时目录嵌套用例）+ `tests/helpers/source-scan.ts` / `source-scan.test.ts`（helper 的递归能力与 POSIX 归一化）：扫描 `src/engine` 无 `Math.random(`（含反空转断言）+ PRNG 确定性 | unit | existing: 三个文件 | Must |
+| 14、16 | `tests/meta/coverage.test.ts`（阈值 + 无忽略注释）+ `tests/setup/no-network.ts` 与 `tests/engine/no-network.test.ts`（`fetch` 抛错桩） | integration / unit | existing: 三个文件 | Must |
+| 15 | `tests/engine/win.test.ts`：屠边/屠城各断言、RUL-5 只数存活、纯谓词（调用前后状态相等） | unit | existing: tests/engine/win.test.ts | Must |
+| C-18（变更） | `tests/engine/replay-parity.test.ts`：`replay` 后用重建状态继续 `step`，事件/终态/胜负判定都与实时一致。比较的是整个 state，RFC-003 起加派生字段会自动覆盖 | unit | existing: tests/engine/replay-parity.test.ts | Must |
 
-**依赖与夹具**：需要 RFC-001 的类型与 `isVisibleTo`。夹具 `tests/fixtures/states.ts` 提供「夜晚中」「投票中」「已终局」三个手写状态。
+**夹具**：`tests/fixtures/states.ts`（`lobbyState` / `startedState` / `stateWithRoles`）。
 
 ---
 
 ## RFC-003: 板子分配、夜晚阶段与严格规则
 
+> v1.7 回填：已实现，`Exists?` 全部 `existing`。计划 5 个文件，实际 6 个（多 `queries.test.ts`）。
+> AC-8 / AC-16 的措辞已按 RFC-002 §2.3 的机械判据修正，见 RFC-003 §8.3。
+
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2、3 | `tests/engine/deal.test.ts`：50 个固定种子逐个 `createInitialState`，断言角色计数恒为 3/1/1/1/3；同 seed 两次 `roles` 相同；统计玩家席位三类身份各出现 ≥1 次 | unit | proposed | Must |
-| 4 | `tests/engine/night.test.ts`：`WOLF_KILL` 后断言产出 `WOLF_KILL_CHOSEN` 且 `visibleTo === 'wolves'` | unit | proposed | Must |
-| 5 | 同上：指向已出局席位断言 `REJECTED` + `TARGET_NOT_ALIVE`，状态除 `seq` 外不变 | unit | proposed | Must |
-| 6 | 同上：指向狼队友断言 `REJECTED` + `WOLF_KILL_WOLF` | unit | proposed | Must |
-| 7 | `tests/engine/seer.test.ts`：三种目标（狼/神/民）各一次，断言 `SEER_CHECKED.visibleTo === 'seer'` 且 `result` 只取两值、与真实阵营一致 | unit | proposed | Must |
-| 8、9、10 | `tests/engine/witch.test.ts`：自救 → `WITCH_SELF_SAVE`；同夜第二次提交 → `NOT_YOUR_TURN`；次夜复用已用药 → `POTION_ALREADY_USED`（药水位从事件流推导） | unit | proposed | Must |
-| 11 | 同上：解药目标 === 刀口，断言当夜无 `PLAYER_DIED` 事件 | unit | proposed | Must |
-| 12 | 同上：解药目标 ≠ 刀口，断言仅刀口出局 | unit | proposed | Must |
-| 13、14、15 | `tests/engine/death-resolve.test.ts`：刀杀猎人 → 进 `NIGHT_HUNTER_SHOOT` 且 `HUNTER_SHOOT` 带 `source:'role'`；毒杀猎人 → 无该阶段、无事件；断言解药 `order` < 击杀 `order` < 开枪 `order` | unit | proposed | Must |
-| 16 | `tests/engine/night.test.ts`：未分胜负时夜晚结束 `phase === 'DAY_ANNOUNCE'`，对该 phase 提交 action 抛 `UnhandledTransitionError`；刀杀的猎人正好是最后一个神时断言对局在第一次 `checkWin` 结束为狼胜且无 `HUNTER_SHOOT` | unit | proposed | Must |
+| 1 | `tests/engine/deal.test.ts`：50 个固定种子，角色计数恒为 3/1/1/1/3 | unit | existing: tests/engine/deal.test.ts | Must |
+| 2 | 同上：同 seed 两次发牌一致；`roles` 与 `GAME_STARTED` payload 同源 | unit | existing: tests/engine/deal.test.ts | Must |
+| 3 | 同上：玩家席位三类身份各出现 ≥1 次 | unit | existing: tests/engine/deal.test.ts | Must |
+| 4 | `tests/engine/night.test.ts`：`WOLF_KILL_CHOSEN` 的 `visibleTo === 'wolves'` | unit | existing: tests/engine/night.test.ts | Must |
+| 5 | 同上：`TARGET_NOT_ALIVE` / `WOLF_KILL_WOLF`，状态除 `seq` 外不变；非狼提交 → `NOT_YOUR_TURN` | unit | existing: tests/engine/night.test.ts | Must |
+| 6 | `tests/engine/seer.test.ts`：三种目标、`visibleTo === 'seer'`、`result` 与阵营一致 | unit | existing: tests/engine/seer.test.ts | Must |
+| 7 | `tests/engine/witch.test.ts`：自救 → `WITCH_SELF_SAVE`；毒自己合法 | unit | existing: tests/engine/witch.test.ts | Must |
+| 8 | 同上：第二次用药 → `PHASE_MISMATCH`（**AC 已修正**）；非女巫 → `NOT_YOUR_TURN` | unit | existing: tests/engine/witch.test.ts | Must |
+| 9 | 同上：次夜复用已用药 → `POTION_ALREADY_USED`（构造的第二夜状态） | unit | existing: tests/engine/witch.test.ts | Must |
+| 10 | 同上：解药命中刀口 → 无 `PLAYER_DIED` | unit | existing: tests/engine/witch.test.ts | Must |
+| 11 | 同上：解药未命中 → 只有刀口出局；毒药另加一条 | unit | existing: tests/engine/witch.test.ts | Must |
+| 12 | `tests/engine/death-resolve.test.ts`：被刀出局的 hunter 进 `NIGHT_HUNTER_SHOOT`；开枪效果 `source: 'role'`、order 在 200 区；带走最后一狼 → 好人胜 | unit | existing: tests/engine/death-resolve.test.ts | Must |
+| 13 | 同上：被毒杀的 hunter 不进开枪阶段、无 `HUNTER_SHOOT` 事件 | unit | existing: tests/engine/death-resolve.test.ts | Must |
+| 14 | 同上：hunter 是最后一个神 → 同一步内 `GAME_ENDED`、相位 `FINISHED`、无开枪（RUL-1） | unit | existing: tests/engine/death-resolve.test.ts | Must |
+| 15 | 同上：解药 < 击杀 < 开枪的 order；夜晚效果 `source` 全为 `role`；效果存活集与事件集一致 | unit | existing: tests/engine/death-resolve.test.ts | Must |
+| 16 | `tests/engine/night.test.ts`：夜晚结束进 `DAY_ANNOUNCE`；该阶段任何 action → `Rejected`（**AC 已修正**） | unit | existing: tests/engine/night.test.ts | Must |
+| 查询（§3 交付物） | `tests/engine/queries.test.ts`：`aliveSeats` / `countAliveByFaction` / `findAliveByRole` / `seatAt` 的语义 | unit | existing: tests/engine/queries.test.ts | Should |
+| C-23（评审 B2） | `tests/engine/night-visibility.test.ts`：夜间相位一律 `server`；一整夜的公开事件只允许「天亮推进」、`GAME_ENDED` 与合法的 `HUNTER_SHOOT` | unit | existing: tests/engine/night-visibility.test.ts | Must |
+| C-24（评审 B1） | `tests/engine/death-resolve.test.ts`：毒药指向狼刀目标时只出局一次、死因 `poison`；目标是 hunter 时不进开枪阶段 | unit | existing: tests/engine/death-resolve.test.ts | Must |
+| B3（评审） | `tests/shared/schemas.test.ts`：6 个事件 payload + `GAME_ENDED` 的正反例 | unit | existing: tests/shared/schemas.test.ts | Must |
+| C-27（评审 → RUL-12） | `tests/engine/win.test.ts`：直接构造「两阵营同时达成」（屠边的神/民、屠城）断言 **wolf 胜**；`tests/engine/death-resolve.test.ts`：走真实夜间路径（最后一名神被刀 + 最后一只狼被毒）断言 `GAME_ENDED { result: 'wolf' }` | unit | existing: 两个文件 | Must |
 
-**依赖与夹具**：RFC-002 的 `step`/`applyEvent`/`checkWin`。夹具需能构造「只剩一神」的残局。
+**依赖与夹具**：`tests/fixtures/night.ts`（沿真实路径推进到女巫阶段 + `makeNightState` 构造残局）。
 
 ---
 
@@ -219,6 +258,7 @@ ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or packag
 | 12、13 | 同上：同一文本玩家/AI 封装输出逐字相同；301 字符被拒绝并返回错误码 | unit | proposed | Must |
 | 14、15 | `tests/security/red-team.test.ts`：20 种对抗样本（含「忽略以上指令」、伪造闭合标签、JSON 块、代码块）后 `events`/`state` 深不变；`AI_THOUGHT` 只出现在该席位 `privateEvents`，对 8 个他人不可见 | security | proposed | Must |
 | 16 | `tests/server/inject/current-speech.test.ts`：传 `excludeSeq` 后该 `SPEECH` 不在 `publicEvents`，封装槽位使用其文本 | unit | proposed | Must |
+| C-28（评审） | `tests/server/project/night-visibility.test.ts`：死 seer / 死 witch 的跳过夜与 hunter 开枪夜，断言非相关观察者拿到的 `phase` 是公共阶段、`aliveSeats` / `deadSeats` 不含当夜未公开死亡；`state.phase` 的内部子阶段不出现在投影里 | unit | proposed | Must |
 
 ## RFC-008: 会话、状态存储与刷新恢复
 
@@ -396,6 +436,10 @@ ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or packag
 | T-1 | `RULES TEST-6` 要求「每条 Must 级**用户可见**功能至少一条 Playwright 冒烟」，但 RFC-001/002/003/004/005 没有任何用户可见功能 | 按 RULES 的本意解释：TEST-6 从 RFC-012（首个用户可见功能）起生效。已在 RFC-001 的 §4 与本文件 §2 注明 |
 | T-2 | `FEATURES F2` 的 AC 曾要求「10000 步内必达终局」，而 RUL-10 已移除平局兜底 | 已由 `CHANGE-REQUEST-002` 解决：终止性由「解药唯一 + 死亡单调累积」保证；测试改为断言 `replay` 一致与随机输入不挂起，不设固定步数上限 |
 | T-3 | `RFC-013` 的 F29/F32 是 Could，但计划里仍给了测试 | 保留：Could 功能一旦实现就必须有验收，若被砍则不执行这些测试行 |
+| T-4 | RFC-001 第 1 行要求「依次执行 5 条 `pnpm` 命令」含 `pnpm test` 自己——**在本测试里跑完整 `pnpm test` 会无限递归** | 内层改为 `pnpm exec vitest run --project unit`（`tests/meta/commands.test.ts`）。完整套件的结果由实现会话在 RFC 的 `## Implementation Notes` 里贴原始输出 |
+| T-5 | RFC-001 第 12 行要求「用 Playwright 请求 `localhost:5173/api/health` 断言代理生效」，但同一 RFC §4 又要求 `test:e2e` 在无用例时退出 0——两条互斥，且为一条代理规则装浏览器内核不划算 | 代理验证改为 `tests/meta/dev-proxy.test.ts`：起真实 `pnpm dev`，用 HTTP 请求打 `:3000` 与 `:5173`。本阶段不引入 Playwright 浏览器依赖；`test:e2e` 由 `scripts/test-e2e.mjs` 保证零用例时打印 `skipped` 并退出 0 |
+| T-6 | `tests/dependency-direction.test.ts` 的路径：RFC-001 §3 写 `tests/`，本文件写 `tests/meta/` | 按 RFC 走（权威顺序 `RULES > RFC > 计划`）：放 `tests/dependency-direction.test.ts`，它属于快的 `unit` project；其余 5 个新增门禁测试按本文件放 `tests/meta/` |
+| T-7 | `TS-1` 假设「构建类测试进 `pnpm test` 但跳过较慢的 `pnpm build`」 | 实测 `pnpm build` 在本项目只要约 0.5s（客户端产物 220 kB），**不跳过**：`pnpm test` 全量 57 个用例约 14s，可以接受。若后续变慢再引入跳过条件 |
 
 ---
 
@@ -403,4 +447,15 @@ ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or packag
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.12 | RFC-003 Round 3 修复后回填：C-27 落榜为 RUL-12（wolf 胜）并补真实路径用例；基线用例数 295 → 307 |
+| 2026-11-18 | v1.11 | RFC-003 Round 3 评审回填：C-23 的公开白名单补合法的 `HUNTER_SHOOT`；RFC-003 加 **C-27**（同时满足两阵营胜利条件）计划行，RFC-007 加 **C-28**（投影的夜间相位 / 死亡泄漏）计划行；引用 `RFCS.md` v2.22 |
+| 2026-11-18 | v1.10 | RFC-003 Round 2 修复后回填：RUL-11 落榜、C-26 死亡顺序、hunter 真实路径可见性、PAYLOAD_SCHEMAS 完整性；基线用例数 291 → 295 |
+| 2026-11-18 | v1.9 | RFC-003 Round 1 修复后回填：新增三行（C-23 / C-24 / B3）；基线用例数 270 → 291 |
+| 2026-11-18 | v1.8 | RFC-003 实现后回填：16 行 + 查询一行全部 `existing`；AC-8 / AC-16 措辞按 RFC-002 §2.3 修正；基线用例数 209 → 270 |
+| 2026-11-18 | v1.7 | RFC-002 Round 3 评审同步：基线用例数 206 → 209；AC-13 行补递归扫描与接线可注入；`RFCS.md` 引用更新为 v2.16 |
+| 2026-11-17 | v1.6 | RFC-002 Round 1/2 评审修复后回填：基线用例数 186 → 206；AC-13 的扫描改为递归且接线可注入；补 `tests/helpers/source-scan.ts` 一行 |
+| 2026-11-17 | v1.5 | RFC-002 实现后回填：10 行全部 `existing`，文件数从计划的 10 改为实际 12（覆盖率门禁移入 `tests/meta/`）；基线用例数 87 → 186 |
+| 2026-11-17 | v1.4 | RFC-001 Round 4 后同步：用例数 86 → 87，`RFCS.md` 引用由 v2.7 更新为 v2.10（C-20） |
+| 2026-11-17 | v1.3 | RFC-001 Round 2 修复后回填：`contracts.test.ts` 拆成 domain / actions / events 三个文件；补 B3（`EventEnvelope` 夹具）、N1（五个严格开关）、N2（构建前清 `dist`）、N3（`EFFECT_SOURCES` / `SELF_VISIBILITY_PREFIX`）与 CR-003 一行 |
+| 2026-11-17 | v1.1 | RFC-001 实现后按实际落地的测试回填：新增 T-4（自递归）、T-5（代理改用 HTTP）、T-6（路径按 RFC）、T-7（构建测试不跳过）；RFC-001 小节的实际用例数以 `RFCs/RFC-001-*.md` §8.5 为准 |
 | 2026-11-17 | v1.0 | 初次生成：16 个 RFC 小节、222 条验收标准的逐条落表、126 条计划测试、6 项人工检查 |

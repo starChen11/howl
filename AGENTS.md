@@ -13,7 +13,7 @@
 1. **没有 `PRD.md` 不写产品代码；没有对应 RFC 不开工。** 讨论、调研、写文档不受限。
 2. **前置未完成不开工。** 开工某 RFC 前，它在 `RFCS.md` 里声明的前置 RFC 必须是 `Implemented` 或 `Reviewed`；`Changes requested` / `Spec changed` 不算。
 3. **测试计划早于实现。** `TEST-STRATEGY.md` 中该 RFC 的小节必须已存在，实现阶段按它写测试，而不是写完代码再补计划。
-4. **评审必须换会话。** 写过该 RFC 代码的会话不得自审；`/review-rfc` 要在新会话、只凭仓库文件进行。
+4. **评审只在 subagent 里做。** 写过该 RFC 代码的会话不得自审：由实现会话起一个**全新上下文**的 `subagent`（`subagent`，不是 `fork`；`reasoning_effort: max`），只凭仓库文件进行，输入用 [`docs/process/REVIEW-PROMPT.md`](docs/process/REVIEW-PROMPT.md)。用户不再手动开评审会话。
 5. **未获用户明确批准，不写代码。** `/implement-rfc` 的第一阶段只出计划，等批准。
 6. **需求变化走 `/manage-changes`。** 不许直接改 `PRD.md` / `FEATURES.md` / `RULES.md` / RFC 来"顺手支持新需求"。
 7. **冲突不许静默裁决。** 权威顺序 `PRD.md > FEATURES.md > RULES.md > RFC > 计划`；按哪个走、为什么，写进 `RFCS.md` 的 `## Open conflicts`。
@@ -21,12 +21,12 @@
 
 ## 工程规则
 
-写代码前读 [`RULES.md`](RULES.md)。它有 75 条带永久 ID 的规则，权威在那一份，这里**不复制**，只点出四条最容易被违反、且违反后最贵的：
+写代码前读 [`RULES.md`](RULES.md)。它有 77 条带永久 ID 的规则，权威在那一份，这里**不复制**，只点出四条最容易被违反、且违反后最贵的：
 
 - **ARCH-1** —— `src/engine/` 不得 import 任何 UI、网络或 DOM 依赖。规则引擎必须能脱离浏览器与 LLM 单独跑。
 - **SEC-1 / SEC-5** —— API key 不出服务端；发给客户端的对局视图必须由 `project(state, observerId)` 生成，禁止直接序列化完整状态。这两条一起守住了「AI 不作弊」这个卖点。
 - **AI-5** —— 复盘展示的 AI 推理只能来自结构化载荷的 `reason` 字段，不许用模型的隐藏思维链。否则换模型或改参数时，复盘会整体崩掉。
-- **RUL-1 ~ RUL-10** —— 狼人杀的规则歧义已在 `RULES.md` §6 裁决。引擎遇到**未裁决**的分支必须抛错（ARCH-11），不许默认选一个。
+- **RUL-1 ~ RUL-12** —— 狼人杀的规则歧义已在 `RULES.md` §6 裁决。引擎遇到**未裁决**的分支必须抛错（ARCH-11），不许默认选一个。
 
 依赖版本一律以 `RULES.md` §2 为准，且那一节的数字是核对过 npm 注册表的；改版本必须重新核对并登记。
 

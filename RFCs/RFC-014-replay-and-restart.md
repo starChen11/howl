@@ -46,7 +46,7 @@ interface ThoughtEntry {
   seq: number; seat: SeatId;
   kind: 'speech' | 'vote' | 'night-action';
   reason: string;            // 模型的 reason 字段
-  claimedRole?: string;      // 悍跳等（RFC-009）
+  claim?: Claim;             // 声称与指认，供悍跳 / 狼查杀狼展示（RFC-009；类型见 RFC-001 §2.3）
   chose: string;             // 目标或发言摘要
 }
 ```

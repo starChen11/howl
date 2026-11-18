@@ -1,0 +1,149 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+import { initialStateFromSeed, nextInt, nextRandom, shuffle } from '@engine/rng';
+
+import { collectTypeScriptFiles, findFilesContaining } from '../helpers/source-scan';
+
+/**
+ * AC-13 与随机源的确定性（DATA-4 / DATA-5 / F38）。
+ *
+ * 最有价值的是最后一条：**扫描源码断言没有 `Math.random(`**。随机源一旦绕过 `RngState`，
+ * 一局就再也重放不出来，而且不会有任何测试因此变红——除非有人主动去扫。
+ */
+
+const ENGINE_DIR = fileURLToPath(new URL('../../src/engine', import.meta.url));
+
+/**
+ * 递归扫描（评审 B1 / P13）：RFC-003 会加 `engine/phases/`、`engine/resolve/` 子目录。
+ *
+ * 根目录**可注入**是为了让「它真的是递归的」变成接线层面可测的事实（评审 B-R2-2）：
+ * 如果这里换回一层 `readdirSync`，下面那条用临时目录的用例会立刻红。
+ */
+function engineSources(root: string = ENGINE_DIR) {
+  return collectTypeScriptFiles(root);
+}
+
+describe('AC-13 · 引擎不得使用 Math.random', () => {
+  it('递归扫描 src/engine 的**全部** .ts，没有任何违规调用', () => {
+    expect(findFilesContaining(engineSources(), 'Math.random(')).toEqual([]);
+  });
+
+  it('扫描确实读到了文件（防止断言因为走空而假通过）', () => {
+    const files = engineSources();
+    const names = files.map((file) => file.relativePath).sort();
+
+    expect(files.length).toBeGreaterThanOrEqual(9);
+    // 这九个是 RFC-002 的交付物；少一个说明扫描或目录结构出了问题。
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'apply.ts',
+        'effects.ts',
+        'errors.ts',
+        'init.ts',
+        'replay.ts',
+        'rng.ts',
+        'step.ts',
+        'transitions.ts',
+        'win.ts',
+      ]),
+    );
+  });
+
+  it('接线本身是递归的：临时根目录里的嵌套违规也必须被扫到（B-R2-2）', () => {
+    // 这条测试守的是 engineSources() 的**接线**，不是 helper 的实现：
+    // 只用临时目录、不碰 src/，而且断言的是「嵌套文件被找到」这个结果。
+    const root = mkdtempSync(join(tmpdir(), 'howl-engine-scan-'));
+    try {
+      writeFileSync(join(root, 'top.ts'), 'export const clean = 1;\n');
+      mkdirSync(join(root, 'nested'), { recursive: true });
+      writeFileSync(join(root, 'nested', 'violation.ts'), 'export const noise = Math.random();\n');
+
+      expect(findFilesContaining(engineSources(root), 'Math.random(')).toEqual([
+        'nested/violation.ts',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('随机源的确定性', () => {
+  it('同种子两次抽出的序列相等', () => {
+    const draw = (): number[] => {
+      let rng = initialStateFromSeed(1234);
+      const values: number[] = [];
+      for (let i = 0; i < 20; i += 1) {
+        const next = nextRandom(rng);
+        rng = next.rng;
+        values.push(next.value);
+      }
+      return values;
+    };
+
+    expect(draw()).toEqual(draw());
+  });
+
+  it('不同种子抽出不同序列', () => {
+    const first = nextRandom(initialStateFromSeed(1)).value;
+    const second = nextRandom(initialStateFromSeed(2)).value;
+
+    expect(first).not.toBe(second);
+  });
+
+  it('nextRandom 的值落在 [0, 1)', () => {
+    let rng = initialStateFromSeed(7);
+    for (let i = 0; i < 50; i += 1) {
+      const next = nextRandom(rng);
+      rng = next.rng;
+      expect(next.value).toBeGreaterThanOrEqual(0);
+      expect(next.value).toBeLessThan(1);
+    }
+  });
+
+  it('nextInt 的值落在 [0, max)', () => {
+    let rng = initialStateFromSeed(99);
+    for (let i = 0; i < 50; i += 1) {
+      const next = nextInt(rng, 9);
+      rng = next.rng;
+      expect(Number.isInteger(next.value)).toBe(true);
+      expect(next.value).toBeGreaterThanOrEqual(0);
+      expect(next.value).toBeLessThan(9);
+    }
+  });
+
+  it('nextInt 的非法上界抛 RangeError', () => {
+    const rng = initialStateFromSeed(1);
+
+    expect(() => nextInt(rng, 0)).toThrow(RangeError);
+    expect(() => nextInt(rng, -3)).toThrow(RangeError);
+    expect(() => nextInt(rng, 2.5)).toThrow(RangeError);
+  });
+
+  it('非整数种子抛 RangeError', () => {
+    expect(() => initialStateFromSeed(1.5)).toThrow(RangeError);
+  });
+
+  it('洗牌是排列、可复现、且不改入参', () => {
+    const items = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const snapshot = [...items];
+
+    const first = shuffle(initialStateFromSeed(42), items);
+    const second = shuffle(initialStateFromSeed(42), items);
+
+    expect(first.items).toEqual(second.items);
+    expect([...first.items].sort((a, b) => a - b)).toEqual(snapshot);
+    expect(items).toEqual(snapshot);
+    expect(first.rng).toEqual(second.rng);
+  });
+
+  it('洗牌确实推进了生成器状态', () => {
+    const before = initialStateFromSeed(42);
+    const shuffled = shuffle(before, [1, 2, 3, 4, 5]);
+
+    expect(shuffled.rng).not.toEqual(before);
+  });
+});

@@ -54,6 +54,7 @@ const DecisionSchema = z.object({
 
 - `reason` 是复盘展示的**唯一**来源（AI-5）。`reasoning_content` 只进调用元数据，复盘不读。
 - `claim` 是 RFC-009 判定「悍跳 / 狼查杀狼」的字段。本 RFC 定义形状，RFC-009 定义判定规则。
+- `claim` 的**类型**定义在 `src/shared/events.ts` 的 `Claim`（与 `AI_THOUGHT.claim` 同一份，RFC-001 §2.3），本 RFC 只按它写 Zod schema。产出 `AI_THOUGHT` 时 `claim` **原样带入、不做扁平化**（CR-003 C3）。
 - `target` 的必填性按 action 决定，由 `toAction` 校验（见 §2.3），不在 Zod 层强制。
 - `speech` 的 300 字上限与 PRD FR-30 的**玩家**发言上限是**同一个数字但不同对象**；此处约束 AI 单轮发言，超长截断而非拒绝。
 
