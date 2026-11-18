@@ -22,7 +22,6 @@ const CONFIG: LlmConfig = {
   maxOutputTokens: 800,
   timeoutMs: 50,
   maxRetries: 1,
-  baseURL: 'https://api.deepseek.com',
 };
 
 const CTX: ProjectedContext = {
@@ -295,5 +294,74 @@ describe('AC-5 · 429 与网络错误也会重试', () => {
       ),
     ).rejects.toThrow();
     expect(calls).toBe(2);
+  });
+});
+
+describe('B4 · 301 字发言在 decide 层被截断（不是被拒）', () => {
+  it('模型返回 301 字发言 → schema 通过 → toAction 截断到 300', async () => {
+    const fetchImpl = (async () =>
+      chatResponse({
+        id: 'x',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: JSON.stringify({
+                action: 'speak',
+                speech: 'x'.repeat(301),
+                reason: '说完了',
+              }),
+            },
+          },
+        ],
+        usage: {},
+      })) as unknown as typeof fetch;
+
+    const outcome = await decide(
+      { config: CONFIG, fetchImpl },
+      {
+        gameId: 'g',
+        seq: 1,
+        ctx: { ...CTX, phase: 'DAY_SPEECH', pending: 'speak' },
+        mode: 'slaughter-side',
+      },
+    );
+    if ('duplicate' in outcome) throw new Error('不应被判为重复');
+
+    // schema 层不再拒绝长发言
+    expect(outcome.decision.speech).toHaveLength(301);
+  });
+});
+
+describe('B6 · 重试分类要能区分错误码', () => {
+  it('超时被记成 TIMEOUT（而不是笼统的 SERVER_ERROR）', async () => {
+    const log = new CallMetaLog();
+    const fetchImpl = (async () => {
+      throw Object.assign(new Error('timed out'), { name: 'TimeoutError' });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      decide(
+        { config: CONFIG, fetchImpl, metaLog: log },
+        { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+      ),
+    ).rejects.toSatisfy((error: unknown) => (error as LlmError).code === 'TIMEOUT');
+
+    expect(log.all().map((meta) => meta.errorCode)).toEqual(['TIMEOUT', 'TIMEOUT']);
+  });
+
+  it('网络错误被记成 NETWORK', async () => {
+    const log = new CallMetaLog();
+    const fetchImpl = (async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    await expect(
+      decide(
+        { config: CONFIG, fetchImpl, metaLog: log },
+        { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+      ),
+    ).rejects.toSatisfy((error: unknown) => (error as LlmError).code === 'NETWORK');
   });
 });

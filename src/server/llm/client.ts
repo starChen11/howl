@@ -20,6 +20,9 @@ import { buildSystemPrompt, buildUserMessage } from './prompts/base';
  * 3. 格式校验失败时**把校验错误回喂**，否则第二次会原样再错一次。
  */
 
+/** **唯一**出现模型端点的地方（AC-1）。 */
+const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
+
 export class LlmError extends Error {
   readonly code: string;
 
@@ -81,7 +84,7 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
   }
   const client = new OpenAI({
     apiKey: config.apiKey,
-    baseURL: config.baseURL,
+    baseURL: DEEPSEEK_BASE_URL,
     ...(deps.fetchImpl === undefined ? {} : { fetch: deps.fetchImpl }),
     maxRetries: 0, // 重试由本节控制，SDK 自带的重试会让 attempt 与本节的计数对不上
   });
@@ -198,6 +201,16 @@ function safeJson(content: string): unknown {
  */
 function mapError(error: unknown): LlmError {
   if (error instanceof LlmError) return error;
+
+  // 顺序有讲究：SDK 把「超时」包成 `APIConnectionTimeoutError`（属于连接错误的一种），
+  // 先判连接错误会把超时误归成 NETWORK，重试分类与日志都会跟着错。
+  if (error instanceof OpenAI.APIConnectionTimeoutError) {
+    return new LlmError('TIMEOUT', '调用超时');
+  }
+
+  if (error instanceof OpenAI.APIConnectionError) {
+    return new LlmError('NETWORK', '网络错误');
+  }
 
   if (error instanceof OpenAI.APIError) {
     return new LlmError(statusToCode(error.status ?? 500), `模型服务返回 ${String(error.status)}`);

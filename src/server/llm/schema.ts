@@ -23,7 +23,9 @@ export const DecisionSchema = z.object({
   ]),
   target: z.number().int().min(1).max(9).optional(),
   reason: z.string().min(1).max(200),
-  speech: z.string().max(300).optional(),
+  // 长度不在这里限制：超长由 `toAction` 截断（RFC §2.2）。在 schema 层拒绝会让
+  // 整条决策作废——模型多说两句就把这一轮的行动弄丢了。
+  speech: z.string().optional(),
   claim: z
     .object({
       role: z.enum(['seer', 'witch', 'hunter', 'villager', 'wolf']).optional(),

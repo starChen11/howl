@@ -147,3 +147,26 @@ describe('B3 · 胜利条件按模式生成', () => {
     expect(side).not.toBe(all);
   });
 });
+
+describe('B3 · 私有事件（狼聊、查验）要进提示', () => {
+  it('狼的 privateEvents 被渲染成可读句', () => {
+    const wolfCtx: ProjectedContext = {
+      ...CTX,
+      self: { seat: 1, role: 'wolf', alive: true, personaId: null },
+      privateEvents: [
+        {
+          gameId: 'g',
+          seq: 5,
+          ts: 5,
+          type: 'WOLF_CHAT_POSTED',
+          visibleTo: 'wolves',
+          payload: { seat: 2, text: '今晚刀 4 号', round: 'night-chat' },
+        },
+      ] as never,
+    };
+
+    const message = buildUserMessage(wolfCtx);
+    expect(message).toContain('只有你能看到的信息');
+    expect(message).toContain('今晚刀 4 号');
+  });
+});

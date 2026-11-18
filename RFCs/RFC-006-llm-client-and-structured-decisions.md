@@ -256,3 +256,16 @@ interface CallMeta {
 ```
 $ pnpm test → 55 files / 449 tests 全绿
 ```
+
+### 8.7 Round 2 回应
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **B4 / C-50** 根本没修 | `schema.ts` 仍是 `speech.max(300)`——上一轮声称改成截断，**那次字符串替换又没命中**（同一类失误的第四次：C-30 / C-34 / C-35 / 这里）。301 字在 schema 层就被判 `too_big`，`toAction` 的 `slice` 永远到不了 | schema 去掉长度限制；新增 **`decide` 层**用例：模型返回 301 字 → 解析成功、长度保留 301，再由 `toAction` 截断 |
+| **B3 / C-49** 残项 | ①狼的 `privateEvents`（夜聊）没进提示——夜聊等于白做；②系统提示只说 `action/target/reason`，模型不知道 `speak` 的文本该放哪；③规则书缺投票/夜聊/自曝 | 提示补「只有你能看到的信息」段（渲染私有事件）；输出契约补 `speech` 与 `claim`；规则书补弃权/重投/自曝/夜聊四条 |
+| **B6 / C-52** 残项 | ①端点同时被 `config.ts` 与测试放行；②AC-13 搜的是带引号的字面量；③超时/网络错误被归成 `SERVER_ERROR` | 端点字面量只留 `client.ts`；AC-13 改为不依赖引号；`mapError` 按 `APIConnectionTimeoutError` → `APIConnectionError` → `APIError` 的顺序分类（SDK 把超时包成连接错误的一种，顺序错就会误归），并补 `CallMeta.errorCode` 断言 |
+| **C-54** 新登记 | 为了让 `base.ts` 复用封装，我把 `dependency-direction` 的允许方向改成了 `server → server`，而 RFC-001 AC-11 只许 `server` 引用 `engine` 与 `shared`——**这是未走 `/manage-changes` 的跨 RFC 契约变更** | 把 `wrapPublicUtterance` 移到 `src/shared/injection.ts`（纯函数），`server/project/inject.ts` 只做转出；允许方向恢复原样 |
+
+```
+$ pnpm test → 55 files / 455 tests
+```

@@ -1,6 +1,6 @@
 import type { ProjectedContext } from '@shared/project';
 import { INJECTION_NOTICE } from '@shared/injection';
-import { wrapPublicUtterance } from '@server/project/inject';
+import { wrapPublicUtterance } from '@shared/injection';
 import { ROLE_LABELS } from '@shared/terms';
 
 import { RULES_TEXT, winConditionText } from './rules';
@@ -20,7 +20,8 @@ export function buildSystemPrompt(input: {
     RULES_TEXT,
     winConditionText(input.mode),
     INJECTION_NOTICE,
-    '回答必须是一个 JSON 对象，包含 action、target（若需要）、reason 三个字段；reason 用一句话说明你的判断依据。',
+    '回答必须是一个 JSON 对象：action 必填；需要指向某人时给 target；reason 必填，用一句话说明判断依据。',
+    'action 为 speak 时，把发言原文放在 speech 字段；若你想声称身份或指认他人，可放在 claim 字段（{ role?, checks?, accuses? }）。',
   ];
 
   // 人格在 RFC-009 之前恒为 null；留出接缝，但不填假值。
@@ -118,6 +119,15 @@ export function buildUserMessage(ctx: ProjectedContext): string {
   if (ctx.publicEvents.length > 0) {
     lines.push('以下是已经公开发生的事（按时间顺序）：');
     for (const event of ctx.publicEvents) {
+      lines.push(`- ${renderEvent(event)}`);
+    }
+  }
+
+  // 私有事件是**该席位自己的**情报（狼队夜聊、查验结果）。它们不进公开区，但必须进提示——
+  // 否则狼看不到队友说了什么，等于夜聊白做。
+  if (ctx.privateEvents.length > 0) {
+    lines.push('只有你能看到的信息：');
+    for (const event of ctx.privateEvents) {
       lines.push(`- ${renderEvent(event)}`);
     }
   }

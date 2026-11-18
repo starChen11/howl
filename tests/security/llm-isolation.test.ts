@@ -23,7 +23,7 @@ describe('AC-1 · API 端点只在一处', () => {
 
     expect(hits.length).toBeGreaterThan(0);
     for (const path of hits) {
-      expect(['server/llm/config.ts', 'server/llm/client.ts']).toContain(path);
+      expect(['server/llm/client.ts']).toContain(path);
     }
   });
 });
@@ -47,7 +47,7 @@ describe('AC-2 · 密钥只被 config.ts 读取', () => {
 
 describe('AC-13 · 模型名只在配置里', () => {
   it('deepseek-flash 字面量只出现在 config.ts 与提示词无关的文件', () => {
-    const hits = findFilesContaining(files(), "'deepseek-flash'");
+    const hits = findFilesContaining(files(), 'deepseek-flash');
 
     expect(hits).toEqual(['server/llm/config.ts']);
   });

@@ -15,7 +15,6 @@ export interface LlmConfig {
   timeoutMs: number;
   /** 总尝试次数 = 1 + maxRetries。 */
   maxRetries: number;
-  baseURL: string;
 }
 
 export const DEFAULT_LLM_CONFIG = {
@@ -25,7 +24,6 @@ export const DEFAULT_LLM_CONFIG = {
   maxOutputTokens: 800,
   timeoutMs: 30_000,
   maxRetries: 1,
-  baseURL: 'https://api.deepseek.com',
 } as const;
 
 function readInt(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -57,6 +55,5 @@ export function loadLlmConfig(env: NodeJS.ProcessEnv = process.env): LlmConfig {
     maxOutputTokens: DEFAULT_LLM_CONFIG.maxOutputTokens,
     timeoutMs: readInt(env, 'LLM_TIMEOUT_MS', DEFAULT_LLM_CONFIG.timeoutMs),
     maxRetries: readInt(env, 'LLM_MAX_RETRIES', DEFAULT_LLM_CONFIG.maxRetries),
-    baseURL: DEFAULT_LLM_CONFIG.baseURL,
   };
 }

@@ -20,3 +20,24 @@ export const UTTERANCE_LIMIT = 300;
 export function escapeAngleBrackets(text: string): string {
   return text.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
+
+/**
+ * 玩家输入的封装（RFC-007 §2.6）。
+ *
+ * 它是**纯函数**，放在 `shared` 是为了让服务端的提示组装与测试共用同一份：
+ * 放在 `server/` 内会让 `server → server` 的跨模块引用出现，而 `ARCH-11` 的依赖方向
+ * 只允许 `server` 引用 `engine` 与 `shared`（C-54）。
+ */
+export function wrapPublicUtterance(input: {
+  seat: number;
+  text: string;
+}): { ok: true; text: string } | { ok: false; code: 'UTTERANCE_TOO_LONG' } {
+  if (input.text.length > UTTERANCE_LIMIT) {
+    return { ok: false, code: 'UTTERANCE_TOO_LONG' };
+  }
+
+  return {
+    ok: true,
+    text: `<public_utterance seat="${input.seat}">${escapeAngleBrackets(input.text)}</public_utterance>`,
+  };
+}

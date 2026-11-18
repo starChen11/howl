@@ -35,9 +35,7 @@ const ALIAS_LAYER: Record<string, Layer> = {
 const ALLOWED_LAYERS: Record<Layer, readonly Layer[]> = {
   shared: [],
   engine: ['shared'],
-  // `server → server` 允许：服务端内部本来就分层（`llm/` 用 `project/` 的封装），
-  // 禁止同层引用会逼着把已经写好的实现复制一份——那正是 ARCH-2 要防的重复。
-  server: ['engine', 'shared', 'server'],
+  server: ['engine', 'shared'],
   client: ['shared'],
 };
 
