@@ -397,3 +397,225 @@ P3 实跑得到的用户消息只有：
 3. 修完后重新跑本文件里的 M1–M15 探针（至少 B1–B7 对应的那些），并把结果写进 RFC-006 的 §8.4 / §8.5。
 
 本次评审没有修改任何源码，没有 `git commit`；所有探针改动已恢复，工作树在评审结束时 clean。评审证据与探针见本文件 §2 / §3；Open conflicts 已登记到 `RFCS.md` §8.16（C-47 ~ C-53）。
+
+---
+
+## Round 2 -- 2026-11-18
+
+> **范围**：按用户指定，只复核 Round 1 七个阻塞项（B1–B7）的修复，以及修复本身引入的回归；Round 1 已核对、已关闭的 AC 与维度不再逐条重查。
+> **基线**：`main` / HEAD `ac6c384`（`fix(rfc-006): 决策去重、AI_THOUGHT 产出与真实提示内容（Round 1）`）。评审开始时 `git status --porcelain` 为空。
+> **结论**：**Changes requested** · **Overall Risk Level: High**。
+
+一句话：**B1 / B2 / B5 / B7 已闭环；B3 / B4 / B6 仍未闭环，另有一个新登记的跨 RFC 门禁冲突（C-54）与一个并发去重残项。**
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。所有命令在恢复探针后的干净工作树上执行：
+
+```
+$ pnpm typecheck
+EXIT:0
+
+$ pnpm lint
+EXIT:0
+
+$ pnpm format:check
+Checking formatting...
+All matched files use Prettier code style!
+EXIT:0
+
+$ pnpm build
+dist/client/assets/index-DTkfWeVY.js  219.65 kB │ gzip: 68.71 kB
+dist/server/index.js  1.25 kB │ gzip: 0.86 kB
+EXIT:0
+
+$ pnpm test
+ Test Files  55 passed (55)
+      Tests  451 passed (451)
+EXIT:0
+
+$ pnpm exec vitest run --project unit --coverage
+ Test Files  48 passed (48)
+      Tests  417 passed (417)
+All files | 96.69 | 93.33 | 97.14 | 96.97
+EXIT:0
+```
+
+`pnpm test:e2e` 未跑（`tests/e2e/` 为空，本 RFC 无 UI）；`pnpm selfplay` 未跑（RFC-015 占位）。`src/server/llm/` 仍未被 `src/server/index.ts` 引用，所以 `dist/server/index.js` 只有 1.25 kB——这不妨碍本 RFC 的 AC，但 `pnpm build` 仍不能作为 LLM 模块可打包的证据（Round 1 已指出，本轮无变化）。
+
+### 1. 七个阻塞项的复核
+
+| 项 | Round 1 的验收下限 | 本轮证据 | 判定 |
+|---|---|---|---|
+| **B1** AC-6 去重 | 按 `(gameId, seq, seat)` 去重；同轮第二次不调用模型；两条用例 | `src/server/llm/decision-log.ts:18-31`、`client.ts:79-81,163`；`client.test.ts:222-265`。探针：`has()` 恒 false → duplicate 用例红；`keyOf` 去掉 `seq` → 下一轮用例红。 | **PASS**（顺序调用）。见 §2 的并发残项 `N1`，不改变本轮结论。 |
+| **B2** `AI_THOUGHT` | 纯构造器；`self:<seat>`；`claim` 原样嵌套；投影可见性用例 | `src/server/llm/thought.ts:19-38`；`thought.test.ts:23-68`。探针：把 `visibleTo` 改成 `public` → 可见性用例红（observer≠3 均可见，2 条断言失败）。 | **PASS** |
+| **B3** 提示真实内容 | 发言原文、票型、死者、药水、刀口、可选动作；发言经 `wrapPublicUtterance`；胜利条件按 `mode` | 公开事件、知识清单、`pending`、12 个动作、mode 措辞已落地（`prompts/base.ts:77-126`；`rules.ts:18-22`）。**但**：狼聊在 `privateEvents`，`buildUserMessage` 只遍历 `publicEvents`（`base.ts:120`）；真实投影探针 `PRIVATE [ 'WOLF_CHAT_POSTED' ]`，提示里既无「今晚刀 4 号」也无「狼队频道」。系统提示仍只写「action、target、reason」三个字段（`base.ts:23`），没有 `speech` / `claim`；`rules.ts` 仍缺 RUL-2 / RUL-7 / RUL-9 / 自曝 / 夜聊。 | **NEEDS WORK** |
+| **B4** 发言超长截断 | schema 不再拒绝；`toAction` 截断；301 → 300 用例 | `schema.ts:26` 仍是 `speech: z.string().max(300).optional()`；`to-action.ts:96` 的 `slice` 只有直接调用 `toAction` 的用例（`to-action.test.ts:46-58`）覆盖。实跑 `DecisionSchema.safeParse(301 字)` → `success:false`、`too_big`；经 `decide()` 走真实路径 → 两次调用都 `INVALID_OUTPUT`，抛错，从未到达 `toAction`。 | **FAIL** |
+| **B5** `CallMeta.phase` | `ProjectedPhase`；去掉 `as`；`pending` 真正被读取 | `meta.ts:16` 已是 `ProjectedPhase`；`client.ts:109,153` 直接赋 `ctx.phase`，全仓无 `as CallMeta`；`buildUserMessage` 读 `ctx.pending`（`base.ts:113`）。探针：把 `CallMeta.phase` 改回 `Phase` → `tsc` 在 `client.ts:134/153/168` 报 `ProjectedPhase` 不可赋给 `Phase`。 | **PASS** |
+| **B6** 测试与静态扫描 | `.tsx` 入扫描；429 / 网络错误重试；AC-13 needle 去引号；AC-1 端点口径；TEST-STRATEGY 回填 | `.tsx` 已入扫描（`source-scan.ts:50`；往 `src/client/main.tsx` 写 key + endpoint 后 AC-1/AC-2 三条红，恢复后绿）。429 用例有锁（删 `RATE_LIMITED` → 红）。**但**：删 `NETWORK` 后「网络错误」用例仍绿、删 `TIMEOUT` 后「超时」用例仍绿（SDK 把两者包成 `OpenAI.APIError`，`mapError` 先按 `status ?? 500` 记成 `SERVER_ERROR`）；AC-13 仍搜 `"'deepseek-flash'"`（`llm-isolation.test.ts:50`），写双引号字面量到 `src/server/app.ts` 后 4/4 仍绿；AC-1 仍允许 `config.ts`（`llm-isolation.test.ts:26`），而 AC-1 只允许 `client.ts`；TEST-STRATEGY 的 RFC-006 表仍全部 `proposed`。 | **NEEDS WORK** |
+| **B7** 重投弃权 | `DAY_VOTE_RUNOFF` + `abstain` → `{reject}`；补用例 | `to-action.ts:81-87`；`to-action.test.ts:39-44`。探针：删掉该分支 → 用例红。 | **PASS** |
+
+### 1.1 关键探针原始输出
+
+**B3 / 真实投影的狼聊**（observer=2 的 wolf，`pending='chat'`，`step()` 产出一条 `WOLF_CHAT_POSTED`）：
+
+```
+PHASE NIGHT PENDING chat
+PRIVATE [ 'WOLF_CHAT_POSTED' ]
+你是 2 号，身份是 wolf，存活。
+现在是第 1 天，阶段是 NIGHT。
+...
+当前需要你做出：chat 决策。
+可选动作：kill、check、heal、poison、none、vote、abstain、speak、skip、shoot、expose、chat。
+```
+
+→ 用户消息里没有 `今晚刀 4 号`，也没有「狼队频道」。`WOLF_CHAT_POSTED` 在 `privateEvents`，而 `buildUserMessage` 只遍历 `publicEvents`。
+
+**B4 / 301 字发言经真实 `decide()`**（假 `fetch` 固定返回 301 字 `speech`，`maxRetries: 1`）：
+
+```
+DecisionSchema.safeParse(301 字) -> success: false
+issues = [{ "origin": "string", "code": "too_big", "maximum": 300, "path": ["speech"], ... }]
+CALLS 2 ERROR LlmError: 模型返回的格式不符合契约
+META [attempt 1, errorCode INVALID_OUTPUT] [attempt 2, errorCode INVALID_OUTPUT]
+```
+
+→ 决策在 schema 层被丢弃，`toAction` 的 `slice(0, 300)` 从未执行。
+
+**B6 / AC-13 引号盲区**（往 `src/server/app.ts` 追加 `export const probeModel = "deepseek-flash";`）：
+
+```
+✓ tests/security/llm-isolation.test.ts (4 tests)
+```
+
+→ 双引号字面量不被 `findFilesContaining(files(), "'deepseek-flash'")` 命中。
+
+**B6 / NETWORK 与 TIMEOUT 分类无锁**：
+
+```
+# 从 RETRYABLE 同时删 'NETWORK' + 'RATE_LIMITED'：429 红、网络错误仍绿
+Tests  1 failed | 12 passed (13)
+# 单独从 RETRYABLE 删 'TIMEOUT'：13/13 仍绿
+Tests  13 passed (13)
+```
+
+→ 两条用例只证明「有重试」，不证明错误被归到 `NETWORK` / `TIMEOUT`。
+
+**B8 / 恢复 RFC-001 的旧 allowlist**（`server: ['engine','shared']`）：
+
+```
++ "src/server/llm/prompts/base.ts 引用了 @server/project/inject（server → server）"
+```
+
+**N1 / 并发 `decide`**（同一 `(gameId, seq, seat)`，`Promise.all`）：
+
+```
+CONCURRENT_CALLS 2 A_DUP false B_DUP false
+```
+
+### 2. 新发现
+
+| # | 发现 | 证据 | 级别 |
+|---|---|---|---|
+| **B8 / C-54** | **RFC-001 AC-11 被悄悄放宽。** RFC-001 AC-11 要求「`src/server/` 只 import `@engine/*` 与 `@shared/*`」；`src/server/llm/prompts/base.ts:3` 为了用 RFC-007 的 `wrapPublicUtterance`，import 了 `@server/project/inject`。修复把 `tests/dependency-direction.test.ts:40` 的 `ALLOWED_LAYERS.server` 从 `['engine','shared']` 改成 `['engine','shared','server']`，没有走 `/manage-changes`，RFC-001 的 AC 与正文未改；RFC-006 只在 §8.6 的 B6 行以「顺带」提了一句。反向探针恢复旧 allowlist → `src/server/llm/prompts/base.ts 引用了 @server/project/inject（server → server）` 红。 | `RFCs/RFC-001...:297`、`tests/dependency-direction.test.ts:38-42`、`src/server/llm/prompts/base.ts:3`；已登记 `RFCS.md` §8.17 的 **C-54** | **阻塞（跨 RFC 契约）** |
+| **N1** | **`DecisionLog` 的并发去重不闭合。** `decide` 在入口查 `has()`，但 `claim()` 的返回值在成功路径被忽略（`client.ts:163`）；两个并发 `decide` 都通过入口检查时，都会调用模型、都返回 `decision`。探针：同一 `(gameId, seq, seat)` 并发两次 → `CONCURRENT_CALLS 2 A_DUP false B_DUP false`。 | `src/server/llm/decision-log.ts:26-31`、`client.ts:79-81,163` | 非阻塞改进（顺序重试已锁；但 AC-6 的「同一轮至多一个」在并发下不成立） |
+| **N2** | **实现说明自相矛盾且 C 编号错位。** RFC-006 §8.4 的 AC-6 仍写「—」、§8.5 仍写「去重是调用方责任，没有编排层可挂」，与 §8.6 的「已落地」矛盾；§8.6 的 B3/B4/B5/B7 分别写成 C-49/C-50/C-51/C-53，而 `RFCS.md` §8.16 里 C-49 是 B5、C-50 是 B3、C-51 是 B4、C-53 是文档漂移（B7 没有 C 编号）。 | `RFCs/RFC-006...:226,240,248-253`、`RFCS.md:361-374` | 非阻塞文档（DOC-1） |
+| **N3** | **`WOLF_CHAT_POSTED` 的渲染是死代码。** `base.ts:67-70` 有分支，但数据在 `privateEvents`；删掉该 case，`prompts.test.ts` 仍 8/8 绿。 | `prompts/base.ts:67-70`、`tests/server/llm/prompts.test.ts:71-138` | 随 B3 一起修；补真实投影用例 |
+| **N4** | **错误分类仍错。** `mapError` 先判 `OpenAI.APIError`，`APIConnectionTimeoutError` / `APIConnectionError` 的 `status` 是 `undefined`，会落进 `statusToCode(500)` 记成 `SERVER_ERROR`，而不是 `TIMEOUT` / `NETWORK`。这直接影响 `CallMeta.errorCode`（F20 / AI-7 的故障归因）。 | `client.ts:199-210`；B6 的 NETWORK / TIMEOUT 探针 | 非阻塞（但 B6 的测试证据要一起补） |
+| **N5** | `toThought` 的 `claim` 用 `as Claim`（`thought.ts:31`），`DecisionSchema.claim.*.target` 只是 `z.number().int()`，没有 1..9；`toThought` 也不返回完整 `EventEnvelope`（`gameId` / `seq` / `ts` 由调用方补）。 | `thought.ts:19-38`、`schema.ts:27-42` | 非阻塞（类型断言 / 契约完整性） |
+
+### 3. 逐条 AC（只列受本轮修复影响的）
+
+| AC | 判定 | 证据 |
+|---|---|---|
+| 1 | **FAIL** | endpoint 仍在 `config.ts:28`，测试把 `config.ts` 与 `client.ts` 都放行（`llm-isolation.test.ts:26`），与 AC-1 字面「除 `client.ts` 外不存在」冲突；`client.ts:14` 的注释仍声称「只出现在这个文件里」。 |
+| 2 | **PASS** | `.tsx` 已纳入；main.tsx 探针红。 |
+| 3 | **PASS** | Round 1 的 M1 仍适用；错误 message 不含响应体。 |
+| 4 | **PASS** | 未改动，Round 1 已验。 |
+| 5 | **NEEDS WORK** | 429 有锁；network / timeout 用例不锁错误分类（N4）。 |
+| 6 | **PASS（顺序）** | 两条用例 + 两个反向探针；并发残项见 N1。 |
+| 7 | **PASS** | 缺 `reason` 经 INVALID_OUTPUT 路径覆盖；AC-14 覆盖接受。 |
+| 8 | **PASS** | Round 1 已验，本轮未改动。 |
+| 9 | **PASS** | 本轮未改动；B7 只新增重投拒绝。 |
+| 10 | **PASS** | 本轮未改动。 |
+| 11 | **PASS** | 系统提示含 `INJECTION_NOTICE`；5 个禁词用例仍绿。 |
+| 12 | **PASS** | 13 字段用例；`phase` 类型已改 `ProjectedPhase`。 |
+| 13 | **NEEDS WORK** | 双引号 `"deepseek-flash"` 写到 `src/server/app.ts` 后扫描仍 4/4 绿。 |
+| 14 | **PASS** | 假 fetch 固定 JSON → `Decision` + `CallMeta`。 |
+
+### 4. Review dimensions
+
+#### 4.1 Product Type
+
+`PRD.md:20-22` 是 **game（主）+ web app（交付形态）**。本 RFC 只改服务端 LLM 模块，因此：核心循环 / 状态机（契约层）与数据模型 / 事件流适用；安全（密钥、注入、视野）适用；难度与进度、响应式、无障碍、浏览器支持、Playwright 冒烟不适用（本 RFC 无 UI；`tests/e2e/` 为空）。跳过是显式的。
+
+#### 4.2 RFC adherence — **FAIL**
+
+- B4 的 schema 仍拒绝 301 字，与 §2.2 / D-6 相反；§8.6 的「schema 不再限长」不实。
+- B3 的狼聊 / `privateEvents` 没有进入提示；系统提示没有 `speech` / `claim`；规则书缺 RUL-2 / 7 / 9 / 自曝 / 夜聊。
+- B6 的 AC-1 端点位置仍不合 AC 字面；AC-13 的扫描仍可被引号绕过。
+- B8 / C-54：RFC-001 AC-11 被放宽；跨 RFC 修改没有用户批准。
+- DOC-1：`buildSystemPrompt` 的 `rules` 参数、`toAction` 的 `ts` 参数、`DecisionContext` 的 `pending` 删除等偏离没有完整记入 §8.2；§8.4 / §8.5 与 §8.6 自相矛盾（N2）。
+
+**建议**：B4 改成 `.transform` 截断或删除 `max(300)` 并补 `decide` 层用例；B3 补 `privateEvents`（至少 `WOLF_CHAT_POSTED`，并走 `wrapPublicUtterance` 或等价数据封装）与 `speech` / `claim` 契约；B6 按 AC 字面修端点与 needle；C-54 按 §8.17 的选项裁决。
+
+#### 4.3 RULES compliance — **NEEDS WORK**
+
+- **ARCH-2 / RFC-001 AC-11**：B8 / C-54，测试门禁被放宽。
+- **AI-7 / F20**：`CallMeta.errorCode` 对真实 SDK 的 timeout / network 仍是 `SERVER_ERROR`（N4）。
+- **AI-9**：`thinking` 仍只是配置 / 日志字段，请求未体现；Round 1 已指出，本轮未改动（不阻塞本轮）。
+- **TEST-1**：AC-5 的 network / timeout 没有锁错误分类；B4 没有端到端截断用例；B3 的狼聊 / 输出契约没有用例。
+- **DOC-1**：见 4.2 / N2。
+- **STYLE-3 / STYLE-4**：`thought.ts:31` 的 `as Claim` 是现存的类型逃逸（非阻塞）。
+
+#### 4.4 Security — **NEEDS WORK**
+
+- **密钥隔离**：AC-2 现在能扫 `.tsx`，P5 红；`DEEPSEEK_API_KEY` 仍只在 `config.ts`；构建产物无 key。**但 AC-1 的端点扫描仍允许 `config.ts`**，且 `client.ts:14` 的注释不实。
+- **错误脱敏**：通过（Round 1 M1 仍适用）。
+- **提示注入**：公开发言现在经 `wrapPublicUtterance`，防注入层开始有数据；但狼聊在 `privateEvents` 未渲染，修 B3 时必须把它当数据包起来（不要直接拼 `WOLF_CHAT_POSTED.text`）。
+- **静态扫描**：AC-13 的引号格式盲区仍在；这是「测试证据不足」，不是当前泄漏。
+
+#### 4.5 Performance — **PASS（沿用 Round 1 的非阻塞项）**
+
+本轮没有引入新的性能问题。`decide` 每次 `new OpenAI`、429 / 5xx 立即重试没有退避——Round 1 已作为非阻塞改进记录，本轮未改，不影响本轮判定。
+
+#### 4.6 Maintainability — **NEEDS WORK**
+
+- §8.4 / §8.5 与 §8.6 矛盾；§8.6 的 C 编号与 `RFCS.md` §8.16 错位（N2）。
+- `WOLF_CHAT_POSTED` 是死渲染分支（N3）。
+- `TEST-STRATEGY.md` 的 RFC-006 表仍全部 `proposed`，实际文件已落地为 `client.test.ts` / `to-action.test.ts` / `prompts.test.ts` / `llm-isolation.test.ts` / `thought.test.ts`（C-53）；顶部基线还写 449 tests，实际是 451。
+- `toThought` 不返回完整信封；`claim` 的 `as Claim` / target 范围未锁（N5）。
+- `README` 的用例数已由 449 修到 451（本轮同步）；`client.ts:14` 的「只出现在这个文件里」仍需改。
+
+### 5. Blocking Issues（合并前必须处理）
+
+| # | 问题 | 最低修复 |
+|---|---|---|
+| **B3** | 狼聊（`privateEvents`）未进提示；系统提示未给 `speech` / `claim` 契约；规则书缺 RUL-2 / 7 / 9 / 自曝 / 夜聊 | 渲染 `privateEvents`（至少 `WOLF_CHAT_POSTED`，封装后注入）；系统提示 / JSON Output 明确 `speech`（`speak` 必填）与 `claim` 形状；补 RUL 规则与真实投影用例 |
+| **B4** | `DecisionSchema` 的 `speech.max(300)` 使 301 字决策在 schema 层被拒，`toAction` 的截断不可达 | 删除 `max(300)` 或用 `.transform` 截断；补 `decide` 层 301 → 300 用例（假 fetch 返回 301 字） |
+| **B6** | AC-1 端点仍允许 `config.ts`；AC-13 needle 仍带引号；network / timeout 用例不锁 `NETWORK` / `TIMEOUT` 分类；TEST-STRATEGY 未回填 | 按 AC-1 把端点移回 `client.ts` 或走 `/manage-changes` 改 AC 措辞；needle 去引号并补双引号回归；补 `CallMeta.errorCode` 断言并修 `mapError`；回填 TEST-STRATEGY |
+| **B8 / C-54** | RFC-001 AC-11 被 `server → server` 的 allowlist 改动悄悄放宽 | 走 `/manage-changes` 正式修订 RFC-001，或把 `wrapPublicUtterance` 移到不触发 server → server 的位置；不得只改测试 |
+
+### 6. Improvement Suggestions（非阻塞）
+
+1. `DecisionLog.claim()` 的返回值应在成功解析后检查：`if (!claim(key)) return { duplicate: true }`，并补并发用例（N1）；或让 `decisionLog` 成为必填依赖，避免生产调用忘传。
+2. 修 `mapError` 的判断顺序：先识别 `OpenAI.APIConnectionTimeoutError` / `APIConnectionError`，再落到 `APIError`；这样 `CallMeta.errorCode` 才是 `TIMEOUT` / `NETWORK`（N4）。
+3. `toThought` 返回完整 `GameEvent`（含 `gameId` / `seq` / `ts`），或在调用方提供 `emitThought` 辅助；`claim` schema 用 `seatIdSchema` / 类型级断言锁定 `Claim`（N5）。
+4. `buildUserMessage` 的身份名改走 `ROLE_LABELS`，并补 `HUNTER_SHOOT` 等公开事件的渲染；`WOLF_CHAT_POSTED` 若渲染，必须走封装（N3）。
+5. 同步 RFC-006 §8.4 / §8.5 与 §8.6；修正 §8.6 的 C 编号（B3→C-50、B4→C-51、B5→C-49、B7→独立编号或删去），并在 §8.2 补 `buildSystemPrompt` / `toAction` / `DecisionContext` 的签名偏离（N2）。
+6. 回填 `TEST-STRATEGY.md:233-244`：把已有文件标 `existing`，把 B3 / B4 / B6 的残项标成 `missing`；把顶部基线的 449 改为 451（`README` 已在本轮同步）。
+7. `new OpenAI` 提到 `decide` 外层复用；429 / 5xx 加指数退避 + 抖动（沿用 Round 1 的非阻塞项）。
+
+### 7. 结论与状态
+
+**结论：Changes requested · Overall Risk Level: High。**
+
+Round 1 的 B1 / B2 / B5 / B7 确实修好了，且都有能被打红的回归锁；B6 的 `.tsx` 与 429 部分也做了。但 **B4 是最直接的硬伤**：`schema.ts` 的 `max(300)` 根本没改，301 字发言仍会在 schema 层被丢弃并触发两次 `INVALID_OUTPUT`，RFC §8.6 的「schema 不再限长」与代码相反。B3 只修了公开内容，狼聊（`privateEvents`）与 `speech` / `claim` 输出契约仍缺，真实模型看不到队友夜聊、也不知道发言该放哪个字段；B6 的 AC-1 / AC-13 / 错误分类仍有可复现盲区；此外，B3 的修复为了 import `@server/project/inject` 把 RFC-001 AC-11 的依赖门禁放宽了，这是未登记的跨 RFC 契约变更（C-54）。
+
+建议的下一步：
+
+1. 按 §5 修 B3 / B4 / B6；B4 的修复必须补 `decide` 层用例，而不是只测 `toAction`。
+2. 由 `/manage-changes` 处理 C-54（或把封装移到不触发 server → server 的位置），再复审。
+3. 修完后重跑本轮的关键探针：301 字经 `decide`、真实投影的狼聊、`.tsx` 扫描、双引号 needle、`NETWORK` / `TIMEOUT` 分类、并发 `DecisionLog`、恢复旧 allowlist 的依赖门禁，并把结果写入 RFC §8.4 / §8.5。
+
+**工作树**：评审开始与结束 `git status --porcelain` 为空；所有探针改动从 `/tmp/rfc006-r2-backup-1795003967` 恢复（未用 `git checkout`），临时探针测试已删除；没有 `git commit`。本轮登记的 Open conflicts：`RFCS.md` §8.17 的 **C-54**；§8.16 的 C-47 / C-48 / C-49 改为 Closed，C-50 / C-51 / C-52 / C-53 保留为 Open（部分修复 / 未修）。
