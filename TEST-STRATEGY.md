@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.6 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.11 · 最后更新 2026-11-17
+> 版本 v1.7 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 / `RFCS.md` v2.16 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -23,9 +23,9 @@ ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND
 
 所以本文件初稿里 `Exists?` 列全部是 `proposed`。
 
-### 0.2 RFC-001 落地后（v1.2 回填）
+### 0.2 RFC-001/002 落地后（v1.2 / v1.7 回填）
 
-RFC-001 已实现并通过评审修复，`Exists?` 按实际落地情况回填（`existing: <文件>`）。当前实测：
+RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情况回填（`existing: <文件>`）。当前实测：
 
 ```
 $ pnpm test
@@ -156,7 +156,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 8 | `tests/engine/reject.test.ts`：phase 不匹配 → `Rejected`（`PHASE_MISMATCH`）且除 seq 外状态不变；另覆盖 `START_STATE_MISMATCH` | unit | existing: tests/engine/reject.test.ts | Must |
 | 9 | `tests/engine/transitions.test.ts`：表覆盖 14 phase、每个允许对都有 handler、假表缺 handler 抛 `UnhandledTransitionError` | unit | existing: tests/engine/transitions.test.ts | Must |
 | 10、11、12 | `tests/engine/effects.test.ts`：顺序（order + id）、两次应用相等、假 modifier 注入改变终态、无 modifier 时仅规范化 | unit | existing: tests/engine/effects.test.ts | Must |
-| 13 | `tests/engine/rng.test.ts`：扫描 `src/engine` 无 `Math.random(`（含反空转断言）+ PRNG 确定性 | unit | existing: tests/engine/rng.test.ts | Must |
+| 13 | `tests/engine/rng.test.ts`（递归扫描 + 接线可注入，含临时目录嵌套用例）+ `tests/helpers/source-scan.ts` / `source-scan.test.ts`（helper 的递归能力与 POSIX 归一化）：扫描 `src/engine` 无 `Math.random(`（含反空转断言）+ PRNG 确定性 | unit | existing: 三个文件 | Must |
 | 14、16 | `tests/meta/coverage.test.ts`（阈值 + 无忽略注释）+ `tests/setup/no-network.ts` 与 `tests/engine/no-network.test.ts`（`fetch` 抛错桩） | integration / unit | existing: 三个文件 | Must |
 | 15 | `tests/engine/win.test.ts`：屠边/屠城各断言、RUL-5 只数存活、纯谓词（调用前后状态相等） | unit | existing: tests/engine/win.test.ts | Must |
 | C-18（变更） | `tests/engine/replay-parity.test.ts`：`replay` 后用重建状态继续 `step`，事件/终态/胜负判定都与实时一致。比较的是整个 state，RFC-003 起加派生字段会自动覆盖 | unit | existing: tests/engine/replay-parity.test.ts | Must |
@@ -433,6 +433,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-17 | v1.0 | 初次生成：16 个 RFC 小节、222 条验收标准的逐条落表、126 条计划测试、6 项人工检查 |
+| 2026-11-18 | v1.7 | RFC-002 Round 3 评审同步：基线用例数 206 → 209；AC-13 行补递归扫描与接线可注入；`RFCS.md` 引用更新为 v2.16 |
 | 2026-11-17 | v1.6 | RFC-002 Round 1/2 评审修复后回填：基线用例数 186 → 206；AC-13 的扫描改为递归且接线可注入；补 `tests/helpers/source-scan.ts` 一行 |
 | 2026-11-17 | v1.5 | RFC-002 实现后回填：10 行全部 `existing`，文件数从计划的 10 改为实际 12（覆盖率门禁移入 `tests/meta/`）；基线用例数 87 → 186 |
 | 2026-11-17 | v1.4 | RFC-001 Round 4 后同步：用例数 86 → 87，`RFCS.md` 引用由 v2.7 更新为 v2.10（C-20） |

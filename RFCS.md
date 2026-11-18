@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.14 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 · 最后更新 2026-11-17
+> 版本 v2.16 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.0 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -38,7 +38,7 @@
 | RFC | 标题 | 功能 | 复杂度 | Status |
 |---|---|---|---|---|
 | [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Reviewed |
-| [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Implemented |
+| [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Not started |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Not started |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
@@ -179,8 +179,9 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 | C-19 | RFC-004 §2.3 写「全部提交后进入 `DAY_VOTE_RESOLVE`」，但 RFC-001 §2.3 的 `Phase` 14 个取值里没有它；RFC-002 §2.4 的 `ResolutionPoint` 叫 `VOTE_RESOLVE`，不是 `DAY_VOTE_RESOLVE` | **按 RFC-001 的 `Phase` 实现**：`DAY_VOTE_RESOLVE` 不是阶段，应改成 `VOTE_RESOLVE` 结算点或 `DAY_VOTE` 内部步骤；RFC-004 是 `Not started`，改措辞即可，不需要动 RFC-001 的代码 | RFC-001 §2.3、RFC-002 §2.4、RFC-004 §2.3；RFC-004 开工前修正；`reviews/REVIEW-RFC-001.md` Round 3 F4 | **已由 `CHANGE-REQUEST-004` 裁决**：它是 `DAY_VOTE` 阶段内部的结算点 `VOTE_RESOLVE`（RFC-002 §2.4 的 `ResolutionPoint`），不是 `Phase`；`Phase` 保持 AC-5 的 14 个。
 | C-20 | 文档同步落后于实现与状态列：`TEST-STRATEGY.md:3` 仍引用 `RFCS.md` v2.7（现 v2.10）、`:33` 的基线是 86 个用例（实际 87）；RFC-001 §2.2 仍说 `tsconfig.server.json` 以 `rootDir: src` / `outDir: dist` 由 tsc 产出 `dist/server/index.js`，实际由 `vite.server.config.ts` 打包（C-9），配置中没有这两个字段；§8.4 的文件清单重复 `tests/shared/terms.test.ts`、漏 `tests/helpers/import-scan.ts` 与 `import-scan.test.ts`，文档列的 C 编号停在 C-9~C-12 | **以实测输出与 C-9 为准**：不影响代码、16 条 AC 或跨 RFC 契约。随 RFC-002 开工或独立 docs 提交时同步，不改验收口径 | `TEST-STRATEGY.md:3/33`、`RFCs/RFC-001-project-scaffold-and-shared-contracts.md` §2.2 / §8.4；`reviews/REVIEW-RFC-001.md` Round 4 | **Round 4 评审登记（非阻塞）** | **已修（本轮）**：`TEST-STRATEGY.md` 的用例数与 `RFCS.md` 版本引用已更新；RFC §2.2 按 C-9 改写为「tsconfig 只做类型检查，产物由 vite.ssr 打包」；§8.4 去掉重复的 `terms.test.ts`、补上 `import-scan.ts` / `import-scan.test.ts`、C 编号补到 C-20。
 | C-21 | RFC-002 §2.4 要求「modifier 注册表随 run 配置写入 `GAME_STARTED`」以便 `replay` 重建同一组 modifier；但 §2.2 的 `GameStartedPayload`（与 RFC-001 §2.3 的同一类型）没有承载该配置的字段，且 modifier 是函数、按 `ARCH-3` 不能写入状态或 JSON | **按实现现状（v1 不注册任何 modifier）**：`step` 接受 `modifiers` 参数并经 `HandlerContext` 传给 handler，但 `GAME_STARTED` 不记录注册表，`replay` 无法重建带 modifier 的结算。v1 无可观察影响，不阻塞 RFC-002；在引入第一个 modifier 前需由 `/manage-changes` 决定「把可序列化的 modifier id / 配置写进 `GAME_STARTED`」或「扩展效果不参与 replay」 | RFC-002 §2.2 / §2.4、RFC-001 §2.3 `GameStartedPayload`、`src/engine/step.ts:38-41, 233-236`、`src/engine/effects.ts:76-87`；`reviews/REVIEW-RFC-002.md` Round 1 |
+| C-22 | RFC-002 AC-13 要求「扫描 `src/engine/` 全部 `.ts`」，但 `tests/helpers/source-scan.ts:41` 把所有以 `.` 开头的条目（**包括隐藏 `.ts` 文件**）一并跳过；实测在 `src/engine/.hidden.ts` 放 `Math.random()` 后 `rng.test.ts` 仍 11/11 绿。Round 2 已作为小 nit 登记，Round 3 复核仍未修 | **按 AC-13 的字面修（非阻塞）**：把跳过条件收窄为隐藏**目录**（`entry.isDirectory() && entry.name.startsWith('.')`），并补一条隐藏 `.ts` 用例；当前 `src/engine` 没有隐藏 `.ts`，不影响已验收行为 | RFC-002 AC-13、`tests/helpers/source-scan.ts:41`；`reviews/REVIEW-RFC-002.md` Round 2 / Round 3 |
 
-> C-13 / C-14 是 RULES 措辞与 RFC 契约的冲突，C-15 / C-16 是 RFC 内部代码块与正文的冲突，C-17 是跨 RFC 的 payload 形状冲突，C-18 是跨 RFC 的状态/事件推导契约缺口，C-19 是阶段命名冲突，C-20 是文档同步，C-21 是 modifier 注册表无法写入 `GAME_STARTED` 的缺口（v1 无 modifier，非阻塞）。**C-15 / C-16 / C-17 已在 RFC-001 的实现里修正**（C-17 由 `CHANGE-REQUEST-003` 裁决）；**C-18 / C-19 已由 `CHANGE-REQUEST-004` 裁决**（Round 4 复核通过）；C-20 是非阻塞文档同步，已在本轮修完；C-13 / C-14 的最终裁决仍归 `/manage-changes`；C-21 也待 `/manage-changes` 在引入 modifier 前裁决。
+> C-13 / C-14 是 RULES 措辞与 RFC 契约的冲突，C-15 / C-16 是 RFC 内部代码块与正文的冲突，C-17 是跨 RFC 的 payload 形状冲突，C-18 是跨 RFC 的状态/事件推导契约缺口，C-19 是阶段命名冲突，C-20 是文档同步，C-21 是 modifier 注册表无法写入 `GAME_STARTED` 的缺口（v1 无 modifier，非阻塞），C-22 是 AC-13 的「全部 `.ts`」与隐藏文件跳过的实际缺口（非阻塞，待修）。**C-15 / C-16 / C-17 已在 RFC-001 的实现里修正**（C-17 由 `CHANGE-REQUEST-003` 裁决）；**C-18 / C-19 已由 `CHANGE-REQUEST-004` 裁决**（Round 4 复核通过）；C-20 是非阻塞文档同步，已在该轮修完；C-13 / C-14 的最终裁决仍归 `/manage-changes`；C-21 也待 `/manage-changes` 在引入 modifier 前裁决，C-22 待下一次 RFC-002 提交或独立修复时收口。
 
 ### 8.2 依赖中的开放问题（**阻塞实现，必须由用户确认**）
 
@@ -239,6 +240,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.16 | RFC-002 Round 3 评审完成（Status → `Reviewed`）：Round 2 的 B-R2-1（POSIX 归一化）与 B-R2-2（接线级递归锁）复核通过；N9 / M3 修复复核通过；209 用例、覆盖率 98.01 / 95.23 全绿。非阻塞建议（隐藏 `.ts` 扫描，登记为 C-22；FINISHED 拒绝路径用例；`rngAfter` 只对消耗随机数的事件生效）见 `reviews/REVIEW-RFC-002.md` Round 3 |
 | 2026-11-17 | v2.15 | RFC-002 Round 2 评审修复：`source-scan` 的 `relativePath` 归一化为 POSIX（Windows 上必红，B-R2-1）；`engineSources(root)` 可注入并加临时目录用例，让「递归接线」本身被锁住（B-R2-2，反向探针现在变红）；N9 改成真的经 `step` 入口、`playerSeat` 补反方向断言、§8.4/§8.5 的分支数字与 §8.3 文件清单同步 |
 | 2026-11-17 | v2.14 | RFC-002 Round 2 评审完成（Status → `Changes requested`）：Round 1 的 B1/B2 在运行时已修好，P4（重新发牌）/ P13（嵌套 `Math.random()`）/ P19（删掉 `mode` 分支）本轮均实红，206 用例全绿；但新增测试在 Windows 上因 `/` vs `\` 必红（B-R2-1），且 AC-13 的递归锁只测 helper、没锁 `rng.test.ts` 的 wiring——一层扫描 + 嵌套违规仍 11/11 绿（B-R2-2）。证据见 `reviews/REVIEW-RFC-002.md` Round 2 |
 | 2026-11-17 | v2.13 | RFC-002 Round 1 评审修复：AC-13 的 `Math.random` 扫描与 TEST-2 的忽略注释扫描改为**递归**（抽 `tests/helpers/source-scan.ts`，并用临时目录自测）；AC-4 补合成 `GAME_STARTED` 用例锁住「事件是唯一权威」（P4 现在变红）；D-15~D-17 记录 `nextInt` 签名、额外导出与封闭 `WinCondition`；N1/N2/N3/N5/N8/N9/N10/N11/N12 逐项补测 |

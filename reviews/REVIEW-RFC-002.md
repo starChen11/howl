@@ -684,3 +684,267 @@ $ node -e "const {win32}=require('node:path'); console.log(JSON.stringify(win32.
 ---
 
 **Round 2 评审证据**：本文件中的命令输出来自 2026-11-17 的本会话实跑；P4 / P13 / P19 / P22 / N9 / N11 / N2 / N12 与 3.3 元探针均在 `git checkout` / 删除临时文件后恢复，探针恢复后 `git status --short` 为空；复跑 `pnpm test` 为 `29 files / 206 tests passed`，`pnpm typecheck` 为 0。随后只改了本评审文件、`RFCS.md` 与 `README.md` 的状态文档。
+
+---
+
+## Round 3 -- 2026-11-18
+
+> **评审会话**：新会话（未参与 RFC-002 的实现与 Round 1/2 修复；本会话只读仓库文件、跑命令、做临时变异探针）
+> **基线**：分支 `rfc/001-project-scaffold-and-shared-contracts` / HEAD `222bf65`；评审开始时与全部探针恢复后 `git status --short` 均为空。评审产物只改本文件、`RFCS.md`、`README.md`、`TEST-STRATEGY.md`，未改 `src/`、`tests/` 或配置
+> **结论**：**Reviewed**
+> **整体风险**：**Low**
+
+### 0. STEP 0 · 实际执行结果
+
+环境：Node `v22.22.2`、pnpm `10.33.0`、macOS。以下均为本会话实跑，不是转述。
+
+```text
+$ pnpm typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit
+EXIT 0
+
+$ pnpm lint
+> eslint .
+EXIT 0
+
+$ pnpm format:check
+Checking formatting...
+All matched files use Prettier code style!
+EXIT 0
+
+$ pnpm test
+ Test Files  29 passed (29)
+      Tests  209 passed (209)
+EXIT 0
+  # unit：22 files / 175 tests；meta：7 files / 34 tests
+
+$ pnpm build
+vite v8.3.8 building client environment for production...
+dist/client/index.html                  0.42 kB │ gzip:  0.31 kB
+dist/client/assets/index-DTkfWeVY.js  219.65 kB │ gzip: 68.71 kB
+vite v8.3.8 building ssr environment for production...
+dist/server/index.js  1.25 kB │ gzip:  0.86 kB
+EXIT 0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+EXIT 0
+
+$ pnpm selfplay
+pnpm selfplay 未实现（RFC-015）
+EXIT 1   # C-5 登记的临时偏离，预期如此
+```
+
+覆盖率（AC-14 / TEST-2）：
+
+```text
+$ pnpm exec vitest run --project unit --coverage
+ Test Files  22 passed (22)
+      Tests  175 passed (175)
+EXIT 0
+
+----------------|---------|----------|---------|---------|
+File            | % Stmts | % Branch | % Funcs | % Lines |
+----------------|---------|----------|---------|---------|
+All files       |   98.13 |    95.23 |     100 |   98.01 |
+ apply.ts       |      96 |    95.65 |     100 |      96 |
+ effects.ts     |     100 |    88.88 |     100 |     100 |
+ errors.ts      |     100 |      100 |     100 |     100 |
+ init.ts        |    90.9 |       80 |     100 |    90.9 |
+ replay.ts      |     100 |      100 |     100 |     100 |
+ rng.ts         |   96.15 |       90 |     100 |      96 |
+ step.ts        |     100 |      100 |     100 |     100 |
+ transitions.ts |     100 |      100 |     100 |     100 |
+ win.ts         |     100 |      100 |     100 |     100 |
+----------------|---------|----------|---------|---------|
+```
+
+探针全部恢复后复跑：`pnpm typecheck` → 0，`pnpm test` → `29 files / 209 tests passed`，`git status --short` 只有本轮四份文档。
+
+**未验证项（不隐藏）**：
+
+- **Windows 实跑**：本会话没有 Windows 主机。B-R2-1 的结论来自 `path.win32.relative` 的确定行为、`toPosixPath` 的单元测试与代码检查；这一条是「在逻辑层已修 + 有会在归一化失效时变红的单元测试」，不是 Windows 实跑输出。
+- **干净检出后的 `pnpm install --frozen-lockfile`** 没有重跑；结论基于现有 `node_modules`。
+- `pnpm test:e2e` 仍 skipped、`pnpm selfplay` 仍按 RFC-015 占位退出 1；两者不属于 RFC-002 的验收面。
+
+### 1. Product Type 与检查范围
+
+`PRD.md` 的 **Product Type** 仍是 **game（主）+ web app（交付形态）**。RFC-002 只交付引擎内核，没有 UI、HTTP 路由或浏览器交互，因此本轮继续只检查：
+
+| 适用 | 本 RFC 的检查 |
+|---|---|
+| 数据模型 / 跨层契约 | `GameState` / `GameEvent` / `Action` / `Effect` 的形状与序列化 |
+| 核心循环 / 状态机 | `step` / `reduce` / `applyEvent` / `replay` 的推进与事件流 |
+| 安全（隐藏信息） | `GAME_STARTED` 的 `server` 可见性、`Rejected` 的席位可见性 |
+| 性能 | 纯函数推进的复杂度、是否有 IO / 网络 |
+| 测试 | 16 条 AC、TEST-2 / TEST-3 / TEST-4 门禁、Round 2 的 B-R2-1 / B-R2-2 |
+
+**显式跳过**（与 Round 1/2 相同，不是遗漏）：响应式 / 无障碍 / 浏览器矩阵（无用户可见功能，TEST-6 从 RFC-012 起生效）、首屏性能（NFR-8 归 RFC-016）、平台认证 / 账号 / SEO / 离线（PRD 已列为不适用）、存档 / 读档版本化（RFC-008）、UI 安全（无渲染与表单，输入边界在 RFC-011 / RFC-008）。`project()` 的 SEC-5 验收仍在 RFC-007；JSON 恢复时的事件校验在 RFC-008。
+
+### 2. Round 2 阻塞项复核
+
+#### 2.1 B-R2-1 · Windows 路径分隔符
+
+**结论：已修（逻辑层）。** `tests/helpers/source-scan.ts:24-26` 新增 `toPosixPath`，`collectTypeScriptFiles` 在 `:50` 统一把 `relative()` 的结果归一化为 `/`；`tests/helpers/source-scan.test.ts` 同时覆盖 Windows 串、POSIX 串与「收集结果不含反斜杠」。
+
+本会话复核：
+
+```text
+$ pnpm exec tsx -e "import { toPosixPath } from './tests/helpers/source-scan.ts'; import { win32 } from 'node:path'; const rel = win32.relative('C:/repo/src', 'C:/repo/src/phases/night.ts'); ..."
+{"raw":"phases\\night.ts","normalized":"phases/night.ts"}
+{"raw":"resolve\\deep\\deeper\\deepest.ts","normalized":"resolve/deep/deeper/deepest.ts"}
+```
+
+反向探针（把 `toPosixPath` 改成直接返回入参）：
+
+```text
+ × Windows 风格的反斜杠被转成 / 3ms
+ FAIL  |unit| tests/helpers/source-scan.test.ts > toPosixPath（B-R2-1） > Windows 风格的反斜杠被转成 /
+AssertionError: expected 'nested\violation.ts' to be 'nested/violation.ts'
+      Tests  1 failed | 9 passed (10)
+```
+
+**残余限制**：macOS 上 `relative()` 本身返回 `/`，所以「`collectTypeScriptFiles` 真的调用了 `toPosixPath`」这条接线在 macOS 上不会因回退而变红（Windows 上会，因为 `source-scan.test.ts` 的收集结果会带 `\`）。这不是未修，而是跨平台测试的固有边界；本会话已用单元测试锁住归一化函数本身。
+
+#### 2.2 B-R2-2 · AC-13 的永久递归锁
+
+**结论：已修。** `tests/engine/rng.test.ts:26-28` 的 `engineSources(root = ENGINE_DIR)` 把根目录做成可注入；`:56-71` 用临时目录造 `top.ts` + `nested/violation.ts`，断言 `findFilesContaining(engineSources(root), 'Math.random(')` 命中嵌套文件。这守的是 `engineSources` 的接线，而不是 helper 自己的递归能力。
+
+反向探针（把 `engineSources` 换回一层 `readdirSync`，保留临时目录结构）：
+
+```text
+ × 接线本身是递归的：临时根目录里的嵌套违规也必须被扫到（B-R2-2） 7ms
+ FAIL  |unit| tests/engine/rng.test.ts > AC-13 · 引擎不得使用 Math.random > 接线本身是递归的：临时根目录里的嵌套违规也必须被扫到（B-R2-2）
+AssertionError: expected [] to deeply equal [ 'nested/violation.ts' ]
+      Tests  1 failed | 10 skipped (11)
+```
+
+同时复核 P13（在 `src/engine/nested/__probe.ts` 放 `Math.random()`）：
+
+```text
+ × 递归扫描 src/engine 的**全部** .ts，没有任何违规调用
+AssertionError: expected [ 'nested/__probe.ts' ] to deeply equal []
+      Tests  1 failed | 10 passed (11)
+```
+
+#### 2.3 N9 / M3 与文档同步
+
+- **N9 已修**：`tests/engine/step.test.ts` 的自定义 handler 现在真的调用 `applyModifiers('VOTE_RESOLVE', state, [], context.modifiers)`，断言走 `step → handler → applyModifiers` 全链路；把 `step` 传给 handler 的 `modifiers` 换成 `[]` 后，本条变红（见 §3 的 AC-11）。
+- **M3 已修**：`replay.test.ts` 的标题改为「playerSeat 从 payload 决定哪个席位是玩家（唯一一个）」，并补了「原玩家席位不再是玩家、全场只有一个玩家」的反方向断言。
+- **文档同步**：RFC §8.3 补了 `source-scan.ts` / `source-scan.test.ts`，§8.4 / §8.5 的数字改为实测 98.01 / 95.23 与 209 用例；`TEST-STRATEGY.md` 的 0.2 基线改为 209。本评审顺手把 `RFCS.md` 版本头（v2.14 → v2.16）、`TEST-STRATEGY.md` 版本头（v1.6 → v1.7）与 `README.md` 的状态同步到本轮。
+
+### 3. 16 条 AC：回退时哪个测试会红
+
+> 本节不是「测试名对上了」就结束。除 AC-14 是直接实跑门禁外，本会话做了 17 个临时变异探针（改一处 → 跑定向测试 → 恢复）；下表 ✅ = 探针确实 exit 1，⚠️ = 有残余缺口。探针结束后 `git status --short` 为空，再跑全量仍是 29 files / 209 tests。
+
+| AC | 负责测试 | 本轮探针 / 结论 |
+|---|---|---|
+| 1 `reduce === step().state` | `tests/engine/step.test.ts` | ✅ `reduce` 直接返回 `state` → 10 个样本全红 |
+| 2 `step` 纯函数、冻结不抛 | 同上 | ✅ `step` 内写 `state.seq` → 冻结用例 `TypeError: Cannot assign to read only property 'seq'` |
+| 3 JSON 往返 + 递归原型断言 | `tests/engine/serialization.test.ts` | ✅ 把 `day` 换成 `Date` → 2 failed（往返 + 原型断言） |
+| 4 只靠事件流重建 / 事件权威 | `tests/engine/replay.test.ts` | ✅ 把 `payload.roles` 旋转 3 位 → 「采用 payload.roles…」failed；Round 2 的 P4（按 seed 重新发牌）在 `src/` 未变的前提下仍适用 |
+| 5 同 seed + 同序列逐条相等 | `tests/engine/determinism.test.ts` | ✅ 发牌改成忽略 `input.seed` → 「不同 seed 产出不同发牌」failed |
+| 6 seq 严格递增 / type 合法 | `tests/engine/events.test.ts` | ✅ seq 盖章去掉 `+1` → `events.test.ts` 文件级 `InvalidEventStreamError`（构造夹具即失败） |
+| 7 首事件与 GAME_STARTED 四字段 | `tests/engine/events.test.ts` | ✅ payload 删掉 `mode` → 2 failed（字段断言 + schema） |
+| 8 拒绝：PHASE_MISMATCH、除 seq 外不变 | `tests/engine/reject.test.ts` | ✅ 删掉 `START` 的 `mode` 校验 → 「mode 不一致被拒」failed |
+| 9 transitions 声明与 handler 一致 | `tests/engine/transitions.test.ts` | ✅ `FINISHED: ['VOTE']`（无 handler）→ 2 failed（边界 + 每个允许对都有 handler） |
+| 10 效果 order 升序 + id 字典序 | `tests/engine/effects.test.ts` | ✅ 排序比较反向 → 3 failed |
+| 11 假 modifier 改变终态 | `tests/engine/effects.test.ts` + `step.test.ts` | ✅ `applyModifiers` 忽略 modifier → 3 failed；N9 反向探针也红 |
+| 12 无 modifier 时仅顺序规范化 | `tests/engine/effects.test.ts` | ✅ `applyModifiers` 复制效果 → 5 failed（含两条 AC-12） |
+| 13 扫描 `src/engine/` 全部 `.ts` | `tests/engine/rng.test.ts` + `source-scan.ts` | ✅ 嵌套 `__probe.ts` → 红；B-R2-2 一层接线 → 红；⚠️ 隐藏 `.ts` 仍逃逸（C-22） |
+| 14 行 ≥ 90% / 分支 ≥ 85% | `tests/meta/coverage.test.ts` | ✅ 实跑行 98.01 / 分支 95.23；3 条门禁测试全绿，无忽略注释 |
+| 15 `checkWin` 纯谓词、两种模式 | `tests/engine/win.test.ts` | ✅ 把两种模式的判断对调 → 5 failed |
+| 16 引擎测试零网络 | `tests/setup/no-network.ts` + `tests/engine/no-network.test.ts` | ✅ 去掉 `vitest.config.ts` 的 `setupFiles` → 2 failed |
+
+**AC-13 的残余缺口（C-22）**：在 `src/engine/.hidden.ts` 放 `Math.random()` 后，`rng.test.ts` 仍 `11 passed`。原因是 `tests/helpers/source-scan.ts:41` 对**所有**以 `.` 开头的条目 `continue`，而函数注释写的是「跳过隐藏目录」、AC-13 写的是「全部 `.ts`」。当前 `src/engine` 没有隐藏 `.ts`，不影响本 RFC 已验收行为；已登记为 RFCS C-22（非阻塞），建议把条件收窄为 `entry.isDirectory() && entry.name.startsWith('.')` 并补一条隐藏文件用例。
+
+### 4. 新增测试是否只是在验证自己的夹具
+
+| 新测试 | 判断 | 依据 |
+|---|---|---|
+| `rng.test.ts` 的临时根目录嵌套违规（B-R2-2） | **真实接线测试** | 把 `engineSources` 换回一层 `readdirSync` 后本条红；临时目录不碰 `src/` |
+| `source-scan.test.ts` 的 `toPosixPath` 三例 | **真实函数测试** | 把 `toPosixPath` 改成直返入参后「Windows 风格…」红 |
+| `step.test.ts` 的 N9 全链路 | **真实行为测试** | `step` 不传 modifiers 时本条红；handler 内部真的调用 `applyModifiers` |
+| `replay.test.ts` 的 playerSeat 反方向断言 | **真实不变量测试** | 断言原玩家席位被清掉且全场只有一个玩家，不是只换一个值 |
+| `source-scan.test.ts` 的临时目录递归 / `findFilesContaining` | **真实 helper 行为测试** | 造嵌套结构；干净输入返回空数组 |
+| `rng.test.ts` 的隐藏 `.ts` 场景 | **尚未覆盖（C-22）** | 实测隐藏 `.ts` 仍逃逸，说明 AC-13 的字面边界没有被这条测试锁住 |
+
+### 5. 评审维度
+
+#### 5.1 RFC 遵循 · **PASS**
+
+- 16 条 AC 全部有实现与对应测试；`step` / `reduce` / `applyEvent` / `replay` 的签名与语义与 §2.1 一致（`applyEvent` / `replay` 收 `GameEvent` 是 §8.2 D-1 已批准的收紧）。
+- 事件溯源的关键不变量成立：`GAME_STARTED` 是首事件、`visibleTo: 'server'`、携带 `seed` / `mode` / `playerSeat` / `roles` / `personas` 与 `rngAfter`；`applyGameStarted` 以 `payload.roles` 为唯一权威；`replay` 只接收事件流。
+- 拒绝/抛错按 §2.3 的机械判据分开：`PHASE_MISMATCH` / `START_STATE_MISMATCH` 产出 `Rejected`，允许对缺 handler 抛 `UnhandledTransitionError`，未知事件抛 `UnknownEventError`。
+- 效果管道按 §2.4：`order` 升序 + 同级 `id` 字典序；`applyModifiers` 插入点可用；v1 空 applier 表遇到效果即抛 `UnknownEffectError`；效果不写入事件流。
+- §2.5 ~ §2.7：PRNG 可注入、`nextInt` 只收 `RngState`（D-15 已批准）；`GameState` 可 JSON 往返；`checkWin` 是纯谓词，只读 `seats` / `mode`。
+- **已登记的偏离**：C-21（modifier 注册表不写入 `GAME_STARTED`）仍是 v1 无可观察影响的可接受缺口；不是未记录偏离。
+- **非阻塞边界**：RFC §6 说本 RFC 验「`FINISHED` 后的拒绝路径」，现有测试只直接构造过 `NIGHT_WOLF_CHAT` 的拒绝（`reject.test.ts`）与静态断言 `DEFAULT_TRANSITIONS.FINISHED` 为空（`transitions.test.ts:32-39`），没有一条从 `phase: 'FINISHED'` 的状态提交 action 的用例。行为上 `FINISHED: []` 会走同一条 `PHASE_MISMATCH` 路径，风险低；建议补一条构造 `FINISHED` 状态的拒绝用例后彻底闭合。
+
+#### 5.2 RULES 遵循 · **PASS**
+
+| 规则 | 结论 | 证据 / 备注 |
+|---|---|---|
+| ARCH-1 / ARCH-2 / ARCH-3 | PASS | `src/engine/` 只 import `@shared/*`；依赖方向测试绿；无类实例 / 函数 / Map / Set / Date |
+| ARCH-4 / ARCH-5 / ARCH-6 | PASS | `reduce` 纯函数；`step` 只经 `applyEvent` 折叠；效果带 `source`、显式排序后应用 |
+| ARCH-11 | PASS | 未实现的转移 / 事件 / 效果分别抛 `UnhandledTransitionError` / `UnknownEventError` / `UnknownEffectError` |
+| DATA-1 ~ DATA-5 | PASS | seq/ts、事件类型联合、`replay`、可注入 PRNG、无 `Math.random`；AC-13 的隐藏文件边界见 C-22 |
+| TEST-2 / TEST-3 / TEST-4 / TEST-5 | PASS | 覆盖率 98.01 / 95.23；确定性测试；no-network setup；五条命令实跑通过 |
+| STYLE-3 / STYLE-6 | PASS | 无 `any`、无 TODO；`src/engine/step.ts` 256 行，全部文件 < 400 |
+| DOC-1 | PASS（本轮） | D-1 ~ D-19 记录在 §8.2；本轮评审同步了 `RFCS.md` / `README.md` / `TEST-STRATEGY.md` 的版本与状态 |
+| AGENTS.md 跨平台 | PASS（逻辑层） | POSIX 归一化 + Windows 串单元测试；实际 Windows 未实跑，见 §0 未验证项 |
+
+#### 5.3 安全 · **PASS**
+
+- 与 Round 1/2 相同：`GAME_STARTED` 含全员 `roles` 但 `visibleTo: 'server'`（`src/engine/step.ts:110-123`），`REJECTED` 对带席位 action 用 `self:<seat>`；本 RFC 没有把完整 `GameState` 序列化给客户端的路径。SEC-5 的 `project()` 验收仍在 RFC-007，不能因为这里没有投影就宣称 SEC-5 完成。
+- 无密钥、无日志、无网络、无 HTML / 表单入口；`source-scan` 是测试期工具，不进引擎运行时。
+- **残余（非阻塞）**：`replay` 信任事件信封上的 `visibleTo`；一个被篡改的 `GAME_STARTED`（例如把 `visibleTo` 改成 `public`）仍会被折叠。事件流是服务端资产，且 `src/shared/schemas.ts` 的 `EventSchema` 只校验枚举、不校验「事件类型 ↔ 可见性」对应关系；RFC-008 的 Zod 入口应把 `GAME_STARTED` 必须是 `server` 这一条补上。`applyEvent` 对非随机事件携带的 `rngAfter` 也会无条件写回（`src/engine/apply.ts:44-46`），`step` 目前不会产生这种 `REJECTED`，但自定义 handler / 篡改事件可以构造；建议在 RFC-008 校验或 `applyEvent` 里收窄为「只对 `RANDOM_CONSUMING_EVENTS` 生效」。
+
+#### 5.4 性能 · **PASS**
+
+- `step` / `applyEvent` / `replay` 仍是纯函数、无 IO、无网络；`checkWin` 每次 O(9)；`applyEffects` 的排序 O(n log n)，n 是结算效果数。
+- `source-scan` 的递归只在测试期运行；`src/engine` 的 9 个文件是 O(files)。
+- 没有 N+1、无界拉取或缓存问题。
+
+#### 5.5 可维护性 · **PASS（有非阻塞建议）**
+
+**做得好的地方**：`step` 自己折叠事件让 `reduce === step().state` 由构造保证；`stampEvents` 统一盖 `gameId` / `seq` / `ts`；错误类型按 `name` 断言；`source-scan` 抽成共享 helper 并用临时目录自测；Round 2 的三处新测试（B-R2-2 / N9 / playerSeat 反方向）都直接针对回退路径。
+
+**非阻塞建议**：
+
+1. **C-22 · 隐藏 `.ts`**：修 `tests/helpers/source-scan.ts:41`，只跳过隐藏目录，并补隐藏 `.ts` 用例；同时让注释与 AC-13 的「全部 `.ts`」一致。
+2. **FINISHED 拒绝路径**：补一条直接构造 `phase: 'FINISHED'` 的 `step` 用例（可基于 `stateWithRoles` 改 `phase`），断言 `REJECTED` + `PHASE_MISMATCH` + 除 seq 外不变。
+3. **`rngAfter` 的适用范围**：在 `applyEvent` 或 RFC-008 校验层只允许 `RANDOM_CONSUMING_EVENTS` 携带 / 生效，避免「REJECTED 也能改 rng」这类违反 §2.3 的构造。
+4. **C-21**：引入第一个 modifier 前，按 RFCS C-21 由 `/manage-changes` 裁决「modifier 注册表写进 `GAME_STARTED`」还是「扩展效果不参与 replay」。
+
+### 6. 总体结论
+
+#### 6.1 风险与摘要
+
+**Overall Risk: Low。** Round 2 的两条阻塞项都已修好并且被永久锁住：B-R2-1 把 `relative()` 的结果统一归一化为 POSIX，且「归一化函数被改坏」会让 `source-scan.test.ts` 变红；B-R2-2 把 `engineSources` 的根目录做成可注入，反向探针（一层 `readdirSync` + 嵌套违规）会让 `rng.test.ts` 变红。N9 从「测试自己调夹具」改成真正的 `step → handler → applyModifiers` 链路，M3 的标题与反方向断言也修了。209 个用例、typecheck / lint / format / build / coverage 全部实跑通过，16 条 AC 的主路径都有会在行为退化时变红的测试。
+
+剩下的都是非阻塞项：AC-13 对隐藏 `.ts` 的字面缺口（C-22）、`FINISHED` 拒绝路径缺一条直接用例、`rngAfter` 对非随机事件过于宽松、以及 C-21 的 modifier 注册表缺口。它们不影响本 RFC 的引擎内核验收，已分别登记 / 建议，不能悄悄丢掉。
+
+#### 6.2 阻塞项（合并前必须处理）
+
+**无。** 本 RFC 可以置 `Reviewed`。
+
+#### 6.3 非阻塞改进（建议同批或随后处理）
+
+- **C-22**：`tests/helpers/source-scan.ts:41` 的隐藏文件跳过；补隐藏 `.ts` 用例。
+- **FINISHED 拒绝路径**：补一条从 `FINISHED` 状态提交 action 的 `PHASE_MISMATCH` 用例。
+- **`rngAfter` 收窄**：只对 `RANDOM_CONSUMING_EVENTS` 生效，或在 RFC-008 的事件校验里拒绝非随机事件携带 `rngAfter`。
+- **C-21**：第一个 modifier 落地前由 `/manage-changes` 裁决。
+- **文档**：本轮已同步 `RFCS.md` v2.16 / `README.md` v0.11 / `TEST-STRATEGY.md` v1.7；C-22 已登记在 `RFCS.md` §8.1。
+
+#### 6.4 没有发现问题的部分（避免只列负面）
+
+- B-R2-2 用临时目录锁「接线」而不是锁「helper」，方向正确；一层扫描的反向探针现在确实会红。
+- B-R2-1 在 helper 边界归一化，选择兼容 `\\` 与 `/` 两种分隔符，使这条逻辑在 macOS 上也能被单元测试覆盖。
+- N9 的改写让 `step` 的 `modifiers` 参数真正进入结算链路，而不是只断言参数被传入。
+- 覆盖率数字与 RFC §8.4 / §8.5 完全一致（98.01% 行 / 95.23% 分支），`init.ts` 的 80% 分支是已知且可解释的防御分支。
+- 引擎运行时自 Round 1 以来没有变化（`git diff d8a4866..HEAD -- src/` 为空），Round 1/2 对 ARCH / DATA / SEC 的正面结论仍然成立。
+
+---
+
+**Round 3 评审证据**：本文件中的命令输出来自 2026-11-18 的本会话实跑；17 个变异探针均在 `git checkout` / 删除临时文件后恢复，探针恢复后 `git status --short` 只有本轮四份文档；复跑 `pnpm typecheck` 为 0、`pnpm test` 为 `29 files / 209 tests passed`。`FEATURES.md` 没有 Status 列，因此本轮不修改功能状态；`RFCS.md` 的 RFC-002 状态已置 `Reviewed`。
