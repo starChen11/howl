@@ -65,9 +65,8 @@
 
 | 文件 | 内容 |
 |---|---|
-| `src/engine/visibility.ts` | `isVisibleTo` 的行为实现（委托 `shared/visibility`，补充状态比较） |
 | `src/engine/phases/wolf-chat.ts` | `NIGHT_WOLF_CHAT` |
-| `src/engine/actions/self-expose.ts` | 自曝结算 |
+| `src/engine/phases/self-expose.ts` | 自曝结算 |
 | `tests/engine/visibility.test.ts` | 可见性矩阵 |
 | `tests/engine/wolf-chat.test.ts` | 夜聊与退出条件 |
 | `tests/engine/self-expose.test.ts` | 自曝与当日终止 |
@@ -203,6 +202,6 @@ $ coverage → 行 96.95% / 分支 93.31%；新文件 wolf-chat.ts / self-expose
 反向探针（本轮实跑）：把 `enterNight` 改回两条 → 第二夜用例变红；去掉 `delete next.votes` → 自曝清票用例变红。
 
 ```
-$ pnpm test → 44 files / 366 tests 全绿
-$ coverage → 行 96.95% / 分支 93.31%
+$ pnpm test → 44 files / 369 tests 全绿
+$ coverage → 行 96.96% / 分支 93.31%
 ```

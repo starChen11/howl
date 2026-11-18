@@ -280,3 +280,179 @@ $ pnpm test
       Tests  366 passed (366)
 EXIT:0
 ```
+
+---
+
+## Round 2 -- 2026-11-18
+
+> **窄范围复核（用户指定）**：只复核 Round 1 修复的四项——**B1 / C-35** 第二夜起有 `NIGHT_WOLF_CHAT`、**B2 / C-36** 进入 `NIGHT_WOLF_CHAT` 时清空 `votes` / `runoff` / `lynched`、**B3 / C-37** §2.1 / §2.4 / Q-005-1 / AC-3 四处正文回写裁决、**C-38 ③** 500 字截断用例。Round 1 已关闭的 AC-1 ~ AC-4、AC-6 ~ AC-9、AC-12 ~ AC-14 与安全 / 性能维度**未重查**；本轮的 PASS 不重新认证它们。
+> **HEAD**：`1cde90e`（Round 1 修复提交），分支 `main`。评审开始 / 结束时 `git status --porcelain` 均为空；四条变异探针与两个临时端到端探针的改动均已恢复，临时测试文件已删除。
+> **结论**：**Reviewed**。四项全部成立，无新阻塞项；非阻塞残留登记为本轮 **C-39**。
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。
+
+```
+$ pnpm typecheck    → EXIT:0
+$ pnpm lint         → EXIT:0
+$ pnpm format:check → All matched files use Prettier code style!  EXIT:0
+$ pnpm build        → dist/client/index.html + dist/server/index.js  EXIT:0
+$ pnpm test         → Test Files 44 passed (44) · Tests 369 passed (369)  EXIT:0
+$ pnpm test:e2e     → skipped：tests/e2e/ 下没有用例（RFC-012 起生效） EXIT:0
+
+$ pnpm exec vitest run --project unit --coverage
+ Test Files  37 passed (37)
+      Tests  335 passed (335)
+ All files | % Stmts 96.68 | % Branch 93.31 | % Funcs 97.14 | % Lines 96.96
+  self-expose.ts 100/100 · wolf-chat.ts 100/100 · visibility.ts 100/100
+```
+
+`pnpm selfplay` 未直接运行：它仍是 RFC-015 的占位（`OPS-3` / C-5），与本轮四项无关；`pnpm test` 里的 meta 占位用例已覆盖「退出码 1 + 指向 RFC-015」的既有预期。
+
+**Product Type**：`PRD.md` 的类型是 **game（主）+ web app（交付形态）**。本轮改动只在引擎的状态清理、相位推进、注释与测试，不涉及 UI / HTTP / 密钥 / 首屏，因此跳过 web app 的界面、A11y、浏览器兼容与 Playwright 检查；game 维度只验证 Round 1 的四个阻塞项及其回归锁。
+
+**说明**：Round 1 已把 `pnpm test` 的转录写成 44 files / 366 tests；本轮实跑是 **369**（新增 3 条用例：第二夜 1 条、清票 1 条、截断 1 条）。这不是新发现的行为问题，是 Round 1 修复提交里 §8.9 那段「本轮实跑」转录没有同步；按 DOC-1 的准确性要求登记为 C-39，不影响本轮结论。
+
+---
+
+### 1. 复核点 1（B1 / C-35）：第二夜起确实有夜聊 — PASS
+
+`src/engine/phases/vote.ts:82-86` 现在只产出一条相位事件：
+
+```ts
+export function enterNight(from: Phase): EventDraft[] {
+  // 只发一条：进入 `NIGHT_WOLF_CHAT` 后由狼队夜聊推进到 `NIGHT_WOLVES`（RFC-005）。
+  return [phaseChangedDraft(from, 'NIGHT_WOLF_CHAT')];
+}
+```
+
+调用方覆盖全部入夜路径：投票结算 / 平票 / 全员弃权（`vote.ts:103,109`）、放逐（`lynch.ts:61`）、白天开枪（`night.ts:334`）。`START` 仍由 `GAME_STARTED` 直接设 `NIGHT_WOLF_CHAT`（`apply.ts:286`）；`grep NIGHT_WOLVES src/` 只剩 `wolf-chat.ts:68` 的「全部提交后推进」，没有第二条跳过路径。
+
+测试：
+
+- `tests/engine/wolf-chat.test.ts:99-116` 新增「放逐之后进入的是 `NIGHT_WOLF_CHAT`」用例：断言相位、`wolfChat` 为空、`pendingChatters > 0`。
+- `tests/engine/vote.test.ts:114,199,215`、`tests/engine/lynch.test.ts:44,160` 的 5 条断言从 `NIGHT_WOLVES` 改为 `NIGHT_WOLF_CHAT`。
+- `tests/engine/full-game.test.ts:28-36` 的整局脚本原本就会在 `NIGHT_WOLF_CHAT` 提交空串；修复后第二夜起会被真实走到，整局跑到 `FINISHED` 且 `replay` 一致。
+
+**反向探针 M-R2-1（实跑）**：把 `enterNight` 改回两条相位事件 → `vote.test.ts` + `lynch.test.ts` + `wolf-chat.test.ts` **6 failed / 22 passed (28)**，新用例在 `wolf-chat.test.ts:111` 精确变红（收到 `NIGHT_WOLVES`）。恢复后 `git diff` 为空。
+
+**额外端到端探针 P-R2-1（临时测试，已删）**：真实路径 `reachDay → 发言 → 全员投票放逐 → NIGHT_WOLF_CHAT → 全部 wolf 提交 WOLF_CHAT → NIGHT_WOLVES → WOLF_KILL`，2 tests passed，`WOLF_KILL` 不产出 `REJECTED`。这证明第二夜不只「停在夜聊」，还能走完协商进入狼刀。
+
+### 2. 复核点 2（B2 / C-36）：进入夜聊时清空投票状态 — PASS
+
+`src/engine/apply.ts:118-132` 在 `payload.to === 'NIGHT_WOLF_CHAT'` 时清空：
+
+```ts
+delete next.votes;
+delete next.runoff;
+delete next.lynched;
+```
+
+`tests/engine/self-expose.test.ts:79-102` 新增「投票阶段先投两票 → 自曝 → 入夜后 `votes` 为空」用例；`tests/engine/wolf-chat.test.ts:112-113` 同时断言第二夜 `wolfChat` 为空。
+
+**反向探针 M-R2-2（实跑）**：只删掉 `delete next.votes` → `self-expose.test.ts` **1 failed / 7 passed**，失败点正是新用例的 `expect(state.votes).toBeUndefined()`（收到两票）。
+
+**反向探针 M-R2-3（实跑）**：删掉 `delete next.runoff` 与 `delete next.lynched` → unit **335 passed**，没有用例变红。这两个字段在合法的 `SELF_EXPOSE` 路径上本来就不会有值：`SELF_EXPOSE` 只允许 `DAY_SPEECH` / `DAY_VOTE`（`transitions.ts:34-35`），`runoff` 只在 `DAY_VOTE_RUNOFF` 有值、`lynched` 只在 `VOTE_REVEALED` 之后有值。因此这是**防御性清理**，不是 Round 1 崩溃路径的一部分；清理本身正确，但没有独立断言。登记为 C-39（非阻塞）。
+
+**额外端到端探针 P-R2-2（临时测试，已删）**：`DAY_VOTE` 先投两票 → wolf 自曝 → 夜间刀掉被投者 → 次日全员弃权。Round 1 记录的旧实现会在这里 `PLAYER_DIED` 重复崩溃；现在正常推进到 `NIGHT_WOLF_CHAT`（day 3），`votes` 为空，无异常。2 tests passed。
+
+**结论**：Round 1 复现的崩溃路径已关闭，根因（旧票跨天）有会变红的用例锁住。
+
+### 3. 复核点 3（B3 / C-37）：四处正文已回写 — PASS
+
+| 位置 | 现在的内容 | 与 `src/shared/visibility.ts` 一致？ |
+|---|---|---|
+| §2.1 `wolves` 行（`:27`） | 「角色为 `wolf` 的席位，**不看死活**——狼队频道在成员出局后继续（用户裁决，见 §8.1）」 | 一致（`:41-45`：`self.role !== 'wolf'` 拒绝，`wolves` 直接 `true`） |
+| §2.4（`:56-62`） | 标题改为「死狼仍然看得到狼队频道」；说明 `wolves` 只校验角色，个人频道仍按死亡时间收窄 | 一致 |
+| §5 AC-3（`:86`） | 「只要是 wolf 就返回 `true`，与死亡时间无关」；个人频道「死前可见、死后不可见」 | 一致 |
+| §7 Q-005-1（`:109`） | 「**已裁决：能**（用户裁定，与初稿假设相反）」 | 一致 |
+
+`grep '死狼看不到' RFCs/RFC-005...` 现在只命中 §2.4 开头对初稿假设的引述（`:58`）与 §8.9 的 Round 1 历史记录（`:200`），规范性结论没有残留；AC-2（存活狼 true / 存活好人 false）与 §2.1 的 `seer` / `witch` / `hunter` / `self:<n>` 行也未被改坏。
+
+**未关闭的邻近项（非阻塞）**：§3 交付物表（`:67-69`）仍写 `src/engine/visibility.ts` / `src/engine/actions/self-expose.ts`，而实际实现是 `src/shared/visibility.ts` / `src/engine/phases/self-expose.ts`。C-37 的修法里列过这一条，Round 1 修复只回写了四处正文，没有改交付物表。归入 C-38 ① / 本轮 C-39。
+
+### 4. 复核点 4（C-38 ③）：500 字截断用例 — PASS
+
+`src/engine/phases/wolf-chat.ts:16,60` 使用 `WOLF_CHAT_LIMIT = 500` 与 `action.text.slice(0, WOLF_CHAT_LIMIT)`。
+
+`tests/engine/wolf-chat.test.ts:118-135`：600 个 `x` 输入 → `WOLF_CHAT_POSTED.payload.text` 长度恰为 500。
+
+**反向探针 M-R2-4（实跑）**：删掉 `.slice(0, WOLF_CHAT_LIMIT)` → `wolf-chat.test.ts` **1 failed / 8 passed**，失败信息 `expected ... to have a length of 500 but got 600`。
+
+可选加强（非阻塞，C-39）：用例只断言长度；若实现改成 `.slice(-500)`（保留末尾）也会通过。当前实现保留的是**前** 500 字，行为正确；用带位置标记的字符串（如 `a…a` 到 500、`b` 到 600）可以把「保留前 500 字」也锁住。
+
+---
+
+### 5. 变异探针汇总（本轮实跑，全部已恢复）
+
+| # | 改动 | 定向结果 | 结论 |
+|---|---|---|---|
+| M-R2-1 | `vote.ts` 的 `enterNight` 改回两条相位事件 | 3 files / **6 failed / 22 passed** | B1 回归锁有效；新用例精确变红 |
+| M-R2-2 | `apply.ts` 删 `delete next.votes` | self-expose **1 failed / 7 passed** | B2 主崩溃路径有回归锁 |
+| M-R2-3 | `apply.ts` 删 `delete next.runoff` + `delete next.lynched` | unit **335 passed** | 防御性清理无独立断言（C-39，非阻塞） |
+| M-R2-4 | `wolf-chat.ts` 删 500 字截断 | wolf-chat **1 failed / 8 passed** | C-38 ③ 回归锁有效 |
+| P-R2-1 | 临时：第二夜夜聊 → `NIGHT_WOLVES` → `WOLF_KILL` | **2 passed** | 第二夜可走完，不只是停在夜聊 |
+| P-R2-2 | 临时：自曝 + 被投者夜死 + 次日弃权 | **2 passed** | Round 1 的完整崩溃序列不再崩 |
+
+探针结束后：
+
+```
+$ git status --porcelain
+（空）
+$ pnpm test
+ Test Files  44 passed (44)
+      Tests  369 passed (369)
+EXIT:0
+```
+
+---
+
+### 6. Review Dimensions
+
+#### 1. RFC ADHERENCE — **PASS**
+
+Round 1 的三条阻塞与 500 字测试缺口全部关闭：B1 的第二夜夜聊有真实端到端证据，B2 的清票有会变红的根因用例，B3 的四处正文逐字核对与实现一致，C-38 ③ 有反向探针。未发现新增的越界功能或缺失交付。§3 交付物路径与 §8.9 数字是文档残留，不改变验收结论。
+
+#### 2. RULES COMPLIANCE — **PASS**
+
+- `ARCH-1` / `ARCH-3` / `ARCH-4`：本轮 diff 没有新增 import、时钟或外部状态；`wolfChat` / `votes` 仍由 `applyEvent` 折叠。
+- `ARCH-11`：合法 action 序列不再撞内部不变量（P-R2-2）；M-R2-1 / M-R2-2 / M-R2-4 按预期变红，M-R2-3 作为防御性清理保持全绿（C-39）。
+- `DATA-2`：两个新事件仍走联合类型；`replay-parity` 全绿。
+- `TEST-1`：四项复核都有自动化测试；新增 3 条用例。
+- `TEST-2`：行 96.96% / 分支 93.31%，达标；三个相关文件 100%。
+- `DOC-1`：行为偏离没有新增；但 §8.9 的「本轮实跑」数字未同步（C-39，非阻塞）。
+
+#### 3. SECURITY — **PASS（本轮范围未触及）**
+
+本轮 diff 不涉及密钥、网络、DOM 或服务端响应；`src/shared/visibility.ts` 的判定未被修改，Round 1 的 M1 / M17（死狼可见、好人不可见）结论仍然有效。`WOLF_CHAT` 的截断是防事件流膨胀，不涉及注入或数据暴露。
+
+#### 4. PERFORMANCE — **N/A**
+
+没有新的循环、查询或缓存路径。相反，`enterNight` 从两条相位事件降为一条，`applyPhaseChanged` 只做常数次字段删除；不存在可测量的性能影响。
+
+#### 5. MAINTAINABILITY — **PASS（有非阻塞 nit）**
+
+代码路径清晰，四条修复都有针对性用例；`WOLF_CHAT_LIMIT` 抽成常量。残留的过时注释、§3 路径、§8.9 数字与两处无独立断言的防御性清理登记为 C-39，不影响合并。
+
+---
+
+### 7. 非阻塞残留（登记为 C-39）
+
+1. `RFCs/RFC-005...:206` 的 §8.9「本轮实跑」仍写 `44 files / 366 tests`、`行 96.95% / 分支 93.31%`；实际是 **369 tests / 行 96.96% / 分支 93.31%**。§8.7 `:182` 的 366 是 Round 1 修复前的历史输出，可以保留。
+2. 过时注释：`tests/engine/vote.test.ts:113` 仍写「`NIGHT_WOLF_CHAT` 被跳过，与 START 一致」（下一行断言已改为 `NIGHT_WOLF_CHAT`）；`src/engine/phases/night.ts:15` 仍写「夜聊由 RFC-005 填，本 RFC 跳过」；`tests/engine/reject.test.ts:37` 标题仍说「开局后所有 action 都被拒」（现在 `WOLF_CHAT` 允许）；`tests/engine/transitions.test.ts:52` 注释仍把夜聊列为「无 action 的阶段」；`tests/fixtures/night.ts:12,16` 从 `./states` 重复 import。
+3. `RFCs/RFC-005...:67-69` 的交付物路径仍是 `src/engine/visibility.ts` / `src/engine/actions/self-expose.ts`（C-38 ①）。
+4. `runoff` / `lynched` 的清理无独立断言（M-R2-3 全绿）；行为正确，但若未来有人删掉这两行，测试不会发现。
+5. `TEST-STRATEGY.md:3` 仍引用 `RFCS.md v2.32`；C-38 ② 的 `checkWin` 计划在实现提交 `6c830d8` 里被静默删掉，未在 Implementation Notes 记录理由。
+6. 500 字用例只断言长度（见 §4 的可选加强）。
+
+以上均不需要在合并前修；建议下一次 docs / 修复提交一并处理。
+
+---
+
+### 8. 最终判断
+
+- **Overall Risk Level: Low**
+- **Summary**：Round 1 的三条阻塞与 500 字截断缺口全部关闭。四项复核的主断言都有会变红的回归锁（B2 的 `runoff` / `lynched` 防御性清理没有独立断言，见 C-39）；额外端到端探针确认第二夜夜聊可以走完并接上狼刀、自曝后的完整崩溃序列不再崩溃。没有发现新的阻塞项，只剩注释、文档与一处防御性清理的测试空白。
+- **Blocking Issues**：无。
+- **状态**：`RFCS.md` → `Reviewed`；C-35 / C-36 / C-37 关闭，C-38 的 ③ 关闭。
