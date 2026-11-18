@@ -243,6 +243,8 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 12、13 | `tests/server/llm/meta.test.ts`：断言 `CallMeta` 13 个字段齐全；`attempt` 在重试时递增；业务代码除 `config.ts` 外无 `'deepseek-flash'` 字面量 | unit | proposed | Must |
 | 14 | 同上：假 `fetch` 返回固定 JSON，断言 `Decision` 被解析且 `CallMeta` 被写 | unit | proposed | Should |
 
+> **RFC-006 Round 1 评审（2026-11-18）**：本表仍全部为 `proposed`，与落地不符——实际用例在 `tests/server/llm/{client,to-action,prompts}.test.ts` 与 `tests/security/llm-isolation.test.ts`。AC-5 的「网络错误 / 429 各重试一次」与 AC-6 的「重试不重复 action」没有用例；`.tsx` 未被 `collectTypeScriptFiles` 扫描，AC-1 / AC-2 / AC-13 对 `src/client/main.tsx` 是空断言。详见 `reviews/REVIEW-RFC-006.md` §2 / §3 / B6。补齐前不要把对应行改回 `existing`。
+
 ---
 
 ## RFC-007: 上下文投影与注入隔离
