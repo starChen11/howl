@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.30 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
+> 版本 v2.31 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -40,7 +40,7 @@
 | [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Reviewed |
 | [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Spec changed |
-| [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Implemented |
+| [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Reviewed |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Not started |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Not started |
@@ -240,11 +240,11 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 ### 8.7 RFC-004 Round 1 评审登记的冲突（2026-11-18）
 
-> 由 `/review-rfc 004` 登记；完整证据见 `reviews/REVIEW-RFC-004.md` Round 1。**C-31 阻塞 RFC-004（Round 2 复核仍未关闭）**；C-32 已于 Round 2 关闭；C-33 非阻塞。
+> 由 `/review-rfc 004` 登记；完整证据见 `reviews/REVIEW-RFC-004.md` Round 1 / 2 / 3。**C-31 已于 Round 3 关闭**；C-32 已于 Round 2 关闭；C-33 非阻塞。
 
 | # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
 |---|---|---|---|
-| **C-31** | **公开的 `DAY_STARTED.diedLastNight` 顺序泄漏死因。** RFC-004 §2.1 / AC-2 规定 `diedLastNight`「按死亡结算顺序」，且 `speechStartSeat` 取「结算顺序第一位死者」的下一位；而 RFC-003 §2.3 / `src/engine/resolve/deaths.ts:69-86` 的结算顺序固定为「先狼刀、后毒药」。于是两人同夜出局时，任何观察者（含 RFC-007 会喂给 AI 的 `publicEvents`）都能从公开顺序断定哪一个是狼刀、哪一个是女巫毒——即「女巫今晚毒了谁」这条**他人夜间行动**。RFC-003 D-3 为了让死因不公开，专门把夜间 `PLAYER_DIED` 设为 `server`（`RFCs/RFC-003...:159`、§9.4 `:284` 明确写「payload 只有天数与死者、没有死因」）；`PRD.md:153`（FR-9）也禁止注入「他人夜间行动」。RFC-003 的 B2 / C-23 修的正是同一类泄漏 | **阻塞 RFC-004**，需用户裁决（不能由实现者顺手改规格）：① `diedLastNight` 改成与死因无关的顺序（座位升序）；② `speechStartSeat` 改成与死因无关的规则（座位最小死者的下一位 / 每天抽一次），并同步 `PRD.md:149`（FR-5「首个死者」）的解释；③ 补回归：交换两名死者的座位后，公开 payload 的顺序与起点都不得随死因变化。按权威顺序 `PRD > RFC`，取 PRD FR-9 | **阻塞（Round 1）→ 未关闭（Round 2 复核）** · `src/engine/phases/day.ts:47,67`、`src/engine/apply.ts:237`、`src/engine/resolve/deaths.ts:69-86`、`RFCs/RFC-004...:24,31,107`、`RFCs/RFC-003...:159,284`、`PRD.md:149,153`；`reviews/REVIEW-RFC-004.md` §4.1 / B1（实跑公开 payload `{"diedLastNight":[9,3],"speechStartSeat":1}`）；**Round 1 修复**：公告按座位升序、发言起点取座位最小死者的下一位（`CHANGE-REQUEST-008`）；新增「两种死因顺序得到同一个公告」的回归用例，反向探针会红。但该探针只覆盖 `diedLastNight`。**Round 2 复核**：`speechStartSeat` 的用例在死者为 1/9 时，结算顺序 / 最小 / 最大三种规则都得到同一个起点，M2 / M3 改坏实现后全套 342 用例仍全绿，故 C-31 未关闭（见 `reviews/REVIEW-RFC-004.md` Round 2） | **已修复（Round 1 + Round 2）**：公告按座位升序、起点取座位最小死者的下一位（`CHANGE-REQUEST-008`）。Round 2 指出第二条路径的回归测试是空断言（三种候选实现给出同一个起点），已改为对 `pendingDeaths` 两种顺序的直接断言，`M2` / `M3` 反向探针都会红
+| **C-31** | **公开的 `DAY_STARTED.diedLastNight` 顺序泄漏死因。** RFC-004 §2.1 / AC-2 规定 `diedLastNight`「按死亡结算顺序」，且 `speechStartSeat` 取「结算顺序第一位死者」的下一位；而 RFC-003 §2.3 / `src/engine/resolve/deaths.ts:69-86` 的结算顺序固定为「先狼刀、后毒药」。于是两人同夜出局时，任何观察者（含 RFC-007 会喂给 AI 的 `publicEvents`）都能从公开顺序断定哪一个是狼刀、哪一个是女巫毒——即「女巫今晚毒了谁」这条**他人夜间行动**。RFC-003 D-3 为了让死因不公开，专门把夜间 `PLAYER_DIED` 设为 `server`（`RFCs/RFC-003...:159`、§9.4 `:284` 明确写「payload 只有天数与死者、没有死因」）；`PRD.md:153`（FR-9）也禁止注入「他人夜间行动」。RFC-003 的 B2 / C-23 修的正是同一类泄漏 | **阻塞 RFC-004**，需用户裁决（不能由实现者顺手改规格）：① `diedLastNight` 改成与死因无关的顺序（座位升序）；② `speechStartSeat` 改成与死因无关的规则（座位最小死者的下一位 / 每天抽一次），并同步 `PRD.md:149`（FR-5「首个死者」）的解释；③ 补回归：交换两名死者的座位后，公开 payload 的顺序与起点都不得随死因变化。按权威顺序 `PRD > RFC`，取 PRD FR-9 | **Closed（Round 3 复核，2026-11-18）** · `src/engine/phases/day.ts:47,67`、`src/engine/apply.ts:237`、`src/engine/resolve/deaths.ts:69-86`、`RFCs/RFC-004...:24,31,107`、`PRD.md:149,153`；`reviews/REVIEW-RFC-004.md` Round 1 §4.1 / B1、Round 2 §R2.2、Round 3 §R3.2。**Round 1 修复**：公告按座位升序、发言起点取座位最小死者的下一位（`CHANGE-REQUEST-008`）。**Round 2 复核**：起点用例在死者为 1/9 时是空断言（三种候选实现得到同一个起点），M2 / M3 改坏实现后全套 342 用例仍全绿，C-31 未关闭。**Round 3 修复与复核**：夹具改为「wolf 刀村民 6 + witch 毒 wolf 2」，公开 payload 为 `{"diedLastNight":[2,6],"speechStartSeat":3}`（结算顺序是 `[6,2]`）；起点改为对 `dayAnnounceEntry` 的直接断言（`pendingDeaths` 为 `[7,3]` / `[3,7]` 都必须得到 4）；M1（去掉 sort）2 红、M2（`deaths[0]`）1 红、M3（最大死者）1 红，均实跑，探针后 342 用例全绿 |
 | **C-32** | `FEATURES.md:66`（F5 AC-4）写「平票重投…选项集为并列者 **+ 弃权**」，与 `RULES.md:234`（RUL-2「不能弃权」）、RFC-004 AC-8、`src/engine/phases/vote.ts:128` 冲突。`changes/CHANGE-REQUEST-002.md:28` 的 R-2 影响面只列「RULES、RFC-001、RFC-004」，漏了 FEATURES | **按 RUL-2 判（非阻塞 RFC-004 代码）**：`PRD.md:102`（RA-2）是开放歧义，`PRD.md:349`（D40）把 RA-2 的裁决权委托给 `RULES.md`，用户在 CR-002 已拍板「只能投并列者」；FEATURES 是漏改的派生文档。由 `/manage-changes` 把 F5 AC-4 改为「并列者本身」，不改代码 | **Closed（Round 2 复核）** · `FEATURES.md:66`、`RULES.md:234`、`RFCs/RFC-004...:113`、`src/engine/phases/vote.ts:128`、`PRD.md:102,349`、`changes/CHANGE-REQUEST-002.md:28,61-66`；`reviews/REVIEW-RFC-004.md` §4.5 / C-32；**Round 1 修复**：`FEATURES.md` F5 AC-4 同步为「选项集仅为并列者本身、不能弃权」（`CHANGE-REQUEST-008`）；Round 2 复核 `FEATURES.md:66` 已是「仅为并列者本身、不能弃权」 |
 | **C-33** | **F7 的效果插入点在真实结算上没有接线。** `FEATURES.md:68`（F7 AC-1）要求「每个结算点（夜间行动 / 投票 / 出局 / 胜负判定）产出有序效果列表」，AC-3 要求用「该玩家本日投票无效」这类假效果证明插入点能改变结算结果。但 `VOTE_RESOLVE` / `DEATH_RESOLVE` / `WIN_CHECK` 三个 `ResolutionPoint` 在 `src/` 里没有任何调用点；`step(state, action, modifiers)` 只把 `modifiers` 放进 `HandlerContext`，`night.ts:84,324` 与 `lynch.ts:34` 直接调 `applyEffects`，`vote` 结算根本不产出效果。现有测试（`effects.test.ts:91-108`、`step.test.ts:91`）只证明 `applyModifiers` 本身与「自定义 handler + step」的合成链路，没有走真实 handler——RFC-002 评审 N9 当时就点明「RFC-003/004 第一次写结算时若忘记接线，现有测试不会红」 | **非阻塞 v1**（`C-21` 同款：不注册任何 modifier，无可观察行为差异），但必须在 RFC-002 的 `C-21` 关闭前一起决定：要么在 RFC-004 的 `settle` / `lynchEntry` / `checkWin` 调用点接 `applyModifiers` 并补真实路径测试，要么由 `/manage-changes` 收窄 F7 的可观察面。不要把它留成「代码里有个 `modifiers` 参数就算实现」 | **Open（非阻塞）** · `src/engine/step.ts:231,238-246`、`src/engine/phases/night.ts:84,324`、`src/engine/phases/lynch.ts:34`、`src/engine/phases/vote.ts:92-118`、`FEATURES.md:68`、`RFCs/RFC-002...` §2.4、`reviews/REVIEW-RFC-002.md` N9；`reviews/REVIEW-RFC-004.md` §3 PROBE-C / C-33（`seen: []`） |
 
@@ -289,6 +289,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.31 | RFC-004 Round 3 复核（Status → Reviewed）：C-31 关闭——真实夹具改为「wolf 刀村民 6 + witch 毒 wolf 2」，起点改为对 `dayAnnounceEntry` 的直接断言；M1 / M2 / M3 三条反向探针均实跑变红，探针后 342 用例全绿。PRD FR-5 / D34、FEATURES F4 AC-2 与五处源码注释已同步；残留非阻塞文档漂移（RFC §8.5 AC-2 证据行、README:13、`day.test.ts:20` 等）见 `reviews/REVIEW-RFC-004.md` Round 3 §R3.3 / §R3.6 |
 | 2026-11-18 | v2.30 | RFC-004 Round 2 修复（Status → Implemented）：C-31 起点路径的空断言已换成直接规则断言（M2/M3 会红）；注释、PRD FR-5/D34、FEATURES F4 AC-2、TEST-STRATEGY、README 的过时表述同步 |
 | 2026-11-18 | v2.29 | RFC-004 Round 2 评审（Status → `Changes requested`）：C-31 的 `diedLastNight` 路径经反向探针关闭（M1 红），但 `speechStartSeat` 的回归用例在死者为 1/9 时是空断言（M2 结算顺序 / M3 最大座位改坏实现后，全套 342 用例仍全绿），C-31 仍未关闭；B2 四个 schema 与 AC-1 / AC-3 / AC-10 三条补测经反向探针确认关闭。另记 schema 行为无测试、`events.ts` / `day.ts` 等注释仍写旧顺序、RFC §8.5 证据表、TEST-STRATEGY 缺 AC-4b、PRD / FEATURES「首个死者」未定义等非阻塞项。详见 `reviews/REVIEW-RFC-004.md` Round 2 |
 | 2026-11-18 | v2.28 | RFC-004 Round 1 修复（Status → Implemented）：C-31 死亡公告改为按座位升序、起点取最小死者（CR-008）；B2 补 4 个 payload schema；三条「测试不设防」补齐并各自用反向探针确认会红。C-33 留待新 RFC |

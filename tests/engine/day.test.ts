@@ -17,7 +17,7 @@ import { FIXTURE_ROLES, lobbyState, startActionOf, stateWithRoles } from '../fix
  */
 
 describe('AC-2 / AC-4 · 发言起点由昨夜死者决定', () => {
-  it('起点是「结算顺序第一位死者的下一位存活席位」', () => {
+  it('起点是「座位最小的死者的下一位存活席位」', () => {
     const { state, killTarget } = reachDay();
     if (killTarget === null) throw new Error('夹具应当有死者');
 
@@ -133,7 +133,7 @@ describe('C-31 · 公开的死亡公告不携带死因顺序', () => {
 
   it('发言起点取「座位最小的死者」的下一位——两种 pendingDeaths 顺序得到同一结果', () => {
     // 直接对规则函数断言。用 3 与 7 这一对：它们「下一位存活者」不同（4 vs 8），
-    // 所以三种候选实现（最小 / 结算顺序 / 最大）会得到三个不同答案。
+    // 所以「最小 / 结算顺序 / 最大」三种实现会得到不同答案（最小与后两者不同）。
     const base = stateWithRoles(FIXTURE_ROLES, 'slaughter-side');
     const state: GameState = { ...base, phase: 'DAY_ANNOUNCE', day: 2, seq: 20 };
 

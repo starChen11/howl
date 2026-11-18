@@ -136,6 +136,7 @@ RFC-003 的 D-3 专门把夜间 `PLAYER_DIED` 设为 `server` 就是为了藏死
 | 3 | `src/engine/phases/day.ts`、`apply.ts` | §3.3 |
 | 4 | `tests/engine/day.test.ts` | §3.3 |
 | 5 | `FEATURES.md` F5 AC-4 | §3.4 |
+| 5b | `PRD.md` FR-5 / D34、`FEATURES.md` F4 AC-2 | 「首个死者」→「死者中座位最小者」（Round 2 补做；原文写「首个死者」，未定义顺序） |
 | 6 | `RFCS.md` C-31 / C-32 | 标记已裁决 |
 | 7 | 本文件 | 决策记录 |
 

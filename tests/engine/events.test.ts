@@ -178,7 +178,7 @@ describe('真实事件的 payload 能被登记的 schema 校验（Round 2 评审
 
     for (const event of all) {
       const schema = PAYLOAD_SCHEMAS[event.type as keyof typeof PAYLOAD_SCHEMAS];
-      if (schema === undefined) continue; // 还没登记 schema 的事件类型（如 SPEECH 归 RFC-004）
+      if (schema === undefined) continue; // 还没登记 schema 的事件类型（归各自的 RFC）
       const result = schema.safeParse(event.payload);
       expect(
         result.success,

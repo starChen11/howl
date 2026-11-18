@@ -198,7 +198,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 ---
 
-## RFC-004: 白天发言、投票与胜负判定
+## RFC-004: 白天发言、投票与胜负判定（16 条 AC + 1 条 C-31 补充）
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|

@@ -189,8 +189,9 @@ D-1 让 `DAY_ANNOUNCE` 不再停留。RFC-003 的 AC-16 断言「夜晚结束后
 | AC | 证据 | 结果 |
 |---|---|---|
 | 1 | `day.test.ts` · 按 `speechOrder` 逐个发言，每人恰好一次，结束后进 `DAY_VOTE` | PASS |
-| 2 | 同上 · 起点 = 结算顺序第一位死者的下一位存活席位 | PASS |
-| 3 | 同上 · 无死者时同 seed 两次运行起点相同；`DAY_STARTED.payload.speechStartSeat` 与 `replay` 一致 | PASS |
+| 2 | `day.test.ts` · 起点 = **座位最小的死者**的下一位存活席位（`pendingDeaths` 两种顺序断言同一个结果） | PASS |
+| 3 | 同上 · 无死者时同 seed 两次运行起点相同；6 个 seed 的起点不止一个值；`speechStartSeat` 与 `replay` 一致 | PASS |
+| 4b | 同上 · 公开的 `diedLastNight` 按座位升序，且不等于「刀口 + 毒药」的结算顺序 | PASS |
 | 4 | 同上 · 起点不是死者；已出局者不在序列里 | PASS |
 | 5 | `vote.test.ts` · `VOTE_CAST.visibleTo === 'self:<seat>'`；最后一张票之前**没有任何公开事件** | PASS |
 | 6 | 同上 · `VOTE_REVEALED` 覆盖全部存活席位，弃权标记为 `abstain` | PASS |
@@ -279,4 +280,6 @@ Round 2 复核了 Round 1 的修复，结论仍是 **Changes requested**，但�
 
 同轮修掉的非阻塞项：`events.ts` / `domain.ts` / `apply.ts` / `deaths.ts` / `day.ts` 里「结算顺序」的过时注释；§8.5 的 AC-2 / AC-10 证据表；`PRD` FR-5 与 D34、`FEATURES` F4 AC-2 里的「首个死者」统一成「死者中座位最小者」；`TEST-STRATEGY` 补 AC-4b 行并同步版本引用；README 的进度描述。
 
-**提交归属更正**：C-31 的代码修复实际落在 `4693649`（`fix(rfc-004): 修掉死亡公告的死因泄漏与三处测试缺口`）；`eeceb96` 是流程文档提交，与 C-31 无关。
+**提交归属更正（Round 3 再次纠正）**：C-31 的**代码**修复（`src/engine/phases/day.ts` 的排序与最小死者起点）实际落在 `eeceb96`（`docs(process): 固化 subagent 评审的调用方式与等待策略`）——那次提交用了 `git add -A`，把当时工作树里的代码改动一并带了进去。`4693649` 只包含 `schemas.ts` 与测试文件。
+
+这条写反了两次（先错指 `4693649`，再"更正"成同一个错误结论），根因是**用提交信息的内容去回忆提交内容**，而没有跑 `git show --name-only`。流程上的教训：涉及「改动在哪个提交」的断言，必须查 `git show`，不能凭记忆。

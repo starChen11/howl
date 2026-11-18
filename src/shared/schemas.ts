@@ -141,7 +141,8 @@ export const EventSchema = makeEventEnvelopeSchema(z.unknown());
 /**
  * 事件 payload 的 schema：**由拥有该事件的 RFC 追加**（C-10 的归属规则）。
  *
- * RFC-002 拥有 `GAME_STARTED` 与 `REJECTED`；`DAY_STARTED` 归 RFC-004，其余由各自的 RFC 加。
+ * RFC-002 拥有 `GAME_STARTED` 与 `REJECTED`；`DAY_STARTED` / `SPEECH` / `SPEECH_SKIPPED` /
+ * `VOTE_CAST` / `VOTE_REVEALED` 归 RFC-004，其余由各自的 RFC 加。
  */
 export const GameStartedPayloadSchema = z.object({
   seed: z.number().int(),
