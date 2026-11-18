@@ -233,6 +233,41 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     expect(replayed.rng).not.toEqual({ __rng: 1 });
   });
 
+  it('PHASE_CHANGED 的 from 与当前阶段不一致时抛错（N7）', () => {
+    const [startedEvent] = eventsOfStart();
+    if (startedEvent?.type !== 'GAME_STARTED') throw new Error('缺少 GAME_STARTED');
+
+    // GAME_STARTED 之后状态在 NIGHT_WOLF_CHAT，事件却说 from 是 NIGHT_VOTES —— 拼错了。
+    const bogus: GameEvent = {
+      gameId: startedEvent.gameId,
+      seq: 2,
+      ts: 0,
+      type: 'PHASE_CHANGED',
+      visibleTo: 'server',
+      payload: { from: 'NIGHT_WITCH', to: 'NIGHT_RESOLVE' },
+    };
+
+    expect(() => replay([startedEvent, bogus])).toThrow(/from 与当前阶段不一致/);
+  });
+
+  it('PLAYER_DIED 指向不存在的座位时抛错（N7）', () => {
+    const [startedEvent] = eventsOfStart();
+    if (startedEvent === undefined) throw new Error('缺少 GAME_STARTED');
+
+    const bogus: GameEvent = {
+      gameId: startedEvent.gameId,
+      seq: 2,
+      ts: 0,
+      type: 'PLAYER_DIED',
+      visibleTo: 'server',
+      payload: { seat: 9, cause: 'wolf' },
+    };
+    // 先把 9 号刀掉，再对同一个座位重复 PLAYER_DIED：第二次是真正的数据损坏。
+    const first: GameEvent = { ...bogus };
+
+    expect(() => replay([startedEvent, first, { ...bogus, seq: 3 }])).toThrow(/重复/);
+  });
+
   it('未实现折叠的事件类型抛 UnknownEventError（不静默忽略）', () => {
     const [startedEvent] = eventsOfStart();
     if (startedEvent === undefined) throw new Error('缺少 GAME_STARTED');

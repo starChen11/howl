@@ -188,6 +188,67 @@ describe('AC-14 · 胜负先于开枪（RUL-1）', () => {
   });
 });
 
+describe('B1 / C-24 · 毒药指向狼刀目标（合法 action 不能崩）', () => {
+  it('同一座位只出局一次，死因取毒药', () => {
+    const state = makeNightState({ phase: 'NIGHT_WITCH', night: { killTarget: 7 } });
+    const witch = roleSeat(state, 'witch');
+
+    const { events, state: after } = run(state, {
+      type: 'WITCH_ACT',
+      ts: 1,
+      seat: witch,
+      potion: 'poison',
+      target: 7,
+    });
+
+    const died = events.filter((event) => event.type === 'PLAYER_DIED');
+    expect(died).toHaveLength(1);
+    expect(died[0]?.payload).toEqual({ seat: 7, cause: 'poison' });
+    expect(after.seats.find((seat) => seat.seat === 7)?.alive).toBe(false);
+  });
+
+  it('目标是 hunter 时按毒杀处理：不进开枪阶段', () => {
+    // FIXTURE_ROLES 的 hunter 是 6 号；让狼刀与毒药同时指向他
+    const state = makeNightState({ phase: 'NIGHT_WITCH', night: { killTarget: 6 } });
+    const witch = roleSeat(state, 'witch');
+
+    const { events, state: after } = run(state, {
+      type: 'WITCH_ACT',
+      ts: 1,
+      seat: witch,
+      potion: 'poison',
+      target: 6,
+    });
+
+    const phasePath = events
+      .filter((event) => event.type === 'PHASE_CHANGED')
+      .map((event) => (event.type === 'PHASE_CHANGED' ? event.payload.to : ''));
+
+    expect(phasePath).not.toContain('NIGHT_HUNTER_SHOOT');
+    expect(after.phase).toBe('DAY_ANNOUNCE');
+    expect(after.seats.find((seat) => seat.seat === 6)?.alive).toBe(false);
+  });
+
+  it('解药抵消狼刀、毒药仍然生效：同一座位只死一次', () => {
+    // 解药救 7 号（刀口），毒药毒 7 号 —— 死因是毒药，且只死一次。
+    // 但 RUL-3 禁止一夜双开药，所以只能分两步构造：这里直接对 resolveNight 断言。
+    const resolution = resolveNight({ killTarget: 7, healTarget: 7, poisonTarget: 7 });
+
+    expect(resolution.deaths).toEqual([{ seat: 7, cause: 'poison' }]);
+    expect(resolution.effects.filter((effect) => effect.type === 'kill')).toHaveLength(1);
+  });
+
+  it('resolveNight 对同一座位的死因按毒药归并，并按座位升序', () => {
+    const resolution = resolveNight({ killTarget: 7, poisonTarget: 7 });
+
+    expect(resolution.deaths).toEqual([{ seat: 7, cause: 'poison' }]);
+
+    const both = resolveNight({ killTarget: 3, poisonTarget: 7 });
+    expect(both.deaths.map((death) => death.seat)).toEqual([3, 7]);
+    expect(both.deaths.map((death) => death.cause)).toEqual(['wolf', 'poison']);
+  });
+});
+
 describe('死亡效果的两条防御分支', () => {
   it('效果 payload 的 cause 非法时抛错（不猜测死因）', () => {
     expect(() =>

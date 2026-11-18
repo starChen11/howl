@@ -7,6 +7,8 @@ import type { EffectApplierMap } from './effects';
 import type { Modifier } from './effects';
 import { UnhandledTransitionError } from './errors';
 import { NIGHT_HANDLERS } from './phases/night';
+import { phaseChangedDraft } from './phases/visibility';
+import { DEATH_APPLIERS } from './resolve/deaths';
 import { rejectionDraft, seatOf } from './reject';
 import { assertCompleteTransitionTable, DEFAULT_TRANSITIONS } from './transitions';
 import type { TransitionTable } from './transitions';
@@ -125,23 +127,24 @@ const startHandler: ActionHandlerFor<'START'> = (state, action) => {
     },
     // 发牌后进入 NIGHT_WOLF_CHAT（RFC-003 §2.2 的阶段图从这里开始）。夜聊由 RFC-005 实现，
     // 本 RFC 直接推进到第一个「有人要行动」的阶段——每个相位推进都是一条事件，所以
-    // replay 能把这段路径原样重建出来。
-    {
-      type: 'PHASE_CHANGED',
-      visibleTo: 'public',
-      payload: { from: 'NIGHT_WOLF_CHAT', to: 'NIGHT_WOLVES' },
-    },
+    // replay 能把这段路径原样重建出来。可见性由 `phaseChangedDraft` 统一决定：夜间是
+    // `server`，否则相位序列会把「谁已出局」漏给全场（C-23）。
+    phaseChangedDraft('NIGHT_WOLF_CHAT', 'NIGHT_WOLVES'),
   ];
 };
 
 export const DEFAULT_HANDLERS: HandlerTable = { START: startHandler, ...NIGHT_HANDLERS };
 
 /**
- * RFC-002 不定义任何具体效果类型（`Effect.type` 的取值归 RFC-003/004），所以默认表是空的。
- * 空表意味着「任何效果都没人认领」——`applyEffects` 会抛 `UnknownEffectError`，
- * 而不是假装结算成功。
+ * 默认的效果 applier 表。
+ *
+ * RFC-002 时它是空的（那时没有任何具体效果类型）。RFC-003 引入 `heal` / `kill` 两种，
+ * 于是默认表接上 `DEATH_APPLIERS`——**handler 用的是 `context.appliers`**，所以注入自定义
+ * 表能替换掉它，而不是像最初那样绕过注入直接引用常量（评审 N6）。
+ *
+ * 未注册的效果仍然抛 `UnknownEffectError`：空表意味着「没人认领」，不是「静默跳过」。
  */
-export const DEFAULT_APPLIERS: EffectApplierMap = {};
+export const DEFAULT_APPLIERS: EffectApplierMap = DEATH_APPLIERS;
 
 /**
  * 给草稿盖上信封字段。

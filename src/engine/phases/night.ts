@@ -2,8 +2,10 @@ import type { GameState, Phase, SeatId } from '@shared/domain';
 
 import type { EventDraft } from '../step';
 import type { ActionHandlerFor } from '../step';
+import type { EffectApplierMap } from '../effects';
 import { applyEffects } from '../effects';
-import { DEATH_APPLIERS, deathCauseOf, resolveHunterShot, resolveNight } from '../resolve/deaths';
+import { phaseChangedDraft } from './visibility';
+import { resolveHunterShot, resolveNight } from '../resolve/deaths';
 import { aliveSeats, findAliveByRole, isAlive, seatAt } from '../queries';
 import { rejectionDraft } from '../reject';
 import { checkWin } from '../win';
@@ -69,13 +71,12 @@ function nextAfterSeer(state: GameState): Phase {
 function finishNight(
   from: Phase,
   state: GameState,
-  extra: { killTarget?: SeatId; healTarget?: SeatId; poisonTarget?: SeatId } = {},
+  extra: { killTarget?: SeatId; healTarget?: SeatId; poisonTarget?: SeatId },
+  appliers: EffectApplierMap,
 ): EventDraft[] {
   const resolution = resolveNight(nightParams(state, extra));
 
-  const drafts: EventDraft[] = [
-    { type: 'PHASE_CHANGED', visibleTo: 'public', payload: { from, to: 'NIGHT_RESOLVE' } },
-  ];
+  const drafts: EventDraft[] = [phaseChangedDraft(from, 'NIGHT_RESOLVE')];
 
   for (const death of resolution.deaths) {
     drafts.push({
@@ -86,7 +87,7 @@ function finishNight(
   }
 
   // 第 5 步：死亡应用完毕后立刻判胜负（RUL-1）。已分出胜负 → 对局结束，不进开枪阶段。
-  const afterDeaths = applyEffects(state, resolution.effects, DEATH_APPLIERS);
+  const afterDeaths = applyEffects(state, resolution.effects, appliers);
   const win = checkWin(afterDeaths);
   if (win !== null) {
     drafts.push({ type: 'GAME_ENDED', visibleTo: 'public', payload: win });
@@ -115,21 +116,16 @@ function advanceOrFinish(
   state: GameState,
   from: Phase,
   next: Phase,
-  extra?: { killTarget?: SeatId },
-) {
+  extra: { killTarget?: SeatId },
+  appliers: EffectApplierMap,
+): EventDraft[] {
   return next === 'NIGHT_RESOLVE'
-    ? finishNight(from, state, extra)
-    : [
-        {
-          type: 'PHASE_CHANGED' as const,
-          visibleTo: 'public' as const,
-          payload: { from, to: next },
-        },
-      ];
+    ? finishNight(from, state, extra, appliers)
+    : [phaseChangedDraft(from, next)];
 }
 
 /** `WOLF_KILL`（`NIGHT_WOLVES`）。 */
-const wolfKill: ActionHandlerFor<'WOLF_KILL'> = (state, action) => {
+const wolfKill: ActionHandlerFor<'WOLF_KILL'> = (state, action, context) => {
   const actor = seatAt(state, action.seat);
   if (!actor.alive || actor.role !== 'wolf') {
     return [
@@ -164,14 +160,18 @@ const wolfKill: ActionHandlerFor<'WOLF_KILL'> = (state, action) => {
 
   return [
     { type: 'WOLF_KILL_CHOSEN', visibleTo: 'wolves', payload: { target: action.target } },
-    ...advanceOrFinish(state, 'NIGHT_WOLVES', nextAfterWolves(state), {
-      killTarget: action.target,
-    }),
+    ...advanceOrFinish(
+      state,
+      'NIGHT_WOLVES',
+      nextAfterWolves(state),
+      { killTarget: action.target },
+      context.appliers,
+    ),
   ];
 };
 
 /** `SEER_CHECK`（`NIGHT_SEER`）。 */
-const seerCheck: ActionHandlerFor<'SEER_CHECK'> = (state, action) => {
+const seerCheck: ActionHandlerFor<'SEER_CHECK'> = (state, action, context) => {
   const actor = seatAt(state, action.seat);
   if (!actor.alive || actor.role !== 'seer') {
     return [
@@ -202,12 +202,12 @@ const seerCheck: ActionHandlerFor<'SEER_CHECK'> = (state, action) => {
       visibleTo: 'seer',
       payload: { target: action.target, result: isWolf ? 'wolf' : 'not-wolf' },
     },
-    ...advanceOrFinish(state, 'NIGHT_SEER', nextAfterSeer(state)),
+    ...advanceOrFinish(state, 'NIGHT_SEER', nextAfterSeer(state), {}, context.appliers),
   ];
 };
 
 /** `WITCH_ACT`（`NIGHT_WITCH`）。 */
-const witchAct: ActionHandlerFor<'WITCH_ACT'> = (state, action) => {
+const witchAct: ActionHandlerFor<'WITCH_ACT'> = (state, action, context) => {
   const actor = seatAt(state, action.seat);
   if (!actor.alive || actor.role !== 'witch') {
     return [
@@ -223,26 +223,28 @@ const witchAct: ActionHandlerFor<'WITCH_ACT'> = (state, action) => {
   const used = state.potionsUsed ?? { heal: false, poison: false };
 
   if (action.potion === 'none') {
-    return finishNight('NIGHT_WITCH', state);
+    return finishNight('NIGHT_WITCH', state, {}, context.appliers);
   }
 
   if (action.potion === 'heal') {
-    if (action.target === action.seat) {
-      return [
-        rejectionDraft({
-          action,
-          code: 'WITCH_SELF_SAVE',
-          message: 'witch 不能对自己使用解药（FR-17）',
-          seat: action.seat,
-        }),
-      ];
-    }
+    // 顺序有意义：「药已经没了」比「你不能对自己用」更根本——前者的返回在两种错误同时
+    // 成立时更可操作（评审 N10）。
     if (used.heal) {
       return [
         rejectionDraft({
           action,
           code: 'POTION_ALREADY_USED',
           message: '解药已经用过了（整局限一次）',
+          seat: action.seat,
+        }),
+      ];
+    }
+    if (action.target === action.seat) {
+      return [
+        rejectionDraft({
+          action,
+          code: 'WITCH_SELF_SAVE',
+          message: 'witch 不能对自己使用解药（FR-17）',
           seat: action.seat,
         }),
       ];
@@ -264,7 +266,7 @@ const witchAct: ActionHandlerFor<'WITCH_ACT'> = (state, action) => {
         visibleTo: 'witch',
         payload: { potion: 'heal', target: action.target },
       },
-      ...finishNight('NIGHT_WITCH', state, { healTarget: action.target }),
+      ...finishNight('NIGHT_WITCH', state, { healTarget: action.target }, context.appliers),
     ];
   }
 
@@ -295,12 +297,12 @@ const witchAct: ActionHandlerFor<'WITCH_ACT'> = (state, action) => {
       visibleTo: 'witch',
       payload: { potion: 'poison', target: action.target },
     },
-    ...finishNight('NIGHT_WITCH', state, { poisonTarget: action.target }),
+    ...finishNight('NIGHT_WITCH', state, { poisonTarget: action.target }, context.appliers),
   ];
 };
 
 /** `HUNTER_SHOOT`（`NIGHT_HUNTER_SHOOT`）。 */
-const hunterShoot: ActionHandlerFor<'HUNTER_SHOOT'> = (state, action) => {
+const hunterShoot: ActionHandlerFor<'HUNTER_SHOOT'> = (state, action, context) => {
   const actor = seatAt(state, action.seat);
   if (actor.role !== 'hunter' || actor.alive) {
     return [
@@ -341,24 +343,15 @@ const hunterShoot: ActionHandlerFor<'HUNTER_SHOOT'> = (state, action) => {
     });
   }
 
-  // 第 7 步：开枪结算完成后再判一次（RUL-1）。死因必须是 'shoot'——顺手用它把效果的
-  // `cause` 与事件里的 `cause` 绑在一起，避免两处写死两个字符串。
-  for (const effect of shot.effects) {
-    deathCauseOf(effect);
-  }
-
-  const afterShot = applyEffects(state, shot.effects, DEATH_APPLIERS);
+  // 第 7 步：开枪结算完成后再判一次（RUL-1）。
+  const afterShot = applyEffects(state, shot.effects, context.appliers);
   const win = checkWin(afterShot);
   if (win !== null) {
     drafts.push({ type: 'GAME_ENDED', visibleTo: 'public', payload: win });
     return drafts;
   }
 
-  drafts.push({
-    type: 'PHASE_CHANGED',
-    visibleTo: 'public',
-    payload: { from: 'NIGHT_HUNTER_SHOOT', to: 'DAY_ANNOUNCE' },
-  });
+  drafts.push(phaseChangedDraft('NIGHT_HUNTER_SHOOT', 'DAY_ANNOUNCE'));
   return drafts;
 };
 

@@ -20,18 +20,49 @@ import { lobbyState, startActionOf } from '../fixtures/states';
  * **整个 state 对象**，所以那些字段一旦加进来，就会自动被覆盖——不需要回来改这条测试。
  */
 
+/**
+ * 跑一整夜：开局 → 狼刀 → 查验 → 女巫用药（解药救命）。
+ *
+ * 评审 N1：原来的序列只有「开局 + 狼刀 + 一个被拒的 VOTE」，**没有任何夜间 action 成功执行**，
+ * 所以 `state.night` 与 `state.potionsUsed` 这两个派生字段根本没被 replay 覆盖——
+ * 而它们正是 C-18 要求「必须能重建」的东西。
+ */
 function playSequence(): { events: GameEvent[]; liveStates: ReturnType<typeof step>[] } {
   const lobby = lobbyState({ seed: 31_337 });
-  const first = step(lobby, startActionOf(lobby, 1_000));
+  const started = step(lobby, startActionOf(lobby, 1_000));
+  const state = started.state;
 
-  // 第一夜之后的所有 action 在 RFC-002 里都会被拒——「拒绝也要可重放」同样重要：
-  // 复盘时间线里那个 seq 缺口会让后面的事件对不上。
-  const second = step(first.state, { type: 'WOLF_KILL', ts: 2_000, seat: 1, target: 2 });
-  const third = step(second.state, { type: 'VOTE', ts: 3_000, seat: 2, target: 'abstain' });
+  const wolf = state.seats.find((seat) => seat.role === 'wolf' && seat.alive)?.seat;
+  const killTarget = state.seats.find((seat) => seat.alive && seat.role === 'villager')?.seat;
+  if (wolf === undefined || killTarget === undefined) throw new Error('夹具缺少狼或村民');
+
+  const killed = step(state, { type: 'WOLF_KILL', ts: 2_000, seat: wolf, target: killTarget });
+
+  const seer = killed.state.seats.find((seat) => seat.role === 'seer' && seat.alive)?.seat;
+  const checkTarget = killed.state.seats.find((seat) => seat.alive && seat.role !== 'seer')?.seat;
+  if (seer === undefined || checkTarget === undefined) throw new Error('夹具缺少 seer 或目标');
+
+  const checked = step(killed.state, {
+    type: 'SEER_CHECK',
+    ts: 3_000,
+    seat: seer,
+    target: checkTarget,
+  });
+
+  const witch = checked.state.seats.find((seat) => seat.role === 'witch' && seat.alive)?.seat;
+  if (witch === undefined) throw new Error('夹具缺少 witch');
+
+  const healed = step(checked.state, {
+    type: 'WITCH_ACT',
+    ts: 4_000,
+    seat: witch,
+    potion: 'heal',
+    target: killTarget,
+  });
 
   return {
-    events: [...first.events, ...second.events, ...third.events],
-    liveStates: [first, second, third],
+    events: [...started.events, ...killed.events, ...checked.events, ...healed.events],
+    liveStates: [started, killed, checked, healed],
   };
 }
 
@@ -41,6 +72,18 @@ describe('C-18 · replay 后继续 step 与原始运行一致', () => {
     const last = liveStates[liveStates.length - 1];
 
     expect(replay(events)).toEqual(last?.state);
+  });
+
+  it('派生字段真的被覆盖：night 与 potionsUsed 在重放后仍在（N1）', () => {
+    const { events, liveStates } = playSequence();
+    const live = liveStates[liveStates.length - 1]?.state;
+    const replayed = replay(events);
+
+    // 这一夜的刀口与解药目标都被记录了
+    expect(replayed.night?.killTarget).toBeDefined();
+    expect(replayed.night?.healTarget).toBe(live?.night?.healTarget);
+    expect(replayed.potionsUsed).toEqual({ heal: true, poison: false });
+    expect(live?.potionsUsed).toEqual({ heal: true, poison: false });
   });
 
   it('用重放状态继续 step，产出的事件与实时一致', () => {

@@ -55,8 +55,32 @@ export function resolveNight(input: NightResolutionInput): NightResolution {
   const killCancelled = killTarget !== undefined && healTarget === killTarget;
 
   const effects: Effect[] = [];
-  const deaths: Death[] = [];
 
+  /**
+   * 死因按**座位**归并（C-24 的裁决：同一目标只出局一次，死因取毒药）。
+   *
+   * 为什么必须归并：毒药指向狼刀目标是**合法 action**。归并前会产出两条 `Death` →
+   * 两条 `PLAYER_DIED` → `applyPlayerDied` 把第二次出局当成数据损坏抛错，等于一个
+   * 正常操作把引擎打崩（评审 B1）。
+   *
+   * 为什么毒药优先：FR-17 的本意是「被毒杀的人拿不走开枪」，而 witch **明确选择**了毒
+   * 这个目标；把她选中的效果判成失效，等于让「毒狼刀口」变成一步废棋。
+   */
+  const causes = new Map<SeatId, DeathCause>();
+
+  if (killTarget !== undefined && !killCancelled) {
+    causes.set(killTarget, 'wolf');
+  }
+  if (poisonTarget !== undefined) {
+    // 后写覆盖：只有「同座位既被刀又被毒」时才会命中，此时毒药优先（C-24）。
+    causes.set(poisonTarget, 'poison');
+  }
+
+  const deaths: Death[] = [...causes.entries()]
+    .map(([seat, cause]) => ({ seat, cause }))
+    .sort((a, b) => a.seat - b.seat);
+
+  // 解药效果存在即说明「witch 用了药」，与它是否真的救下人都无关。
   if (healTarget !== undefined) {
     effects.push({
       id: 'night-heal',
@@ -68,28 +92,15 @@ export function resolveNight(input: NightResolutionInput): NightResolution {
     });
   }
 
-  if (killTarget !== undefined && !killCancelled) {
+  for (const death of deaths) {
     effects.push({
-      id: 'night-kill',
+      id: `night-kill-${death.seat}`,
       source: 'role',
       type: 'kill',
-      target: killTarget,
-      payload: { cause: 'wolf' satisfies DeathCause },
+      target: death.seat,
+      payload: { cause: death.cause },
       order: EFFECT_ORDER.DEATH,
     });
-    deaths.push({ seat: killTarget, cause: 'wolf' });
-  }
-
-  if (poisonTarget !== undefined) {
-    effects.push({
-      id: 'night-poison',
-      source: 'role',
-      type: 'kill',
-      target: poisonTarget,
-      payload: { cause: 'poison' satisfies DeathCause },
-      order: EFFECT_ORDER.DEATH,
-    });
-    deaths.push({ seat: poisonTarget, cause: 'poison' });
   }
 
   return { effects, deaths, killCancelled };
@@ -111,6 +122,9 @@ export function resolveHunterShot(target: SeatId | undefined): {
     return { effects: [], deaths: [] };
   }
 
+  // 死因只写一次：效果 payload 与 Death 共用同一个常量，避免两处各写一个字符串。
+  const cause: DeathCause = 'shoot';
+
   return {
     effects: [
       {
@@ -118,11 +132,11 @@ export function resolveHunterShot(target: SeatId | undefined): {
         source: 'role',
         type: 'kill',
         target,
-        payload: { cause: 'shoot' satisfies DeathCause },
+        payload: { cause },
         order: EFFECT_ORDER.DEATH_TRIGGER,
       },
     ],
-    deaths: [{ seat: target, cause: 'shoot' }],
+    deaths: [{ seat: target, cause }],
   };
 }
 

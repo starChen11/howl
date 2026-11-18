@@ -80,9 +80,17 @@ describe('AC-5 · 非法刀口被拒，且状态除 seq 外不变', () => {
     )?.seat;
     if (otherWolf === undefined) throw new Error('夹具里只有一个狼');
 
-    const { events } = run(state, { type: 'WOLF_KILL', ts: 1, seat: wolf, target: otherWolf });
+    const { events, state: after } = run(state, {
+      type: 'WOLF_KILL',
+      ts: 1,
+      seat: wolf,
+      target: otherWolf,
+    });
 
     expect(events[0]?.payload).toEqual(expect.objectContaining({ code: 'WOLF_KILL_WOLF' }));
+    // 与 TARGET_NOT_ALIVE 同一条 AC：状态除 seq 外不变（评审 N2）
+    expect(after.seq).toBe(state.seq + 1);
+    expect({ ...after, seq: state.seq }).toEqual(state);
   });
 
   it('非狼提交 → NOT_YOUR_TURN（阶段对，但行动者不对）', () => {

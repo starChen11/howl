@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { replay } from '@engine/replay';
 import { step } from '@engine/step';
 
 import { makeNightState, reachWitch, roleSeat, run } from '../fixtures/night';
+import { lobbyState, startActionOf } from '../fixtures/states';
 
 /**
  * AC-7 ~ AC-11：女巫（RUL-3 / RUL-8 / FR-17）。
@@ -25,6 +27,25 @@ describe('AC-7 · 解药不能自救', () => {
     });
 
     expect(events[0]?.payload).toEqual(expect.objectContaining({ code: 'WITCH_SELF_SAVE' }));
+  });
+
+  it('解药已用 + 对自己用解药 → POTION_ALREADY_USED 优先（N10）', () => {
+    const state = makeNightState({
+      phase: 'NIGHT_WITCH',
+      night: { killTarget: 1 },
+      potionsUsed: { heal: true, poison: false },
+    });
+    const witch = roleSeat(state, 'witch');
+
+    const { events } = run(state, {
+      type: 'WITCH_ACT',
+      ts: 1,
+      seat: witch,
+      potion: 'heal',
+      target: witch,
+    });
+
+    expect(events[0]?.payload).toEqual(expect.objectContaining({ code: 'POTION_ALREADY_USED' }));
   });
 
   it('毒药可以指向自己（Q-003-4：只禁解药自救）', () => {
@@ -125,20 +146,53 @@ describe('AC-9 · 次夜复用已用药被拒（药水位由事件流推导）',
     expect(events[0]?.payload).toEqual(expect.objectContaining({ code: 'POTION_ALREADY_USED' }));
   });
 
-  it('药水位确实由事件折叠而来：用药后 replay 仍在', () => {
-    const reached = reachWitch();
-    const witch = roleSeat(reached.state, 'witch');
+  it('药水位确实由事件折叠而来：整条事件流 replay 后仍在（N3）', () => {
+    // 评审 N3：原来的标题写 replay，正文却没调用它。这里从开局重跑一遍，收集完整事件流。
+    const lobby = lobbyState({ seed: 20_261_117 });
+    const stream = [];
 
-    const result = step(reached.state, {
+    const started = step(lobby, startActionOf(lobby, 900));
+    stream.push(...started.events);
+
+    const wolf = roleSeat(started.state, 'wolf');
+    const killTarget = started.state.seats.find(
+      (seat) => seat.alive && seat.role === 'villager',
+    )?.seat;
+    if (killTarget === undefined) throw new Error('没有可刀目标');
+    const killed = step(started.state, {
+      type: 'WOLF_KILL',
+      ts: 1_000,
+      seat: wolf,
+      target: killTarget,
+    });
+    stream.push(...killed.events);
+
+    const seer = roleSeat(killed.state, 'seer');
+    const checkTarget = killed.state.seats.find((seat) => seat.alive && seat.role !== 'seer')?.seat;
+    if (checkTarget === undefined) throw new Error('没有可查目标');
+    const checked = step(killed.state, {
+      type: 'SEER_CHECK',
+      ts: 1_100,
+      seat: seer,
+      target: checkTarget,
+    });
+    stream.push(...checked.events);
+
+    const witch = roleSeat(checked.state, 'witch');
+    const acted = step(checked.state, {
       type: 'WITCH_ACT',
       ts: 1_200,
       seat: witch,
       potion: 'heal',
-      target: reached.killTarget,
+      target: killTarget,
     });
+    stream.push(...acted.events);
 
-    expect(result.state.potionsUsed?.heal).toBe(true);
-    expect(result.events.some((event) => event.type === 'WITCH_POTION_USED')).toBe(true);
+    const replayed = replay(stream);
+
+    expect(replayed).toEqual(acted.state);
+    expect(replayed.potionsUsed).toEqual({ heal: true, poison: false });
+    expect(replayed.night?.healTarget).toBe(killTarget);
   });
 });
 

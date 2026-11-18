@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { ACTION_TYPES, WITCH_POTIONS } from './actions';
-import { ROLES, SEAT_IDS, WIN_MODES } from './domain';
+import { PHASES, ROLES, SEAT_IDS, WIN_MODES } from './domain';
 import { GAME_EVENT_TYPES, SELF_VISIBILITY_PREFIX } from './events';
 
 /**
@@ -22,6 +22,8 @@ const timestampSchema = z.number().int().nonnegative();
 
 export const seatIdSchema = z.literal(SEAT_IDS);
 export const actionTypeSchema = z.enum(ACTION_TYPES);
+export const phaseSchema = z.enum(PHASES);
+export const deathCauseSchema = z.enum(['wolf', 'poison', 'lynch', 'shoot']);
 export const winModeSchema = z.enum(WIN_MODES);
 export const witchPotionSchema = z.enum(WITCH_POTIONS);
 
@@ -155,8 +157,53 @@ export const RejectedPayloadSchema = z.object({
   message: z.string(),
 });
 
+/**
+ * RFC-003 接管的事件 payload（§2.4 的三个私有事件 + 死亡 / 开枪 / 相位推进 / 终局）。
+ *
+ * `GAME_ENDED` 的归属说明：它**第一次由 RFC-003 产出**（夜间结算后即可能终局），所以 schema
+ * 定义在这里；RFC-004 的白天胜负判定复用同一份，不再另写。
+ */
+export const WolfKillChosenPayloadSchema = z.object({ target: seatIdSchema });
+
+export const SeerCheckedPayloadSchema = z.object({
+  target: seatIdSchema,
+  result: z.enum(['wolf', 'not-wolf']),
+});
+
+export const WitchPotionUsedPayloadSchema = z.object({
+  potion: z.enum(['heal', 'poison']),
+  target: seatIdSchema,
+});
+
+export const PlayerDiedPayloadSchema = z.object({
+  seat: seatIdSchema,
+  cause: deathCauseSchema,
+});
+
+export const HunterShootPayloadSchema = z.object({
+  seat: seatIdSchema,
+  target: seatIdSchema.nullable(),
+});
+
+export const PhaseChangedPayloadSchema = z.object({
+  from: phaseSchema,
+  to: phaseSchema,
+});
+
+export const GameEndedPayloadSchema = z.object({
+  result: z.enum(['wolf', 'good']),
+  condition: z.string().min(1),
+});
+
 /** 已登记 payload schema 的事件，可以拿去 `makeEventEnvelopeSchema` 组合成完整校验。 */
 export const PAYLOAD_SCHEMAS = {
   GAME_STARTED: GameStartedPayloadSchema,
   REJECTED: RejectedPayloadSchema,
+  WOLF_KILL_CHOSEN: WolfKillChosenPayloadSchema,
+  SEER_CHECKED: SeerCheckedPayloadSchema,
+  WITCH_POTION_USED: WitchPotionUsedPayloadSchema,
+  PLAYER_DIED: PlayerDiedPayloadSchema,
+  HUNTER_SHOOT: HunterShootPayloadSchema,
+  PHASE_CHANGED: PhaseChangedPayloadSchema,
+  GAME_ENDED: GameEndedPayloadSchema,
 } as const;
