@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.26 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
+> 版本 v2.27 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -40,7 +40,7 @@
 | [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Reviewed |
 | [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Spec changed |
-| [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Implemented |
+| [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Changes requested |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Not started |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Not started |
@@ -230,13 +230,23 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 ### 8.6 RFC-003 Round 4 复核登记的冲突（2026-11-18）
 
-> 由第四轮 `/review-rfc 003` 登记；完整证据见 `reviews/REVIEW-RFC-003.md` Round 4。**C-27 已关闭**；**C-29 非阻塞 RFC-003、阻塞 RFC-004**；C-30 非阻塞。
+> 由第四轮 `/review-rfc 003` 登记；完整证据见 `reviews/REVIEW-RFC-003.md` Round 4。**C-27 已关闭**；C-29 原为「非阻塞 RFC-003、阻塞 RFC-004」，现已由 RFC-004 Round 1 复核关闭（见下）；C-30 非阻塞。
 
 | # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
 |---|---|---|---|
 | **C-27** | 夜间同一结算点同时满足两阵营胜利条件（详见 §8.5） | 用户裁决后落榜为 **RUL-12「狼刀在先」**；`checkWin` 先算 wolf 侧条件；RUL-1 的判定时机不变 | **Closed（Round 4）**：`RULES.md:244` 有 RUL-12；`src/engine/win.ts:48-62` 先算 wolf 侧；`tests/engine/win.test.ts:70-109` 与 `death-resolve.test.ts:253-287` 通过；反向探针 M1 / M1b（改回「先判狼全灭」）分别 3/15 与 1/20 变红，恢复后全绿 |
-| **C-29** | RUL-12 落榜后，**旧的「同时达成不可能」表述没有同步**：`FEATURES.md:67`（F6 AC-4）说「因此两阵营不可能同时达成（RUL-1）」；`RULES.md:233` 的 RUL-1「依据」也说「这一条同时消除了两阵营同时达成的歧义」；`RFCS.md:166`（C-6）与 `:190`（OQ-C6）已关闭为「不可能」；`RFCs/RFC-004...:77-79` 的 §2.6 与 `:134` 的 Q-004-4 同样说「不存在」，且 RFC-004 的 `Rules` 头（`:5`）没有 RUL-12。这些都与 `PRD.md:101`（RA-1 明确说会出现该情形）和 `RULES.md:244`（RUL-12 判 wolf 胜）矛盾 | **按 PRD + RUL-12 判**：一个合法的夜间批次能同时满足两条件，RUL-12 是用户确认后的裁决；「不可能」是从 RUL-1 的猎人开枪场景外推出来的旧结论，不成立。**不要在本轮改 FEATURES / RULES / RFC-004**——由 `/manage-changes` 在同一个提交里同步：F6 AC-4、RUL-1 依据、C-6、OQ-C6、RFC-004 §2.6 / Q-004-4 / Rules 头。RFC-004 开工前必须完成 | **Open（非阻塞 RFC-003；阻塞 RFC-004）** · `PRD.md:101`、`RULES.md:233,244`、`FEATURES.md:67`、`RFCS.md:166,190`、`RFCs/RFC-004...:5,77-79,134`、`reviews/REVIEW-RFC-003.md` Round 4 §10 |
+| **C-29** | RUL-12 落榜后，**旧的「同时达成不可能」表述没有同步**：`FEATURES.md:67`（F6 AC-4）说「因此两阵营不可能同时达成（RUL-1）」；`RULES.md:233` 的 RUL-1「依据」也说「这一条同时消除了两阵营同时达成的歧义」；`RFCS.md:166`（C-6）与 `:190`（OQ-C6）已关闭为「不可能」；`RFCs/RFC-004...:77-79` 的 §2.6 与 `:134` 的 Q-004-4 同样说「不存在」，且 RFC-004 的 `Rules` 头（`:5`）没有 RUL-12。这些都与 `PRD.md:101`（RA-1 明确说会出现该情形）和 `RULES.md:244`（RUL-12 判 wolf 胜）矛盾 | **按 PRD + RUL-12 判**：一个合法的夜间批次能同时满足两条件，RUL-12 是用户确认后的裁决；「不可能」是从 RUL-1 的猎人开枪场景外推出来的旧结论，不成立。**不要在本轮改 FEATURES / RULES / RFC-004**——由 `/manage-changes` 在同一个提交里同步：F6 AC-4、RUL-1 依据、C-6、OQ-C6、RFC-004 §2.6 / Q-004-4 / Rules 头。RFC-004 开工前必须完成 | **Closed（RFC-004 Round 1 复核，2026-11-18）**：`CHANGE-REQUEST-007`（v2.25）已同步全部五处——`RFCs/RFC-004...:5` 的 `Rules` 头含 RUL-12、§2.6（`:77-81`）与 Q-004-4（`:134`）已改、`FEATURES.md:67` 已改、`RULES.md:233` 已改、`RFCS.md:166,190` 已改。复核证据见 `reviews/REVIEW-RFC-004.md` §7.1；C-29 不再阻塞 RFC-004 |
 | **C-30** | 文档漂移（非阻塞）：`README.md:11` 仍写 Round 3 `Changes requested` / 1 个 `Changes requested`，`:38-39` 仍写下一步 `/manage-changes`（C-27）→ `/implement-rfc 003`；`TEST-STRATEGY.md:3` 是 v1.11 / `RFCS.md v2.22`，同文件 `:450` 已是 v1.12；`src/engine/phases/visibility.ts:19-20` 仍说玩家从「投影后的 `state.phase`」看到天黑（C-28 已否定）；`RFCs/RFC-003:100` 仍说 `DAY_ANNOUNCE` 抛 `UnhandledTransitionError`（§8.3 / AC-16 已改为 `Rejected`）；`RFCs/RFC-003:201` 与 `TEST-STRATEGY.md:176` 把 AC-2 的 payload 断言归到 `deal.test.ts`，实际在 `events.test.ts:235-244` | 下一次 docs 提交同步；不阻塞 RFC-003。README 的状态叙述应以 `RFCS.md` 的 Status 列为准 | **Open（非阻塞）** · 上述文件与行 |
+
+### 8.7 RFC-004 Round 1 评审登记的冲突（2026-11-18）
+
+> 由 `/review-rfc 004` 登记；完整证据见 `reviews/REVIEW-RFC-004.md` Round 1。**C-31 阻塞 RFC-004**；C-32 / C-33 非阻塞。
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-31** | **公开的 `DAY_STARTED.diedLastNight` 顺序泄漏死因。** RFC-004 §2.1 / AC-2 规定 `diedLastNight`「按死亡结算顺序」，且 `speechStartSeat` 取「结算顺序第一位死者」的下一位；而 RFC-003 §2.3 / `src/engine/resolve/deaths.ts:69-86` 的结算顺序固定为「先狼刀、后毒药」。于是两人同夜出局时，任何观察者（含 RFC-007 会喂给 AI 的 `publicEvents`）都能从公开顺序断定哪一个是狼刀、哪一个是女巫毒——即「女巫今晚毒了谁」这条**他人夜间行动**。RFC-003 D-3 为了让死因不公开，专门把夜间 `PLAYER_DIED` 设为 `server`（`RFCs/RFC-003...:159`、§9.4 `:284` 明确写「payload 只有天数与死者、没有死因」）；`PRD.md:153`（FR-9）也禁止注入「他人夜间行动」。RFC-003 的 B2 / C-23 修的正是同一类泄漏 | **阻塞 RFC-004**，需用户裁决（不能由实现者顺手改规格）：① `diedLastNight` 改成与死因无关的顺序（座位升序）；② `speechStartSeat` 改成与死因无关的规则（座位最小死者的下一位 / 每天抽一次），并同步 `PRD.md:149`（FR-5「首个死者」）的解释；③ 补回归：交换两名死者的座位后，公开 payload 的顺序与起点都不得随死因变化。按权威顺序 `PRD > RFC`，取 PRD FR-9 | **Open** · `src/engine/phases/day.ts:47,67`、`src/engine/apply.ts:237`、`src/engine/resolve/deaths.ts:69-86`、`RFCs/RFC-004...:24,31,107`、`RFCs/RFC-003...:159,284`、`PRD.md:149,153`；`reviews/REVIEW-RFC-004.md` §4.1 / B1（实跑公开 payload `{"diedLastNight":[9,3],"speechStartSeat":1}`） |
+| **C-32** | `FEATURES.md:66`（F5 AC-4）写「平票重投…选项集为并列者 **+ 弃权**」，与 `RULES.md:234`（RUL-2「不能弃权」）、RFC-004 AC-8、`src/engine/phases/vote.ts:128` 冲突。`changes/CHANGE-REQUEST-002.md:28` 的 R-2 影响面只列「RULES、RFC-001、RFC-004」，漏了 FEATURES | **按 RUL-2 判（非阻塞 RFC-004 代码）**：`PRD.md:102`（RA-2）是开放歧义，`PRD.md:349`（D40）把 RA-2 的裁决权委托给 `RULES.md`，用户在 CR-002 已拍板「只能投并列者」；FEATURES 是漏改的派生文档。由 `/manage-changes` 把 F5 AC-4 改为「并列者本身」，不改代码 | **Open（非阻塞）** · `FEATURES.md:66`、`RULES.md:234`、`RFCs/RFC-004...:113`、`src/engine/phases/vote.ts:128`、`PRD.md:102,349`、`changes/CHANGE-REQUEST-002.md:28,61-66`；`reviews/REVIEW-RFC-004.md` §4.5 / C-32 |
+| **C-33** | **F7 的效果插入点在真实结算上没有接线。** `FEATURES.md:68`（F7 AC-1）要求「每个结算点（夜间行动 / 投票 / 出局 / 胜负判定）产出有序效果列表」，AC-3 要求用「该玩家本日投票无效」这类假效果证明插入点能改变结算结果。但 `VOTE_RESOLVE` / `DEATH_RESOLVE` / `WIN_CHECK` 三个 `ResolutionPoint` 在 `src/` 里没有任何调用点；`step(state, action, modifiers)` 只把 `modifiers` 放进 `HandlerContext`，`night.ts:84,324` 与 `lynch.ts:34` 直接调 `applyEffects`，`vote` 结算根本不产出效果。现有测试（`effects.test.ts:91-108`、`step.test.ts:91`）只证明 `applyModifiers` 本身与「自定义 handler + step」的合成链路，没有走真实 handler——RFC-002 评审 N9 当时就点明「RFC-003/004 第一次写结算时若忘记接线，现有测试不会红」 | **非阻塞 v1**（`C-21` 同款：不注册任何 modifier，无可观察行为差异），但必须在 RFC-002 的 `C-21` 关闭前一起决定：要么在 RFC-004 的 `settle` / `lynchEntry` / `checkWin` 调用点接 `applyModifiers` 并补真实路径测试，要么由 `/manage-changes` 收窄 F7 的可观察面。不要把它留成「代码里有个 `modifiers` 参数就算实现」 | **Open（非阻塞）** · `src/engine/step.ts:231,238-246`、`src/engine/phases/night.ts:84,324`、`src/engine/phases/lynch.ts:34`、`src/engine/phases/vote.ts:92-118`、`FEATURES.md:68`、`RFCs/RFC-002...` §2.4、`reviews/REVIEW-RFC-002.md` N9；`reviews/REVIEW-RFC-004.md` §3 PROBE-C / C-33（`seen: []`） |
 
 ---
 
@@ -279,6 +289,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.27 | RFC-004 Round 1 评审（Status → `Changes requested`）：6 条门禁全绿（41 files / 337 tests，覆盖率 96.42 / 92.85），10 条变异探针中 7 条变红；新增两个阻塞——**C-31**（公开 `DAY_STARTED.diedLastNight` 的顺序 + `speechStartSeat` 泄漏死因，与 PRD FR-9 / RFC-003 D-3 冲突）与 **B2**（`SPEECH` / `SPEECH_SKIPPED` / `VOTE_CAST` / `VOTE_REVEALED` 四个 payload 缺 Zod schema，违反 RFC-001 C-10）；登记 **C-32**（FEATURES F5 AC-4「+ 弃权」与 RUL-2 冲突，非阻塞）与 **C-33**（F7 的 `VOTE_RESOLVE` / `DEATH_RESOLVE` / `WIN_CHECK` 插入点未接线，非阻塞）；**C-29 关闭**。另记 AC-1 / AC-3 / AC-10 三条测试缺口与 README / RFC 证据表的文档漂移。详见 `reviews/REVIEW-RFC-004.md` Round 1 |
 | 2026-11-18 | v2.26 | RFC-004 实现完成（Status → Implemented）：新增「自动阶段」机制（B 方案）承载 `NIGHT_RESOLVE` / `DAY_ANNOUNCE` / `DAY_LYNCH`；投票暗投与 `VOTE_REVEALED`；平票重投（RUL-2 / RUL-9）；放逐后两次胜负判定。**RFC-003 转 `Spec changed`**：其 AC-16 断言「夜晚停在 `DAY_ANNOUNCE`」被自动阶段取代，现停在 `DAY_SPEECH`（见 RFC-003 §5 与 RFC-004 §8.3） |
 | 2026-11-18 | v2.25 | C-29 落地（`CHANGE-REQUEST-007`）：F6 AC-4、RUL-1 依据句、C-6 / OQ-C6、RFC-004 §2.6 / Q-004-4 / Rules 头全部同步 RUL-12。代码与 RFC Status 未动 |
 | 2026-11-18 | v2.24 | RFC-003 Round 4 评审（Status → Reviewed）：C-27 关闭（复现 + 反向探针 M1/M1b）；307 用例 / 覆盖率 98.14 / 96.66 全绿；16 条 AC 均有测试，14 条经变异探针确认会红（AC-2 / AC-8 为直接断言）。新登记 **C-29**（旧「同时达成不可能」表述与 RUL-12 冲突；非阻塞 RFC-003、阻塞 RFC-004）与 **C-30**（README / TEST-STRATEGY 版本头 / `visibility.ts` 注释 / RFC §4 / AC-2 证据归属的文档漂移；非阻塞）。详见 `reviews/REVIEW-RFC-003.md` Round 4 |
