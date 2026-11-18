@@ -156,6 +156,33 @@ describe('AC-16（修正版）· 夜晚结束后的边界', () => {
   });
 });
 
+describe('AC-16 · 天亮之后的阶段也不接受夜晚的 action', () => {
+  it('在 DAY_SPEECH 提交 VOTE → Rejected（PHASE_MISMATCH），且除 seq 外状态不变', () => {
+    // 自动阶段让夜晚停在 DAY_SPEECH；这条守着「拒绝不产生副作用」（RFC-002 AC-8）。
+    const reached = reachWitch();
+    const witch = roleSeat(reached.state, 'witch');
+
+    const afterNight = step(reached.state, {
+      type: 'WITCH_ACT',
+      ts: 9,
+      seat: witch,
+      potion: 'none',
+    }).state;
+    expect(afterNight.phase).toBe('DAY_SPEECH');
+
+    const { events, state: after } = step(afterNight, {
+      type: 'VOTE',
+      ts: 10,
+      seat: 1,
+      target: 'abstain',
+    });
+
+    expect(events[0]?.payload).toEqual(expect.objectContaining({ code: 'PHASE_MISMATCH' }));
+    expect(after.seq).toBe(afterNight.seq + 1);
+    expect({ ...after, seq: afterNight.seq }).toEqual(afterNight);
+  });
+});
+
 describe('猎人开枪阶段的两条拒绝路径', () => {
   it('非猎人提交 → NOT_YOUR_TURN', () => {
     const state = makeNightState({ phase: 'NIGHT_HUNTER_SHOOT', deadSeats: [6] });

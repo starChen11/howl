@@ -55,7 +55,7 @@ describe('AC-12 · 被狼刀的猎人进入开枪阶段', () => {
     expect(shot.deaths).toEqual([{ seat: 3, cause: 'shoot' }]);
   });
 
-  it('放弃开枪（省略 target）不产生效果与死亡，但仍然推进到 DAY_ANNOUNCE', () => {
+  it('放弃开枪（省略 target）不产生效果与死亡，但仍然推进到白天（DAY_SPEECH）', () => {
     const hunter = 6 as SeatId;
     const state = makeNightState({ phase: 'NIGHT_HUNTER_SHOOT', deadSeats: [hunter] });
 

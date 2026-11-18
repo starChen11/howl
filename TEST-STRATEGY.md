@@ -187,7 +187,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 13 | 同上：被毒杀的 hunter 不进开枪阶段、无 `HUNTER_SHOOT` 事件 | unit | existing: tests/engine/death-resolve.test.ts | Must |
 | 14 | 同上：hunter 是最后一个神 → 同一步内 `GAME_ENDED`、相位 `FINISHED`、无开枪（RUL-1） | unit | existing: tests/engine/death-resolve.test.ts | Must |
 | 15 | 同上：解药 < 击杀 < 开枪的 order；夜晚效果 `source` 全为 `role`；效果存活集与事件集一致 | unit | existing: tests/engine/death-resolve.test.ts | Must |
-| 16 | `tests/engine/night.test.ts`：夜晚结束进 `DAY_ANNOUNCE`；该阶段任何 action → `Rejected`（**AC 已修正**） | unit | existing: tests/engine/night.test.ts | Must |
+| 16 | `tests/engine/night.test.ts`：夜晚结束停在 `DAY_SPEECH`（`DAY_ANNOUNCE` 是自动阶段，不停留）；对 `DAY_SPEECH` 提交 `VOTE` → `Rejected`（`PHASE_MISMATCH`）且除 `seq` 外状态不变（**AC 经两次修正，见 RFC-003 §5**） | unit | existing: tests/engine/night.test.ts | Must |
 | 查询（§3 交付物） | `tests/engine/queries.test.ts`：`aliveSeats` / `countAliveByFaction` / `findAliveByRole` / `seatAt` 的语义 | unit | existing: tests/engine/queries.test.ts | Should |
 | C-23（评审 B2） | `tests/engine/night-visibility.test.ts`：夜间相位一律 `server`；一整夜的公开事件只允许「天亮推进」、`GAME_ENDED` 与合法的 `HUNTER_SHOOT` | unit | existing: tests/engine/night-visibility.test.ts | Must |
 | C-24（评审 B1） | `tests/engine/death-resolve.test.ts`：毒药指向狼刀目标时只出局一次、死因 `poison`；目标是 hunter 时不进开枪阶段 | unit | existing: tests/engine/death-resolve.test.ts | Must |

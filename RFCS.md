@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.31 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
+> 版本 v2.32 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -39,7 +39,7 @@
 |---|---|---|---|---|
 | [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Reviewed |
 | [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
-| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Spec changed |
+| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Reviewed |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Reviewed |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Not started |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Not started |
@@ -248,6 +248,14 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 | **C-32** | `FEATURES.md:66`（F5 AC-4）写「平票重投…选项集为并列者 **+ 弃权**」，与 `RULES.md:234`（RUL-2「不能弃权」）、RFC-004 AC-8、`src/engine/phases/vote.ts:128` 冲突。`changes/CHANGE-REQUEST-002.md:28` 的 R-2 影响面只列「RULES、RFC-001、RFC-004」，漏了 FEATURES | **按 RUL-2 判（非阻塞 RFC-004 代码）**：`PRD.md:102`（RA-2）是开放歧义，`PRD.md:349`（D40）把 RA-2 的裁决权委托给 `RULES.md`，用户在 CR-002 已拍板「只能投并列者」；FEATURES 是漏改的派生文档。由 `/manage-changes` 把 F5 AC-4 改为「并列者本身」，不改代码 | **Closed（Round 2 复核）** · `FEATURES.md:66`、`RULES.md:234`、`RFCs/RFC-004...:113`、`src/engine/phases/vote.ts:128`、`PRD.md:102,349`、`changes/CHANGE-REQUEST-002.md:28,61-66`；`reviews/REVIEW-RFC-004.md` §4.5 / C-32；**Round 1 修复**：`FEATURES.md` F5 AC-4 同步为「选项集仅为并列者本身、不能弃权」（`CHANGE-REQUEST-008`）；Round 2 复核 `FEATURES.md:66` 已是「仅为并列者本身、不能弃权」 |
 | **C-33** | **F7 的效果插入点在真实结算上没有接线。** `FEATURES.md:68`（F7 AC-1）要求「每个结算点（夜间行动 / 投票 / 出局 / 胜负判定）产出有序效果列表」，AC-3 要求用「该玩家本日投票无效」这类假效果证明插入点能改变结算结果。但 `VOTE_RESOLVE` / `DEATH_RESOLVE` / `WIN_CHECK` 三个 `ResolutionPoint` 在 `src/` 里没有任何调用点；`step(state, action, modifiers)` 只把 `modifiers` 放进 `HandlerContext`，`night.ts:84,324` 与 `lynch.ts:34` 直接调 `applyEffects`，`vote` 结算根本不产出效果。现有测试（`effects.test.ts:91-108`、`step.test.ts:91`）只证明 `applyModifiers` 本身与「自定义 handler + step」的合成链路，没有走真实 handler——RFC-002 评审 N9 当时就点明「RFC-003/004 第一次写结算时若忘记接线，现有测试不会红」 | **非阻塞 v1**（`C-21` 同款：不注册任何 modifier，无可观察行为差异），但必须在 RFC-002 的 `C-21` 关闭前一起决定：要么在 RFC-004 的 `settle` / `lynchEntry` / `checkWin` 调用点接 `applyModifiers` 并补真实路径测试，要么由 `/manage-changes` 收窄 F7 的可观察面。不要把它留成「代码里有个 `modifiers` 参数就算实现」 | **Open（非阻塞）** · `src/engine/step.ts:231,238-246`、`src/engine/phases/night.ts:84,324`、`src/engine/phases/lynch.ts:34`、`src/engine/phases/vote.ts:92-118`、`FEATURES.md:68`、`RFCs/RFC-002...` §2.4、`reviews/REVIEW-RFC-002.md` N9；`reviews/REVIEW-RFC-004.md` §3 PROBE-C / C-33（`seen: []`） |
 
+### 8.8 RFC-003 Round 5 窄范围复核（2026-11-18）
+
+> 由第五轮 `/review-rfc 003` 登记（用户指定只复核 AC-16 与 RFC-004 自动阶段、RFC-002 AC-8 的关系）。完整证据见 `reviews/REVIEW-RFC-003.md` Round 5。**三个复核点均通过**，AC-16 的改动成立；本表只留一条非阻塞文档残留。RFC-003 Status：`Spec changed` → **`Reviewed`**。
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-34** | **AC-16 的连带文档残留（非阻塞）**：① `RFCs/RFC-003...:59` 的 §2.3 第 8 步仍是「未结束则进入 `DAY_ANNOUNCE`」，**没有**「由 RFC-004 取代」的加注——而 `RFCs/RFC-004...:172`（§8.3）称「§2.3 第 8 步已更新，并注明」；`git log -S` 显示 `d435add` 只改了 AC-16。② `TEST-STRATEGY.md:190` 的 AC-16 测试计划仍写「夜晚结束进 `DAY_ANNOUNCE`」。③ `tests/engine/death-resolve.test.ts:58` 的用例名仍写「推进到 `DAY_ANNOUNCE`」，断言却是 `DAY_SPEECH`（`:67`）。④ AC-16 字面第二句「对该阶段的非法 action…」只在 `DAY_ANNOUNCE` 上有直接用例（`tests/engine/night.test.ts:138-156`），`DAY_SPEECH` 没有永久用例（临时探针已证明行为正确：`REJECTED / PHASE_MISMATCH`、phase 不变、除 `seq` 外状态深度相等） | **不阻塞 RFC-003**。代码与 AC-16 的主断言都对；`§2.3` 的「进入 `DAY_ANNOUNCE`」本身不假（确实进入、随后由自动阶段接手）。下一次 docs 提交补 §2.3 的一句注、把 TEST-STRATEGY 的 AC-16 行改成 `DAY_SPEECH`、改掉 `death-resolve.test.ts:58` 的用例名；可选补一条 `DAY_SPEECH` 拒绝用例 | **Open（非阻塞）** · `RFCs/RFC-003...:59`、`RFCs/RFC-004...:172`、`TEST-STRATEGY.md:190`、`tests/engine/death-resolve.test.ts:58,67`、`tests/engine/night.test.ts:138-156`、`reviews/REVIEW-RFC-003.md` Round 5 |
+
 ---
 
 ## 9. 冷读记录
@@ -289,6 +297,7 @@ F46 ~ F57 不进入任何 RFC：联机、AI 补位、语音通道、警长与警
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v2.32 | RFC-003 Round 5 窄范围复核（Status → Reviewed）：AC-16 的自动阶段改动成立——`step` 的自动循环 + `DAY_ANNOUNCE` entry 让「夜晚 → 天亮」在**同一步**内停在 `DAY_SPEECH`（真实探针：相位事件 `NIGHT_RESOLVE → DAY_ANNOUNCE → DAY_SPEECH`）；3 个复核点全过（P1 删 `DAY_ANNOUNCE` entry 17 红、P2 删相位事件 11 红、P3 拒绝路径加自动推进精确打红 RFC-002 AC-8 守卫）。新登记 **C-34**（§2.3 第 8 步 / TEST-STRATEGY 行 / 测试名 / `DAY_SPEECH` 字面用例的文档残留；非阻塞）。342 用例全绿，探针后工作树干净 |
 | 2026-11-18 | v2.31 | RFC-004 Round 3 复核（Status → Reviewed）：C-31 关闭——真实夹具改为「wolf 刀村民 6 + witch 毒 wolf 2」，起点改为对 `dayAnnounceEntry` 的直接断言；M1 / M2 / M3 三条反向探针均实跑变红，探针后 342 用例全绿。PRD FR-5 / D34、FEATURES F4 AC-2 与五处源码注释已同步；残留非阻塞文档漂移（RFC §8.5 AC-2 证据行、README:13、`day.test.ts:20` 等）见 `reviews/REVIEW-RFC-004.md` Round 3 §R3.3 / §R3.6 |
 | 2026-11-18 | v2.30 | RFC-004 Round 2 修复（Status → Implemented）：C-31 起点路径的空断言已换成直接规则断言（M2/M3 会红）；注释、PRD FR-5/D34、FEATURES F4 AC-2、TEST-STRATEGY、README 的过时表述同步 |
 | 2026-11-18 | v2.29 | RFC-004 Round 2 评审（Status → `Changes requested`）：C-31 的 `diedLastNight` 路径经反向探针关闭（M1 红），但 `speechStartSeat` 的回归用例在死者为 1/9 时是空断言（M2 结算顺序 / M3 最大座位改坏实现后，全套 342 用例仍全绿），C-31 仍未关闭；B2 四个 schema 与 AC-1 / AC-3 / AC-10 三条补测经反向探针确认关闭。另记 schema 行为无测试、`events.ts` / `day.ts` 等注释仍写旧顺序、RFC §8.5 证据表、TEST-STRATEGY 缺 AC-4b、PRD / FEATURES「首个死者」未定义等非阻塞项。详见 `reviews/REVIEW-RFC-004.md` Round 2 |

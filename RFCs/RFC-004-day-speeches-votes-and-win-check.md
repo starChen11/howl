@@ -169,7 +169,7 @@ type DayStartedPayload = {
 
 D-1 让 `DAY_ANNOUNCE` 不再停留。RFC-003 的 AC-16 断言「夜晚结束后 `phase === 'DAY_ANNOUNCE'`」因此不再成立——夜晚现在停在 `DAY_SPEECH`。
 
-- RFC-003 §5 的 AC-16 与 §2.3 第 8 步已更新，并注明「由 RFC-004 取代」；
+- RFC-003 §5 的 AC-16 与 §2.3 第 8 步已更新，并注明「由 RFC-004 取代」（§2.3 的补注晚了一轮才补上，见 C-34）；
 - `tests/engine/{night,witch,death-resolve,night-visibility}.test.ts` 的四处相位断言随之改为 `DAY_SPEECH`；
 - **被拒的 action 不触发自动推进**，因此 RFC-002 的 AC-8（除 `seq` 外状态不变）继续成立——这条有专门的用例守着。
 

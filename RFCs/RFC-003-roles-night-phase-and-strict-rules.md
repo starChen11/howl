@@ -56,7 +56,7 @@ NIGHT_WOLF_CHAT → NIGHT_WOLVES → NIGHT_SEER → NIGHT_WITCH
    - 未分出胜负 → 继续下一步。
 6. **猎人**：若出局方式是「被狼刀」则进入 `NIGHT_HUNTER_SHOOT`；若是「被毒杀」则**不进入**（FR-17）。
 7. 开枪结算完成后**再调用一次 `checkWin`**。
-8. 未结束则进入 `DAY_ANNOUNCE`。
+8. 未结束则进入 `DAY_ANNOUNCE`。**RFC-004 起它是自动阶段**：`step` 会在同一步内产出 `DAY_STARTED` 并推进到 `DAY_SPEECH`，所以夜晚结束时观察到的相位是 `DAY_SPEECH`；本步骤的「进入」语义不变（见 §5 AC-16 的注）。
 
 整个 §2.3 产出的是 `Effect[]`（`source: 'role'`），按 RFC-001 §2.3 的 `order` 分区落位：解药在 0–99、狼刀与毒药在 100–199、猎人开枪在 200–299——**升序应用即可满足 RUL-8「解药先于击杀」与 RUL-1「开枪先于胜负判定」**。
 

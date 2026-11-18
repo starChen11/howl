@@ -1504,3 +1504,162 @@ deadSeats: [1, 2, 4, 6]         // 两只狼、seer、hunter 已出局
 #### 12.3 本轮未改 `src/`
 
 评审只写了本文件与 `RFCS.md`；所有探针均通过备份 / `git checkout --` 恢复。`src/`、`RULES.md`、`PRD.md`、`FEATURES.md` 均未改动。
+
+---
+
+## Round 5 -- 2026-11-18
+
+> **窄范围复核（用户指定）**：只复核 RFC-003 **AC-16（夜晚结束后的相位）**，以及它与 RFC-004「自动阶段」、RFC-002 AC-8 的关系。**其余 15 条 AC 与 Round 1–4 已关闭项未重查**，本轮的 PASS 不重新认证它们。
+> **HEAD**：`9d1d44f`（RFC-004 Round 3 归档后）。评审开始 / 结束时 `git status --porcelain` 均为空；本轮只改 `reviews/` 与 `RFCS.md` 文档。
+> **结论**：**Reviewed**。AC-16 的改动成立，三个复核点全部通过；无阻塞代码项。非阻塞文档残留登记为 **C-34**。
+
+### 0. STEP 0 · 实际执行输出
+
+环境：Node `v22.22.2`、pnpm `10.33.0`。以下在 `9d1d44f`、干净工作树上实跑（2026-11-18 18:11–18:14）：
+
+```
+$ pnpm typecheck    → exit 0
+$ pnpm lint         → exit 0
+$ pnpm format:check → All matched files use Prettier code style!   exit 0
+$ pnpm build        → dist/client/index.html + dist/server/index.js exit 0
+$ pnpm test         → Test Files 41 passed (41) · Tests 342 passed (342)  exit 0
+$ pnpm test:e2e     → skipped：tests/e2e/ 下没有用例（RFC-012 起生效） exit 0
+$ pnpm selfplay     → pnpm selfplay 未实现（RFC-015）               exit 1（C-5 既有预期）
+
+$ pnpm exec vitest run --project unit --coverage
+ Test Files  34 passed (34) · Tests 308 passed (308)
+ All files | % Stmts 96.44 | % Branch 92.90 | % Funcs 96.92 | % Lines 96.75
+  step.ts 100/100 · phases/night.ts 100/100 · phases/auto-table.ts 100/100
+  phases/day.ts 96.15/79.41（余 line 25）· phases/auto.ts 0（纯类型文件，无运行时代码）
+```
+
+五条门禁全绿；`342` 与 RFC-004 §8.6 的转录一致。`selfplay` 的 exit 1 是既有预期，不是本轮回归。
+
+### 1. 范围与 Product Type
+
+`PRD.md` 的 Product Type 是 **game（主）+ web app（交付形态）**。本轮改动只在引擎层（`step` / `night` / `day`），不涉及 UI、HTTP、SSR、浏览器交互，故跳过 web app 的界面 / 网络 / 认证检查；game 维度只检查「状态机推进、确定性、隐藏信息边界、AC 证据」。RULES / SECURITY / PERFORMANCE 只核对与这三份代码相关的部分，**未重跑全项目审计**。
+
+### 2. 点 1：与 RFC-004 的自动阶段机制一致（PASS）
+
+#### 2.1 代码链
+
+- `src/engine/phases/auto-table.ts:16-18` 登记了 `NIGHT_RESOLVE` / `DAY_ANNOUNCE` / `DAY_LYNCH` 三个自动阶段，循环上限 `AUTO_PHASE_LIMIT = 8`（`:22`）。
+- `src/engine/phases/night.ts:71-99`：`resolveNightEntry` 先产出死亡事件与第一次 `checkWin`；未终局时产出 `PHASE_CHANGED(NIGHT_RESOLVE → DAY_ANNOUNCE)`（`:97`），被刀 hunter 则转 `NIGHT_HUNTER_SHOOT`。
+- `src/engine/phases/day.ts:60-78`：`dayAnnounceEntry` 产出公开的 `DAY_STARTED`（含 `diedLastNight` / `speechStartSeat` / `rngAfter`），并产出 `PHASE_CHANGED(DAY_ANNOUNCE → DAY_SPEECH)`（`:77`）。
+- `src/engine/step.ts:231-249`：`step` 折叠完 action 的所有事件后，读 `AUTO_PHASE_ENTRIES[next.phase]` 继续产出并折叠事件，直到停在一个不登记为自动阶段的 phase。`DAY_SPEECH` 不登记，所以停在它。
+
+这与 RFC-004 D-1（§8.2）和 §8.3 的描述一致：`DAY_ANNOUNCE` 不再停留，AC-16 的终点是 `DAY_SPEECH`。
+
+#### 2.2 真实路径的实际行为
+
+临时测试（用 `reachWitch()` 走到女巫阶段，再提交一次 `WITCH_ACT(none)`；测试已删除）实测**一次 `step`** 的输出：
+
+```
+{"phase":"DAY_SPEECH",
+ "eventTypes":["PHASE_CHANGED","PLAYER_DIED","PHASE_CHANGED","DAY_STARTED","PHASE_CHANGED"],
+ "phaseEvents":["NIGHT_RESOLVE","DAY_ANNOUNCE","DAY_SPEECH"],
+ "seqFrom":6,"seqTo":11}
+```
+
+即：同一步内 `NIGHT_RESOLVE →（死亡）→ DAY_ANNOUNCE →（DAY_STARTED）→ DAY_SPEECH`，最终 `phase === 'DAY_SPEECH'`，事件序 `seq` 连续。这与 RFC-003 §5 AC-16 的新措辞（`RFCs/RFC-003...:119`）逐字一致。
+
+#### 2.3 一个与题设不符的事实（非阻塞）
+
+用户描述「RFC-003 §5 的 AC-16 与 §2.3 第 8 步已加注说明『由 RFC-004 取代』」。**§5 AC-16 确实已更新；§2.3 第 8 步没有。** 原文仍是：
+
+> `RFCs/RFC-003...:59` —— `8. 未结束则进入 DAY_ANNOUNCE。`
+
+`git log -S` 显示 `d435add`（「docs(rfc-004): 记录实现说明，RFC-003 转 Spec changed」）只改了 AC-16 那一行；`RFCs/RFC-004...:172`（§8.3）却称「RFC-003 §5 的 AC-16 与 §2.3 第 8 步已更新，并注明『由 RFC-004 取代』」，与文件实际不符。
+
+为什么仍判点 1 PASS：§2.3 第 8 步写的是「**进入** `DAY_ANNOUNCE`」，不是「停在 `DAY_ANNOUNCE`」——实现确实进入它，随后由自动阶段接手；规范变化由 AC-16 承载，且 RFC-004（已 `Reviewed`）的自动阶段机制是这一段的行为权威。因此这是文档残留，不是行为或 AC 的偏差；登记为 **C-34**，建议下一次 docs 提交补一句「（由 RFC-004 的自动阶段接手：`DAY_ANNOUNCE` 不停留，同一步内推进到 `DAY_SPEECH`）」。
+
+### 3. 点 2：测试是否守着新行为、改回去是否会红（PASS）
+
+#### 3.1 现有测试
+
+| 断言 | 位置 |
+|---|---|
+| 夜晚无人出局 → 一次 `step` 后 `phase === 'DAY_SPEECH'`（AC-16 主断言） | `tests/engine/night.test.ts:122-136` |
+| `DAY_ANNOUNCE` 上任何 action → `Rejected(PHASE_MISMATCH)` | `tests/engine/night.test.ts:138-145` |
+| 被拒后仍停原 phase、除 `seq` 外状态不变（RFC-002 AC-8） | `tests/engine/night.test.ts:147-156` |
+| 夜间开枪收尾 / 毒杀 hunter 路径 → `DAY_SPEECH` | `tests/engine/death-resolve.test.ts:58-68`、`:208-228` |
+| 解药夜 → `DAY_SPEECH` | `tests/engine/witch.test.ts:232-248` |
+| 真实夜间路径的相位事件与公开可见性 | `tests/engine/night-visibility.test.ts:84,115` |
+| 白天夹具沿真实路径停在 `DAY_SPEECH` | `tests/fixtures/day.ts:19-63` |
+
+#### 3.2 反向探针（均实跑，随后恢复）
+
+- **P1 · 改回旧行为**：从 `AUTO_PHASE_ENTRIES` 删除 `DAY_ANNOUNCE: dayAnnounceEntry`（`auto-table.ts:17`）→ `Test Files 6 failed (6)`、`Tests 17 failed | 51 passed (68)`。直接红的是 `night.test.ts > AC-16（修正版）> 夜晚无人出局时进入白天`；另外 `day.test.ts` 9 条、`death-resolve.test.ts` 2 条、`full-game.test.ts` 2 条、`night-visibility.test.ts` 2 条、`witch.test.ts` 1 条。
+- **P2 · 只删相位事件**：删掉 `dayAnnounceEntry` 末尾的 `phaseChangedDraft('DAY_ANNOUNCE', 'DAY_SPEECH')`（`day.ts:77`）→ `Test Files 5 failed (5)`、`Tests 11 failed | 55 passed (66)`，AC-16 主断言仍红。
+- **P3 · 拒绝路径自动推进**：把自动循环复制进 `step` 的 `!allowed.includes(...)` 分支（`step.ts:219-228`）→ `Test Files 1 failed (1)`、`Tests 1 failed | 36 passed (37)`，**恰好只有** `night.test.ts:147` 的 RFC-002 AC-8 守卫变红。见点 3。
+- **恢复后**：`night.test.ts` 14/14；全量 `pnpm test` **41 files / 342 tests** 全绿；`git status --porcelain` 为空。
+
+结论：新行为有直接断言，改回旧行为（P1）或删相位推进（P2）都会红；「拒绝路径不自动推进」也有专门的守卫（P3）。**PASS**。
+
+#### 3.3 低优先级缺口（非阻塞）
+
+AC-16 字面第二句「对该阶段的非法 action 仍产出 `Rejected` 且状态除 `seq` 外不变」目前只在 `DAY_ANNOUNCE` 上有直接用例（`night.test.ts:138-156`），**没有**在 `DAY_SPEECH` 上的永久用例。临时探针验证 `DAY_SPEECH` 提交 `VOTE` 的结果：`REJECTED / PHASE_MISMATCH`、1 条事件、phase 仍 `DAY_SPEECH`、`{ ...after, seq: state.seq }` 与 state 深度相等——行为正确；探针已删除。建议补一条小用例，或把 AC 的「该阶段」明确解释为由 `DAY_ANNOUNCE` 的守卫覆盖（同一个 `step` 早返回分支），不阻塞。
+
+### 4. 点 3：与 RFC-002 AC-8 是否冲突（PASS，无冲突）
+
+`RFCs/RFC-002...:175` 的 AC-8 要求：与当前 phase 不匹配的 action → `Rejected(PHASE_MISMATCH)`，且除 `seq` 外状态不变。
+
+实现上没有冲突，原因有三层：
+
+1. `step` 的拒绝路径在 `src/engine/step.ts:219-228` **提前返回**，自动循环（`:231-249`）只在 handler 路径之后执行；被拒的 action 永远到不了自动推进。
+2. 三个自动阶段的允许 action 集都是空数组（`transitions.ts` 的 `NIGHT_RESOLVE` / `DAY_ANNOUNCE` / `DAY_LYNCH`），所以能进入 handler 的 action 不可能落在自动阶段上；handler 自己产出的 `REJECTED` 也不会把 phase 变成自动阶段，随后循环看到的就是原 phase，不会误推进。
+3. 反向探针 P3 把自动循环复制进拒绝分支后，**恰好**只有 `night.test.ts:147` 的守卫变红——说明这条守卫真的在锁「拒绝不触发自动推进」，不是空断言。
+
+真实路径的补充：DAY_SPEECH 不是自动阶段，被拒的 `VOTE` 在 `step` 早返回；临时探针确认只增加 `seq`、phase 与其余状态都不变（见 §3.3）。**PASS，无冲突。**
+
+### 5. 评审维度
+
+| 维度 | 结论 | 说明 |
+|---|---|---|
+| **RFC ADHERENCE** | **PASS**（窄范围） | AC-16 的终点、`DAY_STARTED` 的产出、同一步推进均与 RFC-004 §8.3 一致；§2.3 第 8 步的注缺失登记为 C-34（非阻塞） |
+| **RULES COMPLIANCE** | **PASS**（相关部分） | 改动没有新增 import / 依赖 / I/O；`step` 仍为纯函数，`ARCH-1` 不受影响；未重审全部 77 条 |
+| **SECURITY** | **N/A** | 没有新增输入面、认证、API 或日志；`DAY_STARTED` 按设计公开、`PHASE_CHANGED` 的夜间可见性仍由 `phaseVisibility` 统一；本轮不重复 Round 1–4 的泄漏审计 |
+| **PERFORMANCE** | **N/A / PASS** | 自动循环上限 8，本条路径最多用 2 个 entry；无网络 / 数据库 / 无界循环 |
+| **MAINTAINABILITY** | **NEEDS WORK（非阻塞）** | `RFCs/RFC-003...:59` 缺注、`TEST-STRATEGY.md:190` 仍写旧阶段、`death-resolve.test.ts:58` 用例名仍写 `DAY_ANNOUNCE`、`DAY_SPEECH` 字面拒绝用例缺失（§3.3） |
+| **TEST EFFECTIVENESS** | **PASS** | P1 / P2 / P3 三条探针均实跑变红；恢复后 342 用例全绿 |
+
+### 6. 总体评估
+
+**Overall Risk Level: Low**
+
+**Summary**：AC-16 的改动成立——`step` 的自动循环、`NIGHT_RESOLVE` 与 `DAY_ANNOUNCE` 两个 entry 使「夜晚结束 → 白天」在同一个 `step` 内停在 `DAY_SPEECH`；真实路径的事件顺序与最终 phase 都符合 RFC-004 §8.3 和 RFC-003 AC-16。测试有真实守卫：把 `DAY_ANNOUNCE` 从自动表删掉（P1）17 条红、只删 `DAY_ANNOUNCE → DAY_SPEECH` 相位事件（P2）11 条红；把自动推进塞进拒绝路径（P3）精确打红 RFC-002 AC-8 的专用守卫。**没有发现阻塞代码项**；剩余是一条非阻塞文档残留 C-34（含题设中「§2.3 第 8 步已加注」这一不实前提）。
+
+**Blocking Issues**：**无**。
+
+**Non-blocking Findings**：
+
+1. **R5-F1（文档）**：`RFCs/RFC-003...:59` §2.3 第 8 步没有「由 RFC-004 取代」的加注；`RFCs/RFC-004...:172` 的「已更新，并注明」不实。补一句即可。
+2. **R5-F2（文档）**：`TEST-STRATEGY.md:190` 的 RFC-003 AC-16 行仍写「夜晚结束进 `DAY_ANNOUNCE`」，应改为 `DAY_SPEECH` 并描述「拒绝不触发自动推进」的守卫。
+3. **R5-F3（测试可读性）**：`tests/engine/death-resolve.test.ts:58` 的用例名仍写「推进到 `DAY_ANNOUNCE`」，断言是 `DAY_SPEECH`（`:67`）；改名。
+4. **R5-F4（低优先级测试）**：AC-16 字面第二句在 `DAY_SPEECH` 上没有永久用例；临时探针已证明行为正确，建议补一条或显式解释由 `DAY_ANNOUNCE` 的守卫覆盖。
+5. **R5-F5（文档，状态变更的连带）**：`README.md:11` / `:38` 仍写 RFC-003 `Spec changed`、RFC-004 `Implemented`；Status 改回 `Reviewed` 后这处计数更旧。README 的叙述以 `RFCS.md` 为准，建议下次 docs 提交一并同步（与既有 C-30 同类）。
+
+**Improvement Suggestions**：按 R5-F1 → F2 → F3 → F5 做一次 docs-only 提交；F4 可作为一条 5 行用例补进 `night.test.ts` 的 AC-16 describe，成本很低。
+
+### 7. 本轮 Open conflicts / 状态更新
+
+本轮在 `RFCS.md` 登记：
+
+- **C-34（新，非阻塞）**：AC-16 连带的文档残留——`RFCs/RFC-003...:59` 的 §2.3 第 8 步缺「由 RFC-004 取代」注；`TEST-STRATEGY.md:190` 仍写 `DAY_ANNOUNCE`；`tests/engine/death-resolve.test.ts:58` 用例名与断言不一致；AC-16 字面第二句缺 `DAY_SPEECH` 永久用例。代码与主断言正确，不影响合并。
+- 其余冲突（C-25 / C-28 / C-30 / C-33）本轮**未重查**，状态不变。
+
+**RFC-003 Status** 由 `Spec changed` 改为 **`Reviewed`**（`RFCS.md:42`；`FEATURES.md` 无 Status 列，无需同步）。
+
+### 8. 证据附录
+
+#### 8.1 探针恢复确认
+
+- P1 恢复 `src/engine/phases/auto-table.ts` 后 `git status --porcelain` 为空。
+- P2 恢复 `src/engine/phases/day.ts` 后为空。
+- P3 恢复 `src/engine/step.ts` 后为空。
+- 临时测试 `tests/engine/__tmp-round5-probe.test.ts` 已删除；`git status --porcelain` 为空、`git diff --stat` 为空。
+- 恢复后全量 `pnpm test`：**41 files / 342 tests** 全绿。
+
+#### 8.2 本轮未改 `src/`
+
+评审只写了本文件与 `RFCS.md`。`src/`、`RULES.md`、`PRD.md`、`FEATURES.md`、`TEST-STRATEGY.md`、`RFCs/` 均未改动；所有代码探针均已恢复。
