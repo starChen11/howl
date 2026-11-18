@@ -32,10 +32,11 @@ export const DEFAULT_TRANSITIONS: TransitionTable = {
   // DAY_ANNOUNCE 是自动阶段（天亮由 step 的自动循环推进），所以它没有允许的 action。
   DAY_ANNOUNCE: [],
   DAY_SPEECH: ['SPEECH', 'SPEECH_SKIP'],
-  DAY_VOTE: [],
-  DAY_VOTE_RUNOFF: [],
+  DAY_VOTE: ['VOTE'],
+  DAY_VOTE_RUNOFF: ['VOTE'],
+  // DAY_LYNCH 是自动阶段（放逐在 VOTE_REVEALED 之后由 step 的自动循环执行）
   DAY_LYNCH: [],
-  DAY_HUNTER_SHOOT: [],
+  DAY_HUNTER_SHOOT: ['HUNTER_SHOOT'],
 };
 
 /** 表必须覆盖全部 14 个 phase。构造时检查，避免漏一个阶段变成运行时 `undefined`。 */

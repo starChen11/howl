@@ -81,6 +81,10 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'SPEECH':
     case 'SPEECH_SKIPPED':
       return appendSpoken(base, event.payload.seat);
+    case 'VOTE_CAST':
+      return appendVote(base, event.payload);
+    case 'VOTE_REVEALED':
+      return applyVoteRevealed(base, event.payload.votes);
     case 'GAME_ENDED':
       return { ...base, phase: 'FINISHED' };
     default:
@@ -130,6 +134,62 @@ function appendSpoken(state: GameState, seatId: SeatId): GameState {
   return { ...state, speech: { ...speech, spoken: [...speech.spoken, seatId] } };
 }
 
+/**
+ * 记一张票。
+ *
+ * 票箱是**派生数据**（C-18）：它只由 `VOTE_CAST` 折叠而来，`replay` 能完整重建。
+ * 结算后由 `VOTE_REVEALED` 清空，供重投使用。
+ */
+function appendVote(
+  state: GameState,
+  vote: { seat: SeatId; target: SeatId | 'abstain' },
+): GameState {
+  if ((state.votes ?? []).some((existing) => existing.seat === vote.seat)) {
+    throw new InvalidEventStreamError(`座位 ${vote.seat} 投了两次票`);
+  }
+  return { ...state, votes: [...(state.votes ?? []), vote] };
+}
+
+/**
+ * 票型公布：清空票箱、决定去向。
+ *
+ * `runoff` / `lynched` 都是**派生字段**——从公布的票型算出来，不另存一份判断结果。
+ */
+function applyVoteRevealed(
+  state: GameState,
+  votes: readonly { seat: SeatId; target: SeatId | 'abstain' }[],
+): GameState {
+  const tally = new Map<SeatId, number>();
+  for (const vote of votes) {
+    if (vote.target === 'abstain') continue;
+    tally.set(vote.target, (tally.get(vote.target) ?? 0) + 1);
+  }
+
+  const next: GameState = { ...state };
+  delete next.votes;
+
+  const top = [...tally.entries()].sort((a, b) => (a[1] === b[1] ? a[0] - b[0] : b[1] - a[1]))[0];
+  if (top === undefined) {
+    delete next.runoff;
+    delete next.lynched;
+    return next;
+  }
+
+  const tied = [...tally.entries()]
+    .filter(([, count]) => count === top[1])
+    .map(([seat]) => seat)
+    .sort((a, b) => a - b);
+
+  if (tied.length === 1) {
+    next.lynched = top[0];
+    delete next.runoff;
+  } else {
+    next.runoff = tied;
+    delete next.lynched;
+  }
+  return next;
+}
+
 /** 清掉 `pendingDeaths`（`DAY_STARTED` 折叠后用）。 */
 function withoutPendingDeaths(state: GameState): GameState {
   const next: GameState = { ...state };
@@ -172,6 +232,9 @@ function applyPlayerDied(state: GameState, seatId: import('@shared/domain').Seat
     seats: state.seats.map((candidate) =>
       candidate.seat === seatId ? { ...candidate, alive: false, diedSeq: state.seq } : candidate,
     ),
+    // 昨夜死者按结算顺序累积（`DAY_STARTED.diedLastNight` 读它）。白天放逐的死亡也会进来，
+    // 但它会在下一次入夜时被清空，不会污染下一天。
+    pendingDeaths: [...(state.pendingDeaths ?? []), seatId],
   };
 }
 

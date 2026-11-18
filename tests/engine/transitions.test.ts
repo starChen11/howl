@@ -42,14 +42,18 @@ describe('AC-9 · 声明与实现一致', () => {
       'NIGHT_WITCH',
       'NIGHT_HUNTER_SHOOT',
       'DAY_SPEECH',
+      'DAY_VOTE',
+      'DAY_VOTE_RUNOFF',
+      'DAY_HUNTER_SHOOT',
     ]);
     expect(DEFAULT_TRANSITIONS.LOBBY).toEqual(['START']);
     expect(DEFAULT_TRANSITIONS.FINISHED).toEqual([]);
     // 无 action 的阶段：夜聊（RFC-005）与自动结算、以及白天（RFC-004）
     expect(DEFAULT_TRANSITIONS.NIGHT_WOLF_CHAT).toEqual([]);
     expect(DEFAULT_TRANSITIONS.NIGHT_RESOLVE).toEqual([]);
-    // DAY_ANNOUNCE 是自动阶段（天亮由 step 的自动循环推进），没有允许的 action
+    // 自动阶段没有允许的 action：天亮与放逐都由 step 的自动循环推进
     expect(DEFAULT_TRANSITIONS.DAY_ANNOUNCE).toEqual([]);
+    expect(DEFAULT_TRANSITIONS.DAY_LYNCH).toEqual([]);
   });
 
   it('表里每个允许对都有 handler', () => {

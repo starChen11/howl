@@ -9,6 +9,7 @@ import { UnhandledTransitionError } from './errors';
 import { AUTO_PHASE_ENTRIES, AUTO_PHASE_LIMIT } from './phases/auto-table';
 import { DAY_HANDLERS } from './phases/day';
 import { NIGHT_HANDLERS } from './phases/night';
+import { VOTE_HANDLERS } from './phases/vote';
 import { phaseChangedDraft } from './phases/visibility';
 import { DEATH_APPLIERS } from './resolve/deaths';
 import { rejectionDraft, seatOf } from './reject';
@@ -139,6 +140,7 @@ export const DEFAULT_HANDLERS: HandlerTable = {
   START: startHandler,
   ...NIGHT_HANDLERS,
   ...DAY_HANDLERS,
+  ...VOTE_HANDLERS,
 };
 
 /**
