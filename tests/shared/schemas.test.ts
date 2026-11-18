@@ -105,6 +105,10 @@ describe('PAYLOAD_SCHEMAS · 登记表完整性（Round 2 评审）', () => {
       'PLAYER_DIED',
       'REJECTED',
       'SEER_CHECKED',
+      'SPEECH',
+      'SPEECH_SKIPPED',
+      'VOTE_CAST',
+      'VOTE_REVEALED',
       'WITCH_POTION_USED',
       'WOLF_KILL_CHOSEN',
     ]);

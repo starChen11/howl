@@ -57,6 +57,29 @@ describe('放逐与入夜', () => {
   });
 });
 
+describe('AC-10 · 狼被放逐时好人胜（第三种死因）', () => {
+  it('放逐最后一只 wolf → GAME_ENDED(good / all-wolves-dead)', () => {
+    const day = reachDay();
+    const wolves = day.state.seats.filter((seat) => seat.role === 'wolf').map((seat) => seat.seat);
+    const lastWolf = wolves[wolves.length - 1];
+    if (lastWolf === undefined) throw new Error('没有 wolf');
+
+    // 让其他 wolf 先出局，只留这一只
+    const rigged = {
+      ...day.state,
+      seats: day.state.seats.map((seat) =>
+        wolves.includes(seat.seat) && seat.seat !== lastWolf ? { ...seat, alive: false } : seat,
+      ),
+    };
+
+    const { events, state } = lynch(rigged, lastWolf);
+
+    const ended = events.find((event) => event.type === 'GAME_ENDED');
+    expect(ended?.payload).toEqual({ result: 'good', condition: 'all-wolves-dead' });
+    expect(state.phase).toBe('FINISHED');
+  });
+});
+
 describe('AC-12 / RUL-1 · 放逐最后一名神时立即狼胜，不给开枪机会', () => {
   it('被放逐的 hunter 正是最后一个神 → GAME_ENDED(all-gods-dead)，事件流无 HUNTER_SHOOT', () => {
     // 让另两名神出局，只留 hunter，再放逐他

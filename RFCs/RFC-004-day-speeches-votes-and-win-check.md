@@ -224,3 +224,43 @@ $ pnpm exec vitest run --project unit --coverage
 | `NIGHT_WOLF_CHAT` 仍被跳过 | 入夜时发两条相位事件直接到 `NIGHT_WOLVES`（D-5） | RFC-005 |
 | AC-5 的「投影」措辞 | 本 RFC 用 `isVisibleTo` 表达，没有实现 `project()` | RFC-007 |
 | 白天投票的可见性矩阵 | 只测了「结算前无公开事件」，没做 9 观察者 × 事件的矩阵 | RFC-007 |
+
+---
+
+## 9. Round 1 评审回应（Changes requested → 本轮修复）
+
+Round 1 的结论是 **Changes requested / High**。**这是第一次用 subagent 跑评审**（全新上下文、`reasoning_effort: max`、输入只有仓库与 `REVIEW-PROMPT.md`）。它做了六条门禁实跑、10 条变异探针（并如实报告 3 条不红）、200 种子 fuzz，找到 2 个阻塞项 —— **都在 16 条 AC 的覆盖面之外**。
+
+### 9.1 阻塞项
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-31** 死亡公告泄漏死因 | §2.1 规定 `diedLastNight` 按**结算顺序**，而结算顺序固定是「wolf 刀先、毒药后」，payload 又是公开的 —— 全场能读出「谁被刀、谁被毒」；`speechStartSeat` 挂在同一个顺序上，同一个泄漏走了两条路。违反 `FR-9`，也把 RFC-003 D-3 特意藏起来的死因漏了回去 | 用户裁决后走 `/manage-changes`（[`CHANGE-REQUEST-008`](../changes/CHANGE-REQUEST-008.md)）：**公告按座位升序**、发言起点取**座位最小的死者**的下一位存活者。两处都只依赖「谁死了」 |
+| **B2** 4 个事件缺 schema | `SPEECH` / `SPEECH_SKIPPED` / `VOTE_CAST` / `VOTE_REVEALED` 没有 payload schema（只补了 `DAY_STARTED`） | `src/shared/schemas.ts` 补 4 个并登记；`schemas.test.ts` 的键集合同步 |
+
+### 9.2 三条「测试不设防」
+
+评审用变异探针指出三处：改坏实现后测试仍全绿。都已补，并**逐条用反向探针确认会红**：
+
+| 缺口 | 补的用例 | 反向探针结果 |
+|---|---|---|
+| AC-1 的顺时针起点（忽略起点时 8/8 全绿） | 断言 `order[0] === startSeat` 且相邻项在存活环上相邻 | 把 `pivot` 固定成 `-1` → 该用例变红 ✓ |
+| AC-3 的 rng（固定取最小座位时 19/19 全绿） | 6 个固定 seed 的起点必须出现多于一个值 | 把抽取固定成 `value: 0` → 变红 ✓ |
+| AC-10 的「狼死于放逐」（跳过胜负判定仍 20/20 全绿） | 放逐最后一只 wolf → `GAME_ENDED(good / all-wolves-dead)` | 把 `checkWin` 结果固定成 `null` → 两条变红 ✓ |
+
+### 9.3 未处理（非阻塞，登记在案）
+
+| 项 | 说明 |
+|---|---|
+| **C-32** | `FEATURES.md` F5 AC-4 与 RUL-2 冲突（重投能否弃权）。已在 `CR-008` 同步为「不能弃权」 |
+| **C-33** | F7 的效果插入点（`VOTE_RESOLVE` / `DEATH_RESOLVE` / `WIN_CHECK`）在真实结算里没有调用点，`step(..., [modifier])` 对真实 handler 无效。这是跨 RFC 的能力缺口，应开新 RFC 处理，不在本 RFC 范围内 |
+| AC-14 的 `'draw'` 断言 | 类型层不可能成立，属无效断言；保留无害，但不应算作证据 |
+| 能否投自己 / `AUTO_PHASE_LIMIT` 静默停止 / `pendingVoters` 死导出 | 记录在评审报告的非阻塞项里，留给后续清理 |
+
+### 9.4 本轮验证输出
+
+```
+$ pnpm typecheck/lint/format:check/build → 全 0
+$ pnpm test → Test Files 41 passed (41) · Tests 342 passed (342)
+$ coverage → 行 96.75% / 分支 92.90%
+```

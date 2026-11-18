@@ -1,6 +1,6 @@
 # Howl · 测试计划（TEST-STRATEGY）
 
-> 版本 v1.14 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.26 · 最后更新 2026-11-18
+> 版本 v1.15 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 / `RFCS.md` v2.26 · 最后更新 2026-11-18
 > **按 RFC 分节**，标题格式 `## RFC-NNN: 标题` —— `/implement-rfc` 与 `/review-rfc` 靠它找到对应计划。不按测试类型分节。
 
 ---
@@ -30,7 +30,7 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 ```
 $ pnpm test
  Test Files  41 passed (41)     # unit 34 个 + meta 7 个
-      Tests  337 passed (337)
+      Tests  342 passed (342)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -447,6 +447,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-18 | v1.15 | RFC-004 Round 1 回填：C-31 / B2 / 三条不设防测试补齐；基线 337 → 342 |
 | 2026-11-18 | v1.14 | RFC-004 实现后回填：16 条 AC 全部 `existing`；夹具改为 `tests/fixtures/day.ts`（无 `scripted-game.ts`）；基线用例数 309 → 337 |
 | 2026-11-18 | v1.13 | RFC-003 Round 4 回填（C-30 / 测试缺口）：基线用例数 307 → 309；AC-2 的证据归属改为「`events.test.ts` 真实事件」 |
 | 2026-11-18 | v1.12 | RFC-003 Round 3 修复后回填：C-27 落榜为 RUL-12（wolf 胜）并补真实路径用例；基线用例数 295 → 307 |

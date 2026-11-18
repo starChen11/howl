@@ -190,6 +190,23 @@ export const PhaseChangedPayloadSchema = z.object({
   to: phaseSchema,
 });
 
+/** RFC-004 拥有的四个事件 payload。 */
+export const SpeechPayloadSchema = z.object({
+  seat: seatIdSchema,
+  text: z.string(),
+});
+
+export const SpeechSkippedPayloadSchema = z.object({ seat: seatIdSchema });
+
+export const VoteCastPayloadSchema = z.object({
+  seat: seatIdSchema,
+  target: seatIdSchema.or(z.literal('abstain')),
+});
+
+export const VoteRevealedPayloadSchema = z.object({
+  votes: z.array(z.object({ seat: seatIdSchema, target: seatIdSchema.or(z.literal('abstain')) })),
+});
+
 export const DayStartedPayloadSchema = z.object({
   day: z.number().int().min(1),
   diedLastNight: z.array(seatIdSchema),
@@ -206,6 +223,10 @@ export const PAYLOAD_SCHEMAS = {
   GAME_STARTED: GameStartedPayloadSchema,
   REJECTED: RejectedPayloadSchema,
   DAY_STARTED: DayStartedPayloadSchema,
+  SPEECH: SpeechPayloadSchema,
+  SPEECH_SKIPPED: SpeechSkippedPayloadSchema,
+  VOTE_CAST: VoteCastPayloadSchema,
+  VOTE_REVEALED: VoteRevealedPayloadSchema,
   WOLF_KILL_CHOSEN: WolfKillChosenPayloadSchema,
   SEER_CHECKED: SeerCheckedPayloadSchema,
   WITCH_POTION_USED: WitchPotionUsedPayloadSchema,

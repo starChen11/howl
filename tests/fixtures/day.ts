@@ -81,3 +81,60 @@ export function voteAll(
   }
   return current;
 }
+
+/**
+ * 构造一个「一夜死两人」的白天状态：wolf 刀一个、witch 毒另一个。
+ *
+ * 用来验证 C-31——公告与发言起点都不能依赖结算顺序（狼刀先、毒药后）。
+ */
+export function twoDeaths(options: { kill: 'low' | 'high'; poison: 'low' | 'high' }): {
+  diedLastNight: number[];
+  speechStartSeat: number;
+} {
+  const atWolves = nightStart();
+  // 选两个**存活的非 wolf** 席位：号码最小的与号码最大的。用真实角色，避免刀到自己人。
+  const goodSeats = atWolves.seats
+    .filter((seat) => seat.alive && seat.role !== 'wolf')
+    .map((seat) => seat.seat)
+    .sort((a, b) => a - b);
+  const low = goodSeats[0];
+  const high = goodSeats[goodSeats.length - 1];
+  if (low === undefined || high === undefined || low === high) {
+    throw new Error('可用的好席位不足两个');
+  }
+
+  const killTarget = options.kill === 'low' ? low : high;
+  const poisonTarget = options.poison === 'low' ? low : high;
+
+  const wolf = roleSeat(atWolves, 'wolf');
+  const afterKill = run(atWolves, { type: 'WOLF_KILL', ts: 1, seat: wolf, target: killTarget });
+
+  const seer = roleSeat(afterKill.state, 'seer');
+  const checkTarget = afterKill.state.seats.find(
+    (seat) => seat.alive && seat.role !== 'seer',
+  )?.seat;
+  if (checkTarget === undefined) throw new Error('没有可查目标');
+  const afterCheck = run(afterKill.state, {
+    type: 'SEER_CHECK',
+    ts: 2,
+    seat: seer,
+    target: checkTarget,
+  });
+
+  const witch = roleSeat(afterCheck.state, 'witch');
+  const afterWitch = run(afterCheck.state, {
+    type: 'WITCH_ACT',
+    ts: 3,
+    seat: witch,
+    potion: 'poison',
+    target: poisonTarget,
+  });
+
+  const started = afterWitch.events.find((event) => event.type === 'DAY_STARTED');
+  if (started?.type !== 'DAY_STARTED') throw new Error('没有 DAY_STARTED');
+
+  return {
+    diedLastNight: [...started.payload.diedLastNight],
+    speechStartSeat: started.payload.speechStartSeat,
+  };
+}
