@@ -128,7 +128,8 @@ interface MetaStore {
 10. 不属于当前会话的 `gameId` 返回 `404 GAME_NOT_FOUND`（与不存在的 id 同一响应，不泄露存在性）
 11. `MetaStore.get` 返回值是副本（修改后再次 `get` 得原值）；存在第二个实现（测试用 Mock），替换后全部会话相关测试通过
 12. 共用同一 `MetaStore`：`GameRegistry` 不自建存储，静态断言 `src/server/` 中除 `meta-store.ts` 外无模块级 `Map` 作为存储
-13. 对局 `finished` 后 `GameState` 不再缓存：释放后再取该局，内部重新 `replay` 得到同一状态
+13a. **未释放**的终局记录不缓存状态：每次取都用 `replay(events)` 重新计算；改掉 `events`（哪怕长度与末条 `seq` 不变）后结果必须跟着变
+13b. 已释放的对局取状态返回 `410 GAME_EXPIRED`；复盘由 RFC-014 的快照承担
 14. 连续创建并跑完 100 局后，保留的完整 `events` 不超过 3 局，其余局仅有 `snapshot` 或无 `events`
 15. `GET /api/games/:id/replay` 在未终局时返回 `404 NOT_FINISHED`；`GET /api/games/:id/stream` 返回 `501 NOT_IMPLEMENTED`
 16. 不引入账号与数据库：`package.json` 中不存在数据库驱动
@@ -197,7 +198,8 @@ interface MetaStore {
 | 10 | `session.test.ts` · 别人的 gameId 与不存在的 id 返回**同一个** 404 响应 | PASS |
 | 11 | `store.test.ts` · `MetaStore.get` 返回副本；换 `MockStore` 后注册表行为不变 | PASS |
 | 12 | 同上 · `src/server` 中除 `meta-store.ts` 外没有模块级 `new Map` | PASS |
-| 13 | `finished-game.test.ts` · 真的打到 `FINISHED` 后：两次 `stateOf` 深度相等、改 `record.events` 后 `seq` 立刻变、释放后无法重建 | PASS |
+| 13a | `finished-game.test.ts` · 真的打到 `FINISHED` 后：两次 `stateOf` 深度相等；砍掉一半 `events` 后 `seq` 立刻变；**同长度同末条 `seq`、只改 `GAME_STARTED.payload.seed`** 时 `seed` 也跟着变（任何以 `(length, seq)` 为键的缓存都会红） | PASS |
+| 13b | 同上 · 释放后 `events` 为空、`stateOf` 抛错、`GET` 返回 `410 GAME_EXPIRED` | PASS |
 | 14 | 同上 · 5 局终局后保留完整事件的局数 ≤ `KEEP_FULL_EVENTS`（3） | PASS |
 | 15 | `session.test.ts` · 未终局 replay → `404 NOT_FINISHED`；stream → `501` | PASS |
 | 16 | 同上 · `package.json` 里没有任何数据库驱动 | PASS |
