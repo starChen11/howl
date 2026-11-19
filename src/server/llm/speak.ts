@@ -99,12 +99,19 @@ export async function speak(input: SpeakInput): Promise<SpeakResult> {
       },
     ]);
 
-    input.bus.publish(record.gameId, { type: 'degraded', id: nextSeq, seat: input.seat });
+    // id 必须与事件流对齐（AC-5 / API-2）：`done` 对应那条 `SPEECH`（seq = nextSeq），
+    // `degraded` 对应它后面的 `DEGRADED`（seq = nextSeq + 1）。反过来的话，
+    // 刷新后 `degraded` 会以更大的 id 清掉正文（C-98）。
     input.bus.publish(record.gameId, {
       type: 'done',
       id: nextSeq,
       seat: input.seat,
       text: turn.text,
+    });
+    input.bus.publish(record.gameId, {
+      type: 'degraded',
+      id: nextSeq + 1,
+      seat: input.seat,
     });
 
     return {

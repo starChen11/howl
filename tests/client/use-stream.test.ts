@@ -141,3 +141,15 @@ describe('C-96 · 断线重连时同 id 的 thinking 重置正文（整段重放
     expect(state.phase).toBe('speaking');
   });
 });
+
+describe('C-98 · 降级提示不能清空短句', () => {
+  it('done(15, 短句) 后紧接 degraded(16)，正文与最后的 phase 都合理', () => {
+    let state = streamReducer(initialStreamState, { type: 'thinking', id: 15, seat: 2 });
+    state = streamReducer(state, { type: 'done', id: 15, seat: 2, text: '我先过。' });
+    state = streamReducer(state, { type: 'degraded', id: 16, seat: 2 });
+
+    expect(state.text).toBe('我先过。');
+    expect(state.phase).toBe('degraded');
+    expect(state.lastId).toBe(16);
+  });
+});

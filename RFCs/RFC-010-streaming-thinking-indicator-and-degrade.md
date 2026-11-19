@@ -258,3 +258,14 @@ $ pnpm test → 69 files / 578 tests
 ```
 $ pnpm test → 69 files / 581 tests
 ```
+
+### 8.14 Round 8 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-97** 降级分支的回归锁无效 | 用例只看 `speech.spoken` +1，而它由 `applyEvent` 折叠 `SPEECH` 推进，绕开引擎也成立 | 改成「**7 位正常 + 最后一位降级**」：最后一位才会触发 `advanceIfDone` → `PHASE_CHANGED`。断言相位离开 `DAY_SPEECH` 且 `seq` 连续。反向探针（降级分支改回 `appendEvents`）会红 |
+| **C-98**（新）降级轮的 id 与事件流错位 | `degraded` 用 `SPEECH` 的 seq、`DEGRADED` 事件却是下一个 seq；刷新后 `degraded` 以更大的 id 清掉正文 | `done` 用短句 `SPEECH` 的 seq、`degraded` 用 `DEGRADED` 事件的 seq（与 AC-5 / API-2 对齐）；`degraded` 分支不再清空正文。补 reducer 用例与 fixture |
+
+```
+$ pnpm test → 69 files / 583 tests
+```

@@ -253,3 +253,42 @@ describe('C-97 · 降级发言也走引擎，能推进发言顺序', () => {
     expect(after).toBe(before + 1);
   });
 });
+
+describe('C-97 · 最后一位席位降级时也要推进相位', () => {
+  it('7 位正常 + 最后一位降级 → 相位离开 DAY_SPEECH 且 seq 连续', async () => {
+    const { registry, session, record, bus } = await setup();
+    let current = record;
+    const seats = registry
+      .stateOf(record)
+      .seats.filter((seat) => seat.alive)
+      .map((seat) => seat.seat);
+    const total = seats.length;
+    let index = 0;
+
+    while (registry.stateOf(current).phase === 'DAY_SPEECH' && index < total + 2) {
+      const speaker = currentSpeaker(registry.stateOf(current));
+      if (speaker === undefined) break;
+      const isLast = index === total - 1;
+      const result = await speak({
+        registry,
+        bus,
+        session,
+        record: current,
+        seat: speaker,
+        attempt: async () =>
+          isLast ? { text: '', failed: true } : { text: '我过了。', failed: false },
+        limitMs: 5_000,
+      });
+      if (!result.ok) throw new Error(`发言被拒：${result.code}`);
+      current = result.record;
+      index += 1;
+    }
+
+    const state = registry.stateOf(current);
+    expect(state.phase).not.toBe('DAY_SPEECH');
+
+    // seq 必须连续（降级事件插在中途也不能跳号）
+    const seqs = current.events.map((event) => event.seq);
+    expect(seqs).toEqual(seqs.map((_seq, position) => position + 1));
+  });
+});

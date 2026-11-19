@@ -93,14 +93,13 @@ export function streamReducer(state: StreamState, message: StreamMessage, now = 
       };
     }
     case 'degraded':
+      // 降级只是「这一轮质量不够」的提示，**正文要保留**（就是那句短句）。
+      // 清空会让刷新后看到一片空白（C-98）。
       return {
         ...state,
         phase: 'degraded',
         seat: message.seat,
-        text: '',
-        firstDeltaAt: null,
         lastId: message.id,
-        speechId: message.id,
       };
     case 'error':
       return { ...state, phase: 'error', lastId: message.id };

@@ -418,24 +418,24 @@ describe('C-86 · 已提交的 DEGRADED 必须映射成 degraded，不是空 don
           gameId: record.gameId,
           seq: record.events.length + 1,
           ts: 0,
-          type: 'DEGRADED',
+          type: 'SPEECH',
           visibleTo: 'public',
-          payload: { seat: 2 },
+          payload: { seat: 2, text: '我先过。' },
         },
         {
           gameId: record.gameId,
           seq: record.events.length + 2,
           ts: 0,
-          type: 'SPEECH',
+          type: 'DEGRADED',
           visibleTo: 'public',
-          payload: { seat: 2, text: '我先过。' },
+          payload: { seat: 2 },
         },
       ],
     };
 
     const messages = committedMessages(withDegraded as never, registry.stateOf(record));
-    expect(messages.map((message) => message.type)).toEqual(['degraded', 'done']);
-    expect((messages[1] as { text?: string }).text).toBe('我先过。');
+    expect(messages.map((message) => message.type)).toEqual(['done', 'degraded']);
+    expect((messages[0] as { text?: string }).text).toBe('我先过。');
   });
 
   it('同 id 的增量与 committed done 合并后，done 在最后', async () => {
