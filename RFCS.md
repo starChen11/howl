@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.65 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.67 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -45,7 +45,7 @@
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Reviewed |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
-| [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Implemented |
+| [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Changes requested |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Not started |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
@@ -530,10 +530,28 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 8 后的冲突状态**：C-73 / C-61 / C-67 关闭；C-69 / C-70 / C-63 / C-64 为非阻塞开放项（C-69 的文档残项待下一次 docs 提交）；RFC-008 的 Status 为 **`Reviewed`**。
 
+### 8.28 RFC-009 Round 1 评审登记的冲突（2026-11-19）
+
+> 由首轮 `/review-rfc 009` 登记；完整证据见 [`reviews/REVIEW-RFC-009.md`](reviews/REVIEW-RFC-009.md) 的 `## Round 1`。评审时 HEAD `a9c340f`，工作树 clean；门禁 **63 files / 519 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0。C-77 ~ C-80 阻塞；C-81 ~ C-84 非阻塞。所有探针从 `/tmp/howl-r9-backup/` 的文件备份恢复（未用 `git checkout`），`md5` 校验一致；恢复后全量套件复跑 63/519 绿，工作树 clean；没有 `git commit`。RFC-009 的 Status 为 **`Changes requested`**。
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-77** | RFC-009 §4 的「`verbosity` 影响 `maxOutputTokens`」未实现、未记录：`client.ts:124` 固定用 `config.maxOutputTokens`，`config.ts:24` 全局 800，`src/server` 无 `verbosity` 引用 | 把人格 `verbosity` 传到 `decide`，按档位算 `max_tokens`（`timeoutMs` 不变）；假 `fetch` 断言 1/2/3 档不同；若不做则记入 §8.2 并走 `/manage-changes` | **Open（阻塞）** · `RFCs/RFC-009...:80`、`src/server/llm/client.ts:48-55,124`、`src/server/llm/config.ts:24,55`、`reviews/REVIEW-RFC-009.md` C-77 |
+| **C-78** | F14 人格没有接到提示词：`personaOf` / `styleOf` 只被测试使用；`buildSystemPrompt` 接自由字符串，无生产调用方把 `personaId` 转成该字符串；D-6 的「提示里会被要求用不同风格」不成立（P-R4：提示文本换成常量仍 22/22 绿） | 提供 `personaId → 风格文本` 的单一转换（或在 `buildSystemPrompt` 接收 `Persona`），对 12 个人格逐一断言提示含不同风格；若把接线留给 RFC-011，必须记录并把 AC-4 从 PASS 改成未验收 | **Open（阻塞）** · `RFCs/RFC-009...:130`、`src/engine/personas.ts:72-87`、`src/server/llm/prompts/base.ts:14-33`、`reviews/REVIEW-RFC-009.md` C-78 |
+| **C-79** | START 之后的整条人格链未测：P-R1 把 `step.ts:129` 的 `GAME_STARTED.personas` 全改 `null`，`--project unit` **56 files / 485 tests 全绿**；AC-1 / 2 / 5 / 11 的证据都只覆盖 `LOBBY` | 补 `lobbyState → step(START)`：断言事件 personas 与 lobby 逐位一致（8 id、玩家 null）、started state 相同、跨若干 action 人格不变、`replay` 后仍相同 | **Open（阻塞）** · `tests/engine/personas.test.ts:15-22`、`tests/engine/events.test.ts:226-240`、`tests/engine/replay.test.ts:172-195`、`reviews/REVIEW-RFC-009.md` C-79 |
+| **C-80** | AC-5 / AC-9 / AC-10 的证据不成立：P-R9 把所有 label 改成 `'X'` 后 9/9 绿；AC-9 是手工拼事件流（无种子、无 `step`），计划中的 `tests/engine/scenarios/advanced-play.test.ts` 不存在；AC-10 无「改变人格后合法性不变」测试，§8.4 却引用 `prompts.test.ts` | 补 AC-5 的 replay→`personaOf` 席位映射、AC-9 的固定种子定向对局、AC-10 的同状态换人格合法性测试；修正 §8.4 的 PASS 证据与 `TEST-STRATEGY` 计划行 | **Open（阻塞）** · `tests/engine/personas.test.ts:102-106`、`tests/engine/annotate.test.ts:124-175`、`tests/server/llm/prompts.test.ts:70-87`、`TEST-STRATEGY.md:290-296`、`reviews/REVIEW-RFC-009.md` C-80 |
+| **C-81** | `isWolfAccusesWolf` 不排除「狼指认自己」：输入没有 `speakerSeat`，`roleOf(target)==='wolf'` 即真；RFC §2.3 要求「另一名狼」 | 给函数 / `annotate` 传 `speakerSeat`，排除 `target === speaker`；补负向用例 | **Open（非阻塞）** · `src/engine/annotate.ts:43-53`、`reviews/REVIEW-RFC-009.md` C-81 |
+| **C-82** | D-3 的 `speakerOf` 性质未被测试锁住：P-R6 改成优先读 `visibleTo` 仍 8/8 绿；`annotateWithoutText` 不抹 `AI_THOUGHT.reason`，P-R5b 的 reason 匹配仍 8/8 绿 | 补「`visibleTo` 与 `speakerOf` 不一致」的测试；明确 `speakerOf` 缺失时抛错还是跳过；把 `reason` 纳入抹文本测试 | **Open（非阻塞）** · `src/engine/annotate.ts:56-114`、`tests/engine/annotate.test.ts:35-38,104-123`、`reviews/REVIEW-RFC-009.md` C-82 |
+| **C-83** | D-5 的单边界与 AC-3 的卡方不等价：P-R12 让 `blunt` 永不当狼（0 狼 / 127 好）仍 9/9 绿，卡方 88.87 > 24.725；P-R11 的偏置卡方 29.67 > 24.725 也全绿；AC 原文是 1000 局 | 实现 12×2 卡方（df=11, p=0.01 临界 24.725）或改双侧界并补 1000 局；至少把 §8.2 的「够敏感」改成如实的局限说明 | **Open（非阻塞，D-5 已记录）** · `tests/engine/personas.test.ts:65-87`、`RFCs/RFC-009...:129,171-172`、`reviews/REVIEW-RFC-009.md` C-83 |
+| **C-84** | 文档漂移与过度声明：`TEST-STRATEGY.md:290-296` 仍全 `proposed` / 计划文件缺失；`README.md:11,36-38` 状态与覆盖数字过期；评审前 `RFCS.md:3` 版本头 v2.65（本轮已更新为 v2.67）；§8.3 声称 TEST-STRATEGY 已更新不成立；D-2 ~ D-6 无用户同意记录（`DOC-1`） | 下一次 docs 提交统一回写；§8.4 的 AC-1 / 5 / 10 证据按实际测试改写 | **Open（非阻塞）** · `TEST-STRATEGY.md:38,290-296`、`README.md:11,36-38`、`RFCs/RFC-009...:136-141,145-158`、`reviews/REVIEW-RFC-009.md` C-84 |
+
+> **Round 1 后的冲突状态**：C-77 / C-78 / C-79 / C-80 阻塞 RFC-009；C-81 / C-82 / C-83 / C-84 非阻塞。RFC-009 的 Status 为 **`Changes requested`**。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.67 | RFC-009 Round 1 评审（Status → `Changes requested`）：门禁 63/519 全绿；**C-77 ~ C-80 阻塞**——§4 的 `verbosity` → `maxOutputTokens` 未实现且未记录、人格未接到提示（P-R4 22/22 绿）、START 后整条链无测试（P-R1 下 56/485 绿）、AC-5/9/10 证据不成立；C-81 ~ C-84 非阻塞（自指认狼、D-3 未锁、D-5 单边界、文档漂移）。探针从 `/tmp/howl-r9-backup/` 文件备份恢复、`md5` 一致、工作树 clean；无 commit。详见 `reviews/REVIEW-RFC-009.md` Round 1 |
 | 2026-11-19 | v2.66 | RFC-009 实现完成（Status → Implemented）：12 个人格按种子分配、整局不变（玩家席位无人格）；`claim` 驱动的三类打法判定（悍跳 / 狼查杀狼 / 自曝），不做文本分析；人格只进风格段 |
 | 2026-11-19 | v2.65 | RFC-008 Round 8 复核（Status → Reviewed）：C-73 关闭（P-R8-1 红，`4242424` vs `4242425`）；C-61 按 CR-009 关闭（AC-13a / 13b，`src/` 零改动）；C-67 关闭；C-69 仍 Open（非阻塞，§8.11 的 400 / README / TEST-STRATEGY 未同步）。门禁 61/500 全绿；探针从文件备份恢复、工作树 clean、无 commit。详见 `reviews/REVIEW-RFC-008.md` Round 8 |
 | 2026-11-19 | v2.64 | RFC-008 Round 7 修复（Status → Implemented）：C-61 按 CR-009 拆成 AC-13a / 13b；C-73 补「同长度同 seq 改 payload」的 no-cache 判据；文档漂移修正 |
