@@ -65,14 +65,20 @@ describe('AC-15 · 格式化与 e2e 门禁', () => {
     expect(result.code, result.stderr).toBe(0);
   });
 
-  // 评审 M9：原来只断言退出码，把 skipped 文案改成 done 也不会红。AC-15 的核心正是
-  // 「零用例时明确说 skipped，而不是静默成功」。
-  it('pnpm test:e2e 退出 0，且打印 skipped 而不是静默成功', async () => {
+  // RFC-012 起 `tests/e2e/` 有了用例：此时应当真的转交 Playwright 并跑过；
+  // 只有零用例时才打印 skipped（评审 M9 的原始要求）。
+  it('pnpm test:e2e 的退出码与输出符合「有/无用例」两种情形', async () => {
+    const { readdirSync } = await import('node:fs');
+    const specs = readdirSync('tests/e2e').filter((name) => name.endsWith('.spec.ts'));
     const result = await pnpm(['test:e2e']);
 
     expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(0);
-    expect(result.stdout).toContain('skipped');
-    // 没有 spec 时不该真的转交给 Playwright 跑
-    expect(result.stdout).not.toContain('Running ');
+    if (specs.length === 0) {
+      expect(result.stdout).toContain('skipped');
+      expect(result.stdout).not.toContain('Running ');
+    } else {
+      expect(result.stdout).toContain('passed');
+      expect(result.stdout).not.toContain('skipped');
+    }
   });
 });

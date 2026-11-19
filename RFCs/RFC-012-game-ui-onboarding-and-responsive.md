@@ -115,3 +115,77 @@
 | Q-012-1 | 引导状态存在哪里 | **(assumption)** `localStorage`，不随会话同步 |
 | Q-012-2 | 是否提供深色模式 | **(assumption)** v1 不做，但配色需在 AA 阈值下同时满足两种背景可读 |
 | Q-012-3 | 术语提示在移动端的触发方式 | **(assumption)** 点击触发气泡，与桌面端的悬停等价 |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。前置 RFC-011 已 `Reviewed`。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| 范围 | **B 方案**（用户选）：A（整局入口）+ B（界面骨架）+ C（无障碍/响应式）一次做完，覆盖全部 16 条验收标准 |
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+` | **D-1** | 端到端用 `channel: 'chrome'`，不下载 Playwright 自带浏览器 | 本机与 CI 都已有 Chrome；`pnpm test:e2e` 因此能真的跑起来，而不是停在「没装浏览器」 |
+| **D-2** | 端到端服务端用 `HOWL_FAKE_AI=1` 的脚本化 AI | 一局要稳定跑完，不能依赖模型与网络；脚本替身与真模型共用同一个 `Decider` 接口（RFC-011 的通道抽象） |
+| **D-3** | 客户端从投影推导席位状态（`src/client/game-state.ts`），**不另存状态** | UI-1 / ARCH-9：前端只渲染投影；当前发言者按 `DAY_STARTED.speechStartSeat` 起算，与引擎一致 |
+| **D-4** | 术语解释用 `aria-describedby` + 条件渲染的 `role="tooltip"` | `title` 在触屏与读屏上都拿不到；`hidden` 会让读屏也跳过 |
+| **D-5** | 输入框 Enter 提交、Shift+Enter 换行 | 纯键盘用户不该为了提交按很多次 Tab；这也是 AC-11 的键盘路径 |
+| **D-6** | 发言规则常量移到 `src/shared/speech.ts` | 前端限制与后端校验必须同一份判据（SEC-4），而客户端不许 import 服务端（依赖方向） |
+
+### 8.3 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 共享 | `src/shared/speech.ts`（发言规则，前后端共用） |
+| 服务端新增 | `src/server/game-loop.ts`（整局入口）、`src/server/ai/agent.ts`（模型/脚本 decider） |
+| 服务端修改 | `src/server/app.ts`（注入 loop）、`src/server/routes/games.ts`（`POST /play`、`GET /timer`）、`src/server/orchestrator.ts`（`pendingForPhase` / `nextActor` / `isStillTheirTurn`）、`src/server/index.ts`（生产入口装配） |
+| 客户端新增 | `src/client/App.tsx`、`game-state.ts`、`components/{StatusBar,SeatGrid,SpeechFeed,SpeechInput,TermHint,OnboardingHints}.tsx`、`styles/global.css` |
+| 测试新增 | `tests/server/game-loop.test.ts`、`tests/client/{game-state,components,a11y}.test.tsx`、`tests/e2e/game.spec.ts` |
+| 配置 | `vitest.config.ts` 增加 `client`（jsdom）project；`playwright.config.ts` 用 Chrome + `webServer`；`scripts/e2e-server.ts` |
+
+### 8.4 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `components.test.tsx` 状态条；e2e 主路径 | PASS |
+| 2 | `components.test.tsx` · 聚焦/点击显示解释 + `aria-describedby` | PASS |
+| 3 | 术语来自 `TERMS`；`no-hardcoded-terms` 静态扫描仍生效 | PASS |
+| 4 | `SpeechInput` 的提示语是独立段落，不写入 textarea | PASS |
+| 5 | `OnboardingHints` 关闭后写 `localStorage`，重挂载不再出现 | PASS |
+| 6 | `game-state.test.ts` · 当前/已发言/已出局三态 | PASS |
+| 7 | `game-state.test.ts` · 按 `speechStartSeat` 推导下一位 | PASS |
+| 8 | e2e · 360px `scrollWidth - clientWidth <= 0` | PASS |
+| 9 | e2e · 1100px 下 `gridTemplateColumns` 至少两列 | PASS |
+| 10 | e2e · 状态条与计时器几何关系 | PASS |
+| 11 | e2e · 键盘聚焦输入框、Enter 提交；`components.test.tsx` 席位按钮回车选中 | PASS |
+| 12 | `a11y.test.tsx` · `:focus-visible` 有可见 outline | PASS |
+| 13 | 同上 · 正文/次要文字在三个背景上 ≥ 4.5:1 | PASS |
+| 14 | 状态均有文字（发言/出局/倒计时），不只靠颜色 | PASS |
+| 15 | `boardAnnouncement` 可访问名称含身份、阶段、轮次 | PASS |
+| 15（整局入口） | `game-loop.test.ts` · `POST /play` 后一局跑到 `FINISHED`，`seq` 连续 | PASS |
+| 16 | 编排层提交前重读（RFC-011 C-113）；整局用例断言无 `REJECTED` | PASS |
+
+### 8.5 验证输出（实跑）
+
+```
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → 79 files / 671 tests（unit + client）
+$ pnpm test:e2e → 5 passed
+$ coverage（引擎）→ 行 96.96% / 分支 92.85%
+```
+
+### 8.6 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| 大厅/多局 | 启动即开一局；没有「继续上一局」的列表 | 后续 |
+| 深色/浅色主题 | v1 只有深色，对比度按深色背景验证 | 后续（Q-012-2） |
+| 真实模型端到端 | e2e 用脚本替身；真模型只在手工验收 | 手工 |
+| 投票 UI | 目前只有发言输入；投票走 API | RFC-013 |

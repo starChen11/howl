@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.114 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.115 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -48,7 +48,7 @@
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
-| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
+| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Implemented |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
@@ -817,6 +817,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.115 | RFC-012 实现完成（Status → Implemented）：整局入口（`GameLoop` + `POST /play`）、模型/脚本 decider、七个界面组件与响应式样式、jsdom 组件测试 + 5 条 Playwright 用例 |
 | 2026-11-19 | v2.114 | RFC-011 Round 10 复核（Status → `Reviewed`）：B-R9-1 关闭——端到端用例（seed 13，最后一位 1 号 == 投票第一个行动者）真实 `buildApp` + `POST /actions` + `runGame`；M-R10-1 回退调用点 → 1 failed（`:800`，诊断 `REJECTED seq24 PHASE_MISMATCH`）；M-R10-2 删相位比较 → 1 failed；M-R10-3 删路由通知 → 5010ms 超时；定向用例 20/20 绿；门禁 75 files / 643 tests 全绿；探针从 `/tmp/howl-rfc011-r10-probes/backup/` 文件备份恢复、四个文件 SHA-256 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-011.md`](reviews/REVIEW-RFC-011.md) Round 10 |
 | 2026-11-19 | v2.113 | RFC-011 Round 9 修复（Status → Implemented）：补端到端并发用例（最后一位发言 == 第一个投票），回归锁有效 |
 | 2026-11-19 | v2.112 | RFC-011 Round 9 复核（Status → `Changes requested`）：C-111 关闭（`DAY_STARTED` 起点与递减有真实路由锁；M-R9-4 2 failed / 12 passed、M-R9-5 递减用例 1 failed）；B-R8-1 行为修复成立（P-R9-A/B/C 无 `REJECTED`；M-R9-1 删相位比较 → 1 failed），但 Round 8 要求的端到端回归锁仍缺——M-R9-2 把调用点换回旧表达式后全量 75/642 绿，M-R9-3 复现 `REJECTED seq24 PHASE_MISMATCH`。门禁 75 files / 642 tests 全绿；探针从 `/tmp/howl-rfc011-r9-probes/backup/` 文件备份恢复、四个文件 SHA-256 一致、临时探针已删除、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-011.md`](reviews/REVIEW-RFC-011.md) Round 9 |

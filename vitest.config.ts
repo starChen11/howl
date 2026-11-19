@@ -6,6 +6,7 @@ import { ALIAS } from './configs/alias.ts';
  * 两个 project：
  *
  * - `unit`：纯函数与静态扫描，快、可并行。
+ * - `client`：React 组件与无障碍断言，`jsdom` 环境。
  * - `meta`：会起子进程跑 `pnpm` 命令的门禁测试，慢且会占用端口，因此串行执行。
  *
  * 分开的理由是 `tests/meta/commands.test.ts` 要跑 `pnpm test` 自己——不隔离就会递归。
@@ -32,10 +33,18 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
-          exclude: ['tests/meta/**', 'tests/e2e/**', 'node_modules/**'],
+          exclude: ['tests/meta/**', 'tests/e2e/**', 'tests/client/**', 'node_modules/**'],
           environment: 'node',
           // 引擎必须可离线推理（TEST-4 / AC-16）：这个 setup 把 fetch 换成抛错桩。
           setupFiles: ['tests/setup/no-network.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'client',
+          include: ['tests/client/**/*.test.tsx', 'tests/client/**/*.test.ts'],
+          environment: 'jsdom',
         },
       },
       {

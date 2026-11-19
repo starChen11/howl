@@ -4,6 +4,12 @@ import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 
 import { buildApp } from './app';
+import { ChannelRegistry } from './channels/session';
+import { GameLoop } from './game-loop';
+import { agentFor } from './ai/agent';
+import { GameRegistry } from './store/game-registry';
+import { InMemoryMetaStore } from './store/meta-store';
+import { StreamBus } from './stream/bus';
 
 /** Fastify 监听端口，默认 3000（RFC-001 Q-001-1）。 */
 const API_PORT = Number(process.env.PORT ?? 3000);
@@ -17,7 +23,32 @@ const API_PORT = Number(process.env.PORT ?? 3000);
 const CLIENT_DIST = fileURLToPath(new URL('../../dist/client', import.meta.url));
 
 // 生产入口：cookie 必须带 `Secure`（RFC-008 §2.6 / B3）。
-const app = buildApp({ logger: true, production: process.env.NODE_ENV === 'production' });
+// 整局入口：默认用模型；`HOWL_FAKE_AI=1` 时用脚本替身（本地演示与端到端测试）。
+const store = new InMemoryMetaStore();
+const bus = new StreamBus();
+const channels = new ChannelRegistry(bus);
+const registry = new GameRegistry(store);
+const agentKind = process.env.HOWL_FAKE_AI === '1' ? 'scripted' : 'llm';
+
+const loop = new GameLoop({
+  registry,
+  channels,
+  makeDecider: (gameId) =>
+    agentFor(agentKind, {
+      gameId,
+      seq: () => 0,
+      mode: 'slaughter-side',
+    }),
+});
+
+const app = buildApp({
+  logger: true,
+  production: process.env.NODE_ENV === 'production',
+  store,
+  bus,
+  channels,
+  loop,
+});
 
 // 前端没构建过就不托管静态资源，只提供 API——否则 `@fastify/static` 会因为
 // root 不存在而启动失败，把「还没 build」变成「起不来」。

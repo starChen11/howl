@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import { registerGameRoutes } from './routes/games';
 import { registerStreamRoutes } from './routes/stream';
+import type { GameLoop } from './game-loop';
 import { ChannelRegistry } from './channels/session';
 import { StreamBus } from './stream/bus';
 import { GameRegistry } from './store/game-registry';
@@ -21,6 +22,8 @@ export interface BuildAppOptions {
   bus?: StreamBus;
   /** 通道注册表（测试注入，默认新建）。 */
   channels?: ChannelRegistry;
+  /** 整局入口（生产入口传入；测试可注入脚本化 decider）。 */
+  loop?: GameLoop | null;
 }
 
 /**
@@ -38,7 +41,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const production = options.production ?? false;
   const bus = options.bus ?? new StreamBus();
   const channels = options.channels ?? new ChannelRegistry(bus);
-  registerGameRoutes(app, { registry, production, channels });
+  registerGameRoutes(app, {
+    registry,
+    production,
+    channels,
+    loop: options.loop ?? null,
+  });
   registerStreamRoutes(app, { registry, bus, production });
 
   return app;

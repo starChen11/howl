@@ -16,6 +16,7 @@ import { isWithinLimit, remainingSeconds } from '../speech';
 import { resolveSession } from '../session';
 import type { GameRegistry } from '../store/game-registry';
 import type { ChannelRegistry } from '../channels/session';
+import type { GameLoop } from '../game-loop';
 
 /**
  * 对局与会话的路由（RFC-008 §2.2）。
@@ -29,6 +30,8 @@ export interface GameRoutesOptions {
   registry: GameRegistry;
   production: boolean;
   channels: ChannelRegistry;
+  /** 整局入口；没有注入时 `POST /play` 返回 501。 */
+  loop: GameLoop | null;
 }
 
 function validationError(message: string, issues: string[] = []): ApiError {
@@ -36,7 +39,7 @@ function validationError(message: string, issues: string[] = []): ApiError {
 }
 
 export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOptions): void {
-  const { registry, production, channels } = options;
+  const { registry, production, channels, loop } = options;
 
   app.post('/api/games', async (request, reply) => {
     const parsed = CreateGameBodySchema.safeParse(request.body);
@@ -100,6 +103,21 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       return reply.send({ version: state.seq, view });
     },
   );
+
+  // 整局入口（RFC-012 AC-15）：启动后由服务端推进，客户端只渲染。
+  app.post<{ Params: { id: string } }>('/api/games/:id/play', async (request, reply) => {
+    const { session } = await resolveSession(registry, request, reply, production);
+    const record = await registry.getGame(request.params.id);
+    if (record === undefined || !session.gameIds.includes(record.gameId)) {
+      return reply.code(404).send({ error: 'GAME_NOT_FOUND', message: '对局不存在' });
+    }
+    if (loop === null) {
+      return reply.code(501).send({ error: 'NOT_IMPLEMENTED', message: '整局入口未启用' });
+    }
+
+    const started = loop.start(session, record.gameId);
+    return reply.code(started ? 202 : 200).send({ started });
+  });
 
   // 草稿同步：客户端每敲几个字就 POST 一次，超时由服务端用它提交（AC-6）。
   app.post<{ Params: { id: string }; Body: { text?: string } }>(

@@ -27,8 +27,8 @@ export interface OrchestratorDeps {
   session: SessionRecord;
   input: InputChannel;
   output: OutputChannel;
-  /** AI 的决策来源；测试注入脚本。 */
-  decide: (input: { seat: number; ctx: ProjectedContext }) => Promise<AgentDecision>;
+  /** AI 的决策来源；测试注入脚本。`phase` 是引擎真实相位（投影把夜间折叠了）。 */
+  decide: (input: { seat: number; ctx: ProjectedContext; phase: string }) => Promise<AgentDecision>;
   /** 提前结束（测试用）。 */
   maxSteps?: number;
   now?: () => number;
@@ -66,6 +66,9 @@ export function nextActor(state: {
       return alive.find((seat) => seat.role === 'seer')?.seat;
     case 'NIGHT_WITCH':
       return alive.find((seat) => seat.role === 'witch')?.seat;
+    case 'NIGHT_HUNTER_SHOOT':
+    case 'DAY_HUNTER_SHOOT':
+      return state.seats.find((seat) => seat.role === 'hunter')?.seat;
     case 'DAY_VOTE':
     case 'DAY_VOTE_RUNOFF': {
       const voted = new Set((state.votes ?? []).map((vote) => vote.seat));
@@ -73,6 +76,34 @@ export function nextActor(state: {
     }
     default:
       return undefined;
+  }
+}
+
+/**
+ * 相位 → 投影的 `pending`。
+ *
+ * 投影要靠它算 `legalTargets`；不传的话 `legalTargets` 是空的，AI 会以为无路可走。
+ */
+export function pendingForPhase(phase: string): PendingDecision | null {
+  switch (phase) {
+    case 'NIGHT_WOLF_CHAT':
+      return 'chat';
+    case 'NIGHT_WOLVES':
+      return 'kill';
+    case 'NIGHT_SEER':
+      return 'check';
+    case 'NIGHT_WITCH':
+      return 'witch';
+    case 'DAY_SPEECH':
+      return 'speak';
+    case 'DAY_VOTE':
+    case 'DAY_VOTE_RUNOFF':
+      return 'vote';
+    case 'NIGHT_HUNTER_SHOOT':
+    case 'DAY_HUNTER_SHOOT':
+      return 'shoot';
+    default:
+      return null;
   }
 }
 
@@ -139,7 +170,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
         state,
         events: currentRecord.events,
         observer: observer as never,
-        pending: state.phase === 'DAY_SPEECH' ? ('speak' as PendingDecision) : null,
+        pending: pendingForPhase(state.phase),
       });
 
     const seat = seatToSpeak(state) ?? nextActor(state);
@@ -150,7 +181,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     const action =
       seat === record.playerSeat && state.phase === 'DAY_SPEECH'
         ? await playerAction(seat, deps)
-        : await decide({ seat, ctx: ctxFor(seat) });
+        : await decide({ seat, ctx: ctxFor(seat), phase: state.phase });
     if (action.action === undefined) break;
 
     // **提交前再读一次**：等玩家输入的那段时间里，路由可能已经写入了别的动作
