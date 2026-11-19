@@ -180,3 +180,62 @@ describe('AC-9 · 夜间行动结果真的落到对应席位', () => {
     void session;
   });
 });
+
+describe('AC-11 · 真相视图零副作用', () => {
+  it('请求前后事件流完全相等', async () => {
+    const store = new InMemoryMetaStore();
+    const { registry, session, record } = await gameWithDeadPlayer(store);
+    const before = JSON.stringify((await registry.getGame(record.gameId))?.events);
+
+    const app = buildApp({ store, bus: new StreamBus() });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/truth`,
+      headers: { cookie: `session=${session.id}` },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const after = JSON.stringify((await registry.getGame(record.gameId))?.events);
+    expect(after).toBe(before);
+  });
+});
+
+describe('AC-9 · 女巫与猎人的动作也有记录', () => {
+  it('用药与开枪各自记到对应席位', async () => {
+    const state = {
+      seats: [
+        { seat: 1, role: 'witch', alive: true },
+        { seat: 2, role: 'hunter', alive: false },
+        { seat: 3, role: 'villager', alive: true },
+      ],
+    } as never;
+    const events = [
+      { seq: 1, type: 'WITCH_POTION_USED', payload: { potion: 'poison', target: 3 } },
+      { seq: 2, type: 'HUNTER_SHOOT', payload: { seat: 2, target: 3 } },
+    ] as never;
+
+    const truth = buildTruth(state, events);
+    expect(truth.seats.find((seat) => seat.seat === 1)?.actions.join('')).toContain('毒药');
+    expect(truth.seats.find((seat) => seat.seat === 2)?.actions.join('')).toContain('开枪');
+  });
+});
+
+describe('C-154 · 死后的动作不再记到已出局席位', () => {
+  it('狼在死后不再被记「袭击」', async () => {
+    const state = {
+      seats: [
+        { seat: 1, role: 'wolf', alive: false },
+        { seat: 2, role: 'wolf', alive: true },
+        { seat: 3, role: 'villager', alive: true },
+      ],
+    } as never;
+    const events = [
+      { seq: 1, type: 'PLAYER_DIED', payload: { seat: 1, cause: 'lynch' } },
+      { seq: 2, type: 'WOLF_KILL_CHOSEN', payload: { target: 3 } },
+    ] as never;
+
+    const truth = buildTruth(state, events);
+    expect(truth.seats.find((seat) => seat.seat === 1)?.actions).toEqual([]);
+    expect(truth.seats.find((seat) => seat.seat === 2)?.actions.join('')).toContain('袭击');
+  });
+});

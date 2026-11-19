@@ -30,7 +30,7 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 ```
 $ pnpm test
  Test Files  85 passed (85)     # unit 68 + client 4 + meta 7
-      Tests  710 passed (710)
+      Tests  720 passed (720)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```

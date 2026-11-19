@@ -34,6 +34,18 @@ function actionsBySeat(state: GameState, events: readonly EventEnvelope[]): Map<
   };
 
   const wolves = state.seats.filter((seat) => seat.role === 'wolf').map((seat) => seat.seat);
+
+  // 每个席位「出局事件」的 seq：之后再发生的动作与他无关（C-154）。
+  const deathSeq = new Map<number, number>();
+  for (const event of events) {
+    if (event.type !== 'PLAYER_DIED') continue;
+    const seat = (event.payload as { seat: number }).seat;
+    if (!deathSeq.has(seat)) deathSeq.set(seat, event.seq);
+  }
+  const aliveAt = (seat: number, seq: number): boolean => {
+    const died = deathSeq.get(seat);
+    return died === undefined || seq < died;
+  };
   const seer = state.seats.find((seat) => seat.role === 'seer')?.seat;
   const witch = state.seats.find((seat) => seat.role === 'witch')?.seat;
 
@@ -41,13 +53,15 @@ function actionsBySeat(state: GameState, events: readonly EventEnvelope[]): Map<
     const payload = event.payload as Record<string, unknown>;
 
     if (event.type === 'WOLF_KILL_CHOSEN') {
-      for (const wolf of wolves) push(wolf, `袭击了 ${String(payload['target'])} 号`);
+      for (const wolf of wolves) {
+        if (aliveAt(wolf, event.seq)) push(wolf, `袭击了 ${String(payload['target'])} 号`);
+      }
     }
-    if (event.type === 'SEER_CHECKED' && seer !== undefined) {
+    if (event.type === 'SEER_CHECKED' && seer !== undefined && aliveAt(seer, event.seq)) {
       const resultLabel = payload['result'] === 'wolf' ? ROLE_LABELS.wolf : '好人';
       push(seer, `查验了 ${String(payload['target'])} 号：${resultLabel}`);
     }
-    if (event.type === 'WITCH_POTION_USED' && witch !== undefined) {
+    if (event.type === 'WITCH_POTION_USED' && witch !== undefined && aliveAt(witch, event.seq)) {
       const potion = payload['potion'] === 'heal' ? '解药' : '毒药';
       push(witch, `使用${potion}（目标 ${String(payload['target'])} 号）`);
     }
@@ -63,12 +77,18 @@ function actionsBySeat(state: GameState, events: readonly EventEnvelope[]): Map<
 }
 
 export function buildTruth(state: GameState, events: readonly EventEnvelope[]): TruthView {
-  const deaths = events
-    .filter((event) => event.type === 'PLAYER_DIED')
-    .map((event) => {
-      const payload = event.payload as { seat: number; cause: string };
-      return { seat: payload.seat, day: state.day, cause: payload.cause };
-    });
+  // 死亡发生在哪一天：扫到那条事件为止的最后一个 `DAY_STARTED`（C-150）。
+  let currentDay = 0;
+  const deaths: { seat: number; day: number; cause: string }[] = [];
+  for (const event of events) {
+    if (event.type === 'DAY_STARTED') {
+      currentDay = (event.payload as { day: number }).day;
+      continue;
+    }
+    if (event.type !== 'PLAYER_DIED') continue;
+    const payload = event.payload as { seat: number; cause: string };
+    deaths.push({ seat: payload.seat, day: currentDay, cause: payload.cause });
+  }
 
   const actions = actionsBySeat(state, events);
 

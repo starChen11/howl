@@ -196,3 +196,21 @@ $ pnpm test:e2e → 9 passed
 $ pnpm test → 85 files / 710 tests
 $ pnpm test:e2e → 9 passed
 ```
+
+### 8.9 Round 3 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-138** AC-11 没有事件流快照断言 | 只有 `submit`/`draft` 计数 | 补服务端用例：请求 `/truth` 前后**读回的事件流 JSON 完全相等**；把路由改成真的 `appendEvents` 写入会红（已实跑） |
+| **C-141** AC-7 没有 App 级终局用例 | 终局时藏掉观战条/发言流仍绿 | 补 `FINISHED` 用例：观战提示、发言流、公开事件都还在 |
+| **C-151** API-1 只做了一半 | 服务端裸 `reply.send`；去掉客户端 `safeParse` 不红 | 服务端也用 `TruthViewSchema.parse`；补客户端三条用例（合法 / 缺字段 → null / 403 → null） |
+| **C-136** 真相渲染没锁 | 删 `actions` / `deaths` 的 JSX 仍绿 | 补「真相区显示狼的动作与死因」用例；删渲染会红 |
+| **C-135** 锚点只测了回退分支 | `anchorFor` 取最后一条发言仍绿 | 补主路径：事件前后都有发言时，锚点是**此前最近**那条 |
+| **C-149** 重复 key 只测了 key 生成 | 回退 key 不渲染组件，测不出 | 渲染 `EventPanel` 并捕获 `console.error`，断言没有 `same key` 告警；回退会红 |
+| **C-154** 死狼仍被记「袭击」 | 动作只按角色归因，没看出局时间 | 记录每个席位的 `PLAYER_DIED.seq`，**死后的事件不再记到它头上**；补用例 |
+| **C-150** 死亡天数全取当前天 | `deaths.day` 用了 `state.day` | 扫事件流，取死亡时最后一个 `DAY_STARTED` 的天数 |
+
+```
+$ pnpm test → 85 files / 720 tests
+$ pnpm test:e2e → 9 passed
+```

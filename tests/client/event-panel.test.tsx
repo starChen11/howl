@@ -177,3 +177,59 @@ describe('AC-1 · 放逐与枪杀也是独立条目', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
+
+describe('C-135 · 锚点取「此前最近」的发言', () => {
+  it('事件之前有发言、之后也有发言时，跳到此前最近的那条', () => {
+    const before = {
+      gameId: 'g',
+      seq: 2,
+      ts: 0,
+      type: 'SPEECH',
+      visibleTo: 'public',
+      payload: { seat: 2, text: '前面的发言' },
+    };
+    const event = {
+      gameId: 'g',
+      seq: 3,
+      ts: 0,
+      type: 'VOTE_REVEALED',
+      visibleTo: 'public',
+      payload: { votes: [{ seat: 2, target: 3 }] },
+    };
+    const after = {
+      gameId: 'g',
+      seq: 5,
+      ts: 0,
+      type: 'SPEECH',
+      visibleTo: 'public',
+      payload: { seat: 3, text: '后面的发言' },
+    };
+    const entries = buildPanelEntries(ctx([dayStarted, before, event, after]));
+
+    expect(entries.find((entry) => entry.kind === 'vote')?.anchor).toBe(2);
+  });
+});
+
+describe('C-149 · 同天两名死者不会触发重复 key 告警', () => {
+  it('渲染时不输出 "same key" 警告', () => {
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args.map(String).join(' '));
+    };
+    try {
+      const twoDeaths = {
+        gameId: 'g',
+        seq: 1,
+        ts: 0,
+        type: 'DAY_STARTED',
+        visibleTo: 'public',
+        payload: { day: 2, diedLastNight: [1, 4], speechStartSeat: 2 },
+      };
+      render(<EventPanel entries={buildPanelEntries(ctx([twoDeaths]))} />);
+      expect(errors.filter((line) => line.includes('same key'))).toEqual([]);
+    } finally {
+      console.error = original;
+    }
+  });
+});

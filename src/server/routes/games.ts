@@ -13,6 +13,7 @@ import type { PendingDecision } from '@shared/project';
 
 import { project } from '../project';
 import { buildTruth, canSeeTruth } from '../view/truth';
+import { TruthViewSchema } from '@shared/truth';
 import { nextActor, pendingForPhase } from '../orchestrator';
 import { isWithinLimit, remainingSeconds } from '../speech';
 import { resolveSession } from '../session';
@@ -142,7 +143,8 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       });
     }
 
-    return reply.send(buildTruth(state, record.events));
+    // 响应也过同一份契约：字段一改，服务端先炸，而不是让客户端悄悄错位。
+    return reply.send(TruthViewSchema.parse(buildTruth(state, record.events)));
   });
 
   // 草稿同步：客户端每敲几个字就 POST 一次，超时由服务端用它提交（AC-6）。

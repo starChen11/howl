@@ -272,3 +272,50 @@ describe('AC-13 / AC-14 · 记事板内容不会随发言提交', () => {
     for (const text of drafts) expect(text).not.toContain('3 号可疑');
   });
 });
+
+describe('AC-7 · 对局结束后仍能看到完整信息', () => {
+  it('FINISHED 时观战条、发言流与公开事件都在', async () => {
+    const ctx = view({
+      phase: 'FINISHED',
+      publicEvents: [
+        {
+          gameId: 'g',
+          seq: 1,
+          ts: 0,
+          type: 'DAY_STARTED',
+          visibleTo: 'public',
+          payload: { day: 2, diedLastNight: [1], speechStartSeat: 2 },
+        } as never,
+        {
+          gameId: 'g',
+          seq: 2,
+          ts: 0,
+          type: 'SPEECH',
+          visibleTo: 'public',
+          payload: { seat: 2, text: '这局打完了' },
+        } as never,
+      ],
+    });
+    const { client } = fakeClient(ctx);
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByRole('heading', { name: '你的身份' });
+    expect(screen.getByText('这局打完了')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '公开事件' })).toBeTruthy();
+    expect(screen.getByText(/你已出局，正在观战/)).toBeTruthy();
+  });
+});
+
+describe('AC-9 · 真相区渲染动作与出局记录', () => {
+  it('显示狼的动作与死因', async () => {
+    const user = userEvent.setup();
+    const { client } = fakeClient(view());
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByRole('heading', { name: '你的身份' });
+    await user.click(screen.getByRole('button', { name: '打开真相视图' }));
+
+    await waitFor(() => expect(screen.getByText(/袭击了 1 号/)).toBeTruthy());
+    expect(screen.getByText(/第 2 天，wolf/)).toBeTruthy();
+  });
+});
