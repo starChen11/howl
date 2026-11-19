@@ -259,3 +259,15 @@ $ pnpm test:e2e → 8 passed
 $ pnpm test → 81 files / 688 tests
 $ pnpm test:e2e → 8 passed
 ```
+
+### 8.11 Round 5 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-127(a)** 投影夹具锁不住「只含并列者」 | 夹具里「并列者」与「除观察者外的全部存活」是同一集合，回退成 `[...alive]` 仍绿 | 夹具加一个**不在 runoff 的存活席位**（alive `[1,2,3,4]`、runoff `[2,3]`）；回退成 `[...alive]` 现在会红 |
+| **C-127(b)** `isPlayerPhase` 是死代码、runGame 用内联判断 | 删内联分支全绿；平票重投时 AI 会替玩家投票 | `runGame` 改成调用 `isPlayerPhase`；补 `runGame` 级用例：构造平票 → 断言 `input.read` 以 `kind:'vote'` 被调用、`decide` 不覆盖玩家席。删 RUNOFF 分支会红 |
+| **C-133** 用例不够硬 | 断言包在 `if (phase === 'NIGHT')` 里、没断言 `pending` | 移出条件并断言 `pending === null` 与 `legalTargets === []` |
+
+```
+$ pnpm test → 80 files / 689 tests
+```

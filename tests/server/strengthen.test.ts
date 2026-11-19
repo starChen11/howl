@@ -337,10 +337,11 @@ describe('C-133 · 夜间默认 pending 只给当前行动者', () => {
     });
 
     const body = res.json<{ view: ProjectedContext }>();
-    // 夜间相位被折叠成 'NIGHT'（RFC-007 C-28），且不应带 legalTargets
-    if (body.view.phase === 'NIGHT') {
-      expect(body.view.legalTargets).toEqual([]);
-    }
+    // 夜间相位被折叠成 'NIGHT'（RFC-007 C-28）；旁观者不该拿到 pending，
+    // 也就没有 legalTargets（C-133）。
+    expect(body.view.phase).toBe('NIGHT');
+    expect(body.view.pending).toBeNull();
+    expect(body.view.legalTargets).toEqual([]);
   });
 });
 
@@ -354,11 +355,13 @@ describe('C-127 · 重投的合法目标只有并列者', () => {
         { seat: 1, alive: true, role: 'villager' },
         { seat: 2, alive: true, role: 'villager' },
         { seat: 3, alive: true, role: 'villager' },
+        { seat: 4, alive: true, role: 'villager' },
       ],
       runoff: [2, 3],
     } as never;
 
-    const targets = legalTargetsOf(state, 'vote', [1, 2, 3] as never, 1 as never);
+    // 4 号活着但不在 runoff 里：回退成 `[...alive]` 会把 4 号列进来（M-R5-6）
+    const targets = legalTargetsOf(state, 'vote', [1, 2, 3, 4] as never, 1 as never);
     expect(targets).toEqual([2, 3]);
     expect(targets).not.toContain('abstain');
   });

@@ -481,3 +481,157 @@ describe('C-127 · 玩家亲自行动的相位', () => {
     expect(isPlayerPhase('NIGHT_WOLVES')).toBe(false);
   });
 });
+
+describe('C-127 · 平票重投时玩家亲自投票', () => {
+  it('runGame 在 DAY_VOTE_RUNOFF 用 kind=vote 问玩家，且不把玩家席交给 AI', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+
+    // 玩家坐 1 号并推进到白天（夜里不会被刀）
+    let game;
+    for (let seat = 1; seat <= 9; seat += 1) {
+      game = await registry.createGame(session, {
+        mode: 'slaughter-side',
+        seed: 15,
+        playerSeat: seat as never,
+      });
+      if (registry.stateOf(game).seats.find((candidate) => candidate.isPlayer)?.role === 'wolf') {
+        break;
+      }
+    }
+    if (game === undefined) throw new Error('没有创建对局');
+
+    let current = game;
+    const stateOf = () => registry.stateOf(current);
+    // 夜聊 → 刀/查/药 → 白天
+    while (stateOf().phase === 'NIGHT_WOLF_CHAT') {
+      const state = stateOf();
+      const wolf = state.seats.find(
+        (candidate) =>
+          candidate.alive &&
+          candidate.role === 'wolf' &&
+          !(state.wolfChat ?? []).some((entry) => entry.seat === candidate.seat),
+      )?.seat;
+      if (wolf === undefined) break;
+      const r = await registry.submit(
+        session,
+        current,
+        {
+          type: 'WOLF_CHAT',
+          ts: 1,
+          seat: wolf,
+          text: '',
+        } as never,
+        state.seq,
+      );
+      if (!r.ok) break;
+      current = r.record;
+    }
+    for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
+      const state = stateOf();
+      if (state.phase === 'DAY_SPEECH') break;
+      const actor =
+        type === 'WOLF_KILL'
+          ? state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat
+          : type === 'SEER_CHECK'
+            ? state.seats.find((seat) => seat.alive && seat.role === 'seer')?.seat
+            : state.seats.find((seat) => seat.alive && seat.role === 'witch')?.seat;
+      if (actor === undefined) break;
+      const action =
+        type === 'WITCH_ACT'
+          ? { type, ts: 1, seat: actor, potion: 'none' }
+          : {
+              type,
+              ts: 1,
+              seat: actor,
+              target: state.seats.find((seat) => seat.alive && seat.seat !== actor)?.seat,
+            };
+      const r = await registry.submit(session, current, action as never, state.seq);
+      if (!r.ok) break;
+      current = r.record;
+    }
+
+    // 说完整圈，进入投票
+    while (stateOf().phase === 'DAY_SPEECH') {
+      const state = stateOf();
+      const order = state.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+      const start = order.indexOf(state.speech?.startSeat ?? 1);
+      const next = [...order.slice(start), ...order.slice(0, start)].find(
+        (seat) => !(state.speech?.spoken ?? []).includes(seat),
+      );
+      if (next === undefined) break;
+      const r = await registry.submit(
+        session,
+        current,
+        {
+          type: 'SPEECH_SKIP',
+          ts: 1,
+          seat: next,
+        } as never,
+        state.seq,
+      );
+      if (!r.ok) break;
+      current = r.record;
+    }
+    expect(stateOf().phase).toBe('DAY_VOTE');
+
+    // 制造平票：除一人外全部投 1 号，剩下的人投 2 号后显然不并列；
+    // 这里用「一半投 A、一半投 B」的方式构造并列。
+    const voters = stateOf()
+      .seats.filter((seat) => seat.alive)
+      .map((seat) => seat.seat);
+    const [a, b] = voters;
+    if (a === undefined || b === undefined) throw new Error('人数不够');
+    for (let index = 0; index < voters.length; index += 1) {
+      const state = stateOf();
+      if (state.phase !== 'DAY_VOTE') break;
+      const voter = voters[index] as number;
+      const target = index % 2 === 0 ? a : b;
+      const r = await registry.submit(
+        session,
+        current,
+        {
+          type: 'VOTE',
+          ts: 1,
+          seat: voter as never,
+          target: target as never,
+        } as never,
+        state.seq,
+      );
+      if (!r.ok) break;
+      current = r.record;
+    }
+
+    const afterVote = stateOf();
+    if (afterVote.phase !== 'DAY_VOTE_RUNOFF') {
+      // 票数不并列时跳过（数据结构不允许稳定造平票）
+      return;
+    }
+
+    const kinds: string[] = [];
+    let aiCoveredPlayer = false;
+    const playerSeat = stateOf().seats.find((seat) => seat.isPlayer)?.seat;
+
+    await runGame({
+      registry,
+      session,
+      gameId: current.gameId,
+      input: {
+        async read(prompt) {
+          kinds.push(prompt.kind);
+          return prompt.kind === 'vote' ? { kind: 'speak', text: String(a) } : { kind: 'skip' };
+        },
+        close() {},
+      },
+      output: { emit() {}, async flush() {} },
+      decide: async ({ seat }) => {
+        if (seat === playerSeat) aiCoveredPlayer = true;
+        return { action: undefined };
+      },
+      maxSteps: 100,
+    });
+
+    expect(kinds).toContain('vote');
+    expect(aiCoveredPlayer).toBe(false);
+  });
+});

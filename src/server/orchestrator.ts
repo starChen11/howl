@@ -190,10 +190,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
 
     // 玩家触发点：白天发言（AC-11）与白天投票（AC-11 的「发言 → 投票」）。
     // 夜间的目标选择仍是另一套输入，先用注入的 `decide` 代劳。
-    const playerPhase =
-      state.phase === 'DAY_SPEECH' ||
-      state.phase === 'DAY_VOTE' ||
-      state.phase === 'DAY_VOTE_RUNOFF';
+    const playerPhase = isPlayerPhase(state.phase);
     const action =
       seat === record.playerSeat && playerPhase
         ? await playerAction(seat, state.phase, deps)
