@@ -16,7 +16,8 @@ const API_PORT = Number(process.env.PORT ?? 3000);
  */
 const CLIENT_DIST = fileURLToPath(new URL('../../dist/client', import.meta.url));
 
-const app = buildApp({ logger: true });
+// 生产入口：cookie 必须带 `Secure`（RFC-008 §2.6 / B3）。
+const app = buildApp({ logger: true, production: process.env.NODE_ENV === 'production' });
 
 // 前端没构建过就不托管静态资源，只提供 API——否则 `@fastify/static` 会因为
 // root 不存在而启动失败，把「还没 build」变成「起不来」。

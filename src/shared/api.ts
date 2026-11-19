@@ -59,6 +59,7 @@ export type ApiErrorCode =
   | 'GAME_EXPIRED'
   | 'ALREADY_APPLIED'
   | 'VERSION_MISMATCH'
+  | 'NOT_YOUR_SEAT'
   | 'NOT_FINISHED'
   | 'NOT_IMPLEMENTED';
 

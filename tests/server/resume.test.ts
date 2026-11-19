@@ -132,7 +132,7 @@ describe('AC-8 / AC-9 · 版本与幂等', () => {
       url: `/api/games/${body.gameId}/actions`,
       headers: { cookie },
       payload: {
-        action: { type: 'WOLF_CHAT', ts: 2, seat: 2, text: '' },
+        action: { type: 'VOTE', ts: 2, seat: 1, target: 'abstain' },
         expectedVersion: version,
       },
     });
@@ -163,5 +163,58 @@ describe('AC-10 · 校验失败不抛 500', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual(expect.objectContaining({ error: 'VALIDATION_FAILED' }));
+  });
+});
+
+describe('B1 / B2 · HTTP 层的可见性与席位授权', () => {
+  it('提交动作的响应不含任何 server 可见事件', async () => {
+    const app = buildApp({ store: new InMemoryMetaStore() });
+    const { body, cookie } = await createGame(app);
+
+    const view = await app.inject({
+      method: 'GET',
+      url: `/api/games/${body.gameId}`,
+      headers: { cookie },
+    });
+    const version = view.json<{ version: number }>().version;
+
+    const submitted = await app.inject({
+      method: 'POST',
+      url: `/api/games/${body.gameId}/actions`,
+      headers: { cookie },
+      payload: {
+        action: { type: 'WOLF_CHAT', ts: 1, seat: 1, text: '' },
+        expectedVersion: version,
+      },
+    });
+
+    const events = submitted.json<{ events: { visibleTo: string }[] }>().events;
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.filter((event) => event.visibleTo === 'server')).toEqual([]);
+  });
+
+  it('替别人席位提交 → 403 NOT_YOUR_SEAT', async () => {
+    const app = buildApp({ store: new InMemoryMetaStore() });
+    const { body, cookie } = await createGame(app, { playerSeat: 1 });
+
+    const view = await app.inject({
+      method: 'GET',
+      url: `/api/games/${body.gameId}`,
+      headers: { cookie },
+    });
+    const version = view.json<{ version: number }>().version;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/games/${body.gameId}/actions`,
+      headers: { cookie },
+      payload: {
+        action: { type: 'WOLF_CHAT', ts: 1, seat: 2, text: '' },
+        expectedVersion: version,
+      },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual(expect.objectContaining({ error: 'NOT_YOUR_SEAT' }));
   });
 });

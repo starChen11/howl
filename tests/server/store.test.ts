@@ -103,11 +103,12 @@ describe('AC-14 · 只保留最近 3 局的完整事件流', () => {
       stored.status = 'finished';
       stored.finishedAt = Date.now() + index;
       await registry.submit(
+        session,
         stored,
         { type: 'WOLF_CHAT', ts: 1, seat: 1, text: '' } as never,
-        stored.events.length === 0 ? 0 : registry.stateOf(stored).seq,
+        registry.stateOf(stored).seq,
       );
-      await registry.enforceRetention();
+      await registry.enforceRetention(session);
     }
 
     const kept = [];
@@ -117,5 +118,67 @@ describe('AC-14 · 只保留最近 3 局的完整事件流', () => {
     }
 
     expect(kept.length).toBeLessThanOrEqual(KEEP_FULL_EVENTS);
+  });
+});
+
+describe('B1 · 事件过滤：server 事件永远不出现在可见集合里', () => {
+  it('把一整夜的原始事件交给过滤，结果里没有任何 server 事件', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, { mode: 'slaughter-side' });
+    const state = registry.stateOf(record);
+
+    // 走到夜晚结算：直接用引擎在同一状态上推进，构造出含 server 事件的事件流
+    const { step } = await import('@engine/step');
+    const { seatOfAliveRole } = await import('../helpers/roles');
+
+    const chatSeat = state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat;
+    if (chatSeat === undefined) throw new Error('没有 wolf');
+
+    for (
+      let guard = 0;
+      guard < 10 && registry.stateOf(record).phase === 'NIGHT_WOLF_CHAT';
+      guard += 1
+    ) {
+      const current = registry.stateOf(record);
+      const speaker = current.seats.find(
+        (seat) =>
+          seat.alive &&
+          seat.role === 'wolf' &&
+          !(current.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+      )?.seat;
+      if (speaker === undefined) break;
+      const result = await registry.submit(
+        session,
+        record,
+        { type: 'WOLF_CHAT', ts: 1, seat: speaker, text: '' } as never,
+        current.seq,
+      );
+      if (!result.ok) throw new Error('提交失败');
+      record.events = result.record.events;
+      record.applied = result.record.applied;
+    }
+
+    const afterChat = registry.stateOf(record);
+    expect(afterChat.phase).toBe('NIGHT_WOLVES');
+
+    const kill = await registry.submit(
+      session,
+      record,
+      {
+        type: 'WOLF_KILL',
+        ts: 2,
+        seat: seatOfAliveRole(afterChat, 'wolf'),
+        target: seatOfAliveRole(afterChat, 'villager'),
+      } as never,
+      afterChat.seq,
+    );
+    if (!kill.ok) throw new Error('下刀失败');
+
+    const observer = afterChat.seats[0];
+    if (observer === undefined) throw new Error('没有席位');
+    const visible = registry.visibleEventsOf(kill.record, observer.seat);
+    expect(visible.filter((event) => event.visibleTo === 'server')).toEqual([]);
+    void step;
   });
 });

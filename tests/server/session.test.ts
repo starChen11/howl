@@ -207,3 +207,54 @@ describe('AC-16 · 不引入数据库', () => {
     }
   });
 });
+
+describe('B5 · 释放的对局仍列出、返回 410 而不是 404', () => {
+  it('会话超限后最旧的一局仍在列表里，GET 返回 410', async () => {
+    const store = new InMemoryMetaStore();
+    const app = buildApp({ store });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side' },
+    });
+    const cookie = cookieOf(created.headers);
+    const firstGameId = created.json<{ gameId: string }>().gameId;
+
+    // 建到超过上限
+    for (let index = 0; index < MAX_GAMES_PER_SESSION; index += 1) {
+      await app.inject({
+        method: 'POST',
+        url: '/api/games',
+        payload: { mode: 'slaughter-side' },
+        headers: { cookie },
+      });
+    }
+
+    const session = await app.inject({ method: 'GET', url: '/api/session', headers: { cookie } });
+    const listed = session.json<{ games: { gameId: string }[] }>().games.map((game) => game.gameId);
+    expect(listed).toContain(firstGameId);
+
+    const released = await app.inject({
+      method: 'GET',
+      url: `/api/games/${firstGameId}`,
+      headers: { cookie },
+    });
+    expect(released.statusCode).toBe(410);
+  });
+});
+
+describe('B3 · 生产环境的 cookie 带 Secure', () => {
+  it('production: true 时 set-cookie 含 Secure', async () => {
+    const app = buildApp({ store: new InMemoryMetaStore(), production: true });
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side' },
+    });
+
+    const raw = created.headers['set-cookie'];
+    const header = Array.isArray(raw) ? raw[0] : raw;
+    expect(String(header)).toContain('Secure');
+  });
+});

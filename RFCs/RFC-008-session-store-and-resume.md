@@ -217,3 +217,17 @@ $ pnpm test → Test Files 58 passed (58) · Tests 477 passed (477)
 | SSE | 恒返回 `501` | RFC-010 |
 | 无鉴权 | 会话 id 即凭据；没有账号体系 | 设计如此（`§6`） |
 | 进程重启丢数据 | `InMemoryMetaStore`；`NFR-4` 允许 | 后续若要持久化，换 `MetaStore` 实现即可 |
+
+### 8.7 Round 1 回应（Changes requested · High）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **B1 / C-59** 动作响应泄漏 | `POST /actions` 直接返回 `step` 的全部事件，含 `visibleTo: 'server'` 的 `PLAYER_DIED`（带死因）与夜间相位——等于把 RFC-007 的 C-28 从 HTTP 又漏一遍 | 新增 `GameRegistry.visibleEventsOf(record, seat)`：按序折叠后逐条 `isVisibleTo` 过滤。响应只回该席位可见的事件；单测用一整夜的真实事件流锁定（去掉过滤即红） |
+| **B2 / C-60** 不绑定席位 | `playerSeat = 1` 的女巫可以提交 `WOLF_KILL seat: 3`、`SEER_CHECK seat: 7`，并读到对方的私有事件 | 路由增加席位校验：`action.seat` 必须等于本局 `playerSeat`，否则 `403 NOT_YOUR_SEAT`。反向探针会红。**这条同时让 B1 的复现路径失效**——那条复现正是靠代别人行动才拿到的私有事件 |
+| **B3 / C-63** 生产 cookie 缺 `Secure` | `src/server/index.ts` 没传 `production` | 生产入口按 `NODE_ENV === 'production'` 传 `production: true`；补用例断言 `Secure` 出现 |
+| **B4** 多条 AC 不会红 | AC-2 / AC-3 / AC-7 / AC-8 / AC-13 的断言太弱 | 本轮补强了 B1 / B2 / B3 与释放语义（B5）的用例；AC-2 / AC-7 的加强留给 Round 2 前的收尾（见 §8.8） |
+| **B5 / C-62** 释放语义不一致 | 超限时把对局从会话里删掉 → `GET` 变 404；`enforceRetention` 扫全局 `game:`，会清掉**别的会话**的对局 | 超限只清事件流、保留记录（`GET` 返回 410）；`enforceRetention(session)` 只在本会话范围内保留最近 3 局 |
+
+```
+$ pnpm test → 58 files / 482 tests
+```

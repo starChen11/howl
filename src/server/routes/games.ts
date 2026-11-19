@@ -116,7 +116,18 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       return reply.code(410).send({ error: 'GAME_EXPIRED', message: '对局已释放' });
     }
 
+    // B2：玩家只能提交**自己席位**的动作。不校验的话，玩家可以代 wolf 下刀、代 seer
+    // 查验——顺带还能读到对方的私有事件（响应里那条 SEER_CHECKED）。
+    const seatOfAction = 'seat' in parsed.data.action ? parsed.data.action.seat : undefined;
+    if (seatOfAction !== undefined && seatOfAction !== record.playerSeat) {
+      return reply.code(403).send({
+        error: 'NOT_YOUR_SEAT',
+        message: `只能操作自己的席位（${record.playerSeat} 号）`,
+      });
+    }
+
     const result = await registry.submit(
+      session,
       record,
       parsed.data.action as never,
       parsed.data.expectedVersion,
@@ -129,7 +140,11 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       });
     }
 
-    return reply.send({ version: result.version, events: result.events });
+    // B1：只回该席位可见的事件。`step` 的原始事件里含 `server` 可见的死亡与夜间相位。
+    return reply.send({
+      version: result.version,
+      events: registry.visibleEventsOf(result.record, record.playerSeat),
+    });
   });
 
   app.get<{ Params: { id: string } }>('/api/games/:id/replay', async (request, reply) => {

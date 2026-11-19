@@ -5,9 +5,11 @@ import type { WinMode, SeatId } from '@shared/domain';
 import type { EventEnvelope } from '@shared/events';
 import type { CreateGameBody, GameSummary } from '@shared/api';
 
-import { createInitialState } from '@engine/init';
+import { applyEvent } from '@engine/apply';
+import { createEmptyState, createInitialState } from '@engine/init';
 import { replay } from '@engine/replay';
 import { createEngine } from '@engine/step';
+import { isVisibleTo } from '@shared/visibility';
 import { DEFAULT_APPLIERS, DEFAULT_HANDLERS } from '@engine/step';
 import { DEFAULT_TRANSITIONS } from '@engine/transitions';
 
@@ -119,7 +121,9 @@ export class GameRegistry {
     // 会话里记录该局；超过上限时最旧的先释放（Q-008-3）。
     session.gameIds.push(record.gameId);
     if (session.gameIds.length > MAX_GAMES_PER_SESSION) {
-      const evicted = session.gameIds.shift();
+      // 超限**不删记录**：删掉会让旧局从会话里消失、`GET` 变成 404，而 §2.5 的语义是
+      // 「仍列出全部对局、已释放的返回 410」。所以只清事件流，记录留着。
+      const evicted = session.gameIds[0];
       if (evicted !== undefined) await this.release(evicted);
     }
     await this.store.set(sessionKey(session.id), session);
@@ -137,6 +141,24 @@ export class GameRegistry {
   }
 
   /**
+   * 只保留**该席位可见**的事件（B1）。
+   *
+   * 直接把 `step` 返回的事件全给客户端，会把 `server` 可见的 `PLAYER_DIED`（含死因）
+   * 与夜间相位一起送出去——那正是 RFC-007 的 C-28 修掉的泄漏，不能在 HTTP 层重新开个口子。
+   */
+  visibleEventsOf(record: GameRecord, seat: SeatId): EventEnvelope[] {
+    const visible: EventEnvelope[] = [];
+    let cursor = createEmptyState();
+
+    for (const event of record.events) {
+      cursor = applyEvent(cursor, event as never);
+      if (isVisibleTo(event, seat, cursor)) visible.push(event);
+    }
+
+    return visible;
+  }
+
+  /**
    * 提交一个动作。
    *
    * 版本语义（§2.3）：
@@ -146,6 +168,7 @@ export class GameRegistry {
    * - 大于当前版本 → `VERSION_MISMATCH`。
    */
   async submit(
+    session: SessionRecord,
     record: GameRecord,
     action: Action,
     expectedVersion: number,
@@ -187,7 +210,7 @@ export class GameRegistry {
     }
 
     await this.store.set(gameKey(record.gameId), updated);
-    if (updated.status === 'finished') await this.enforceRetention();
+    if (updated.status === 'finished') await this.enforceRetention(session);
 
     return { ok: true, record: updated, events: result.events, version: result.state.seq };
   }
@@ -199,12 +222,12 @@ export class GameRegistry {
     await this.store.set(gameKey(gameId), { ...record, events: [] });
   }
 
-  async enforceRetention(): Promise<void> {
-    const keys = await this.store.keys('game:');
+  /** 只在本**会话**范围内保留最近几局的完整事件流：别的会话的局不能被波及。 */
+  async enforceRetention(session: SessionRecord): Promise<void> {
     const finished: GameRecord[] = [];
 
-    for (const key of keys) {
-      const record = await this.store.get<GameRecord>(key);
+    for (const gameId of session.gameIds) {
+      const record = await this.store.get<GameRecord>(gameKey(gameId));
       if (record !== undefined && record.status === 'finished' && record.events.length > 0) {
         finished.push(record);
       }
