@@ -77,17 +77,30 @@ function actionsBySeat(state: GameState, events: readonly EventEnvelope[]): Map<
 }
 
 export function buildTruth(state: GameState, events: readonly EventEnvelope[]): TruthView {
-  // 死亡发生在哪一天：扫到那条事件为止的最后一个 `DAY_STARTED`（C-150）。
-  let currentDay = 0;
+  // 死亡发生在哪一天。
+  //
+  // **夜 N 属于第 N 天**：第一夜在第一个 `DAY_STARTED` 之前，所以不能只看
+  // 「此前最后一个 DAY_STARTED」——那会把第一夜算成第 0 天（C-155）。
+  let dayCount = 0;
+  let inNight = false;
   const deaths: { seat: number; day: number; cause: string }[] = [];
+
   for (const event of events) {
     if (event.type === 'DAY_STARTED') {
-      currentDay = (event.payload as { day: number }).day;
+      dayCount = (event.payload as { day: number }).day;
+      inNight = false;
+      continue;
+    }
+    if (event.type === 'PHASE_CHANGED') {
+      const to = (event.payload as { to: string }).to;
+      if (to.startsWith('NIGHT')) inNight = true;
       continue;
     }
     if (event.type !== 'PLAYER_DIED') continue;
+
     const payload = event.payload as { seat: number; cause: string };
-    deaths.push({ seat: payload.seat, day: currentDay, cause: payload.cause });
+    const day = inNight ? Math.max(dayCount, 0) + 1 : dayCount;
+    deaths.push({ seat: payload.seat, day, cause: payload.cause });
   }
 
   const actions = actionsBySeat(state, events);

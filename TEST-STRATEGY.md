@@ -350,12 +350,12 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2、3、4 | `tests/client/event-panel.test.tsx`：按 `seq` 排序；仅三类条目；每条带 `seq` 与天数；点击能定位到发言流 | component | proposed | Should |
-| 5、6、7 | `tests/client/spectator.test.tsx`：出局后切观战态仍见后续发言；输入区禁用并提示；对局继续到 `FINISHED` | component | proposed | Should |
-| 8、9、10 | 同上：真相开关默认关；开启显示身份与夜间行动；关闭立即恢复 | component | proposed | Should |
-| 11 | 同上：开关前后事件流深相等 | component | proposed | Should |
-| 12 | `tests/server/truth-guard.test.ts`：未出局时请求真相数据被拒 | integration | proposed | Should |
-| 13、14、15 | `tests/client/notepad.test.tsx`：仅自己可见；不进 AI 上下文（断言注入文本不含）；刷新后仍在 | component | proposed | Could |
+| 1、2、3、4 | `tests/client/event-panel.test.tsx`：按 `seq` 排序；仅三类条目；每条带 `seq` 与天数；点击能定位到发言流 | component | existing: tests/server/truth.test.ts + tests/client/{event-panel,spectator,api} | Should |
+| 5、6、7 | `tests/client/spectator.test.tsx`：出局后切观战态仍见后续发言；输入区禁用并提示；对局继续到 `FINISHED` | component | existing: tests/server/truth.test.ts + tests/client/{event-panel,spectator,api} | Should |
+| 8、9、10 | 同上：真相开关默认关；开启显示身份与夜间行动；关闭立即恢复 | component | existing: tests/server/truth.test.ts + tests/client/{event-panel,spectator,api} | Should |
+| 11 | 同上：开关前后事件流深相等 | component | existing: tests/server/truth.test.ts + tests/client/{event-panel,spectator,api} | Should |
+| 12 | `tests/server/truth-guard.test.ts`：未出局时请求真相数据被拒 | integration | existing: tests/server/truth.test.ts + tests/client/{event-panel,spectator,api} | Should |
+| 13、14、15 | `tests/client/notepad.test.tsx`：仅自己可见；不进 AI 上下文（断言注入文本不含）；刷新后仍在 | component | existing: tests/server/truth.test.ts + tests/client/{event-panel,spectator,api} | Could |
 
 ---
 

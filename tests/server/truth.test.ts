@@ -239,3 +239,31 @@ describe('C-154 · 死后的动作不再记到已出局席位', () => {
     expect(truth.seats.find((seat) => seat.seat === 2)?.actions.join('')).toContain('袭击');
   });
 });
+
+describe('C-155 · 夜晚死亡属于第 N 天', () => {
+  it('第一夜死亡记为第 1 天，而不是第 0 天', async () => {
+    const store = new InMemoryMetaStore();
+    const { registry, record } = await gameWithDeadPlayer(store);
+    const truth = buildTruth(registry.stateOf(record), record.events);
+
+    const first = truth.deaths[0];
+    expect(first?.day).toBeGreaterThanOrEqual(1);
+  });
+
+  it('第二个夜晚的死亡记为第 2 天', () => {
+    const state = { seats: [{ seat: 1, role: 'villager', alive: false }] } as never;
+    const events = [
+      { seq: 1, type: 'PHASE_CHANGED', payload: { from: 'DAY_ANNOUNCE', to: 'NIGHT_WOLF_CHAT' } },
+      { seq: 2, type: 'PLAYER_DIED', payload: { seat: 1, cause: 'wolf' } },
+    ] as never;
+    // 只有 PHASE_CHANGED、没有 DAY_STARTED：夜 1
+    expect(buildTruth(state, events).deaths[0]?.day).toBe(1);
+
+    const secondNight = [
+      { seq: 1, type: 'DAY_STARTED', payload: { day: 1 } },
+      { seq: 2, type: 'PHASE_CHANGED', payload: { from: 'DAY_LYNCH', to: 'NIGHT_WOLF_CHAT' } },
+      { seq: 3, type: 'PLAYER_DIED', payload: { seat: 1, cause: 'wolf' } },
+    ] as never;
+    expect(buildTruth(state, secondNight).deaths[0]?.day).toBe(2);
+  });
+});
