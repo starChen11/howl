@@ -33,10 +33,10 @@ pnpm test       # 689 个用例，含五条命令与覆盖率门禁
 当前进度：
 
 ```
-RFC-001 ~ 007  Reviewed（共七个）
-RFC-008 会话与存储  Implemented，等待评审
-下一步：/review-rfc 008
+RFC-001 ~ 012  全部 Reviewed（共十二份）
+剩余：013 事件面板 / 014 复盘 / 015 自对弈 / 016 浏览器兼容
 ```
+
 
 随时查看全局进度：`/workflow-status`。
 

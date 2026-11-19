@@ -602,11 +602,8 @@ describe('C-127 · 平票重投时玩家亲自投票', () => {
       current = r.record;
     }
 
-    const afterVote = stateOf();
-    if (afterVote.phase !== 'DAY_VOTE_RUNOFF') {
-      // 票数不并列时跳过（数据结构不允许稳定造平票）
-      return;
-    }
+    // 夹具必须真的造出平票；否则这条用例会静默通过（评审 M-R6-P2）。
+    expect(stateOf().phase).toBe('DAY_VOTE_RUNOFF');
 
     const kinds: string[] = [];
     let aiCoveredPlayer = false;
@@ -633,5 +630,23 @@ describe('C-127 · 平票重投时玩家亲自投票', () => {
 
     expect(kinds).toContain('vote');
     expect(aiCoveredPlayer).toBe(false);
+
+    // 玩家的重投票真的落了盘，而且没有被引擎拒绝
+    const finalRecord = await registry.getGame(current.gameId);
+    const finalEvents = finalRecord?.events ?? [];
+    const playerVote = [...finalEvents]
+      .reverse()
+      .find(
+        (event) =>
+          event.type === 'VOTE_CAST' && (event.payload as { seat?: number }).seat === playerSeat,
+      );
+    expect(playerVote).toBeDefined();
+    expect(
+      finalEvents.some(
+        (event) =>
+          event.type === 'REJECTED' &&
+          (event.payload as { actionType?: string }).actionType === 'VOTE',
+      ),
+    ).toBe(false);
   });
 });

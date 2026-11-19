@@ -256,7 +256,7 @@ $ pnpm test:e2e → 8 passed
 | 非阻塞 | `app.test.tsx` 的 AC 编号错位、公告不含 role | AC 编号在用例名里改成对应条目；公告的身份由 `IdCard` 承载（§8.6 记录取舍） |
 
 ```
-$ pnpm test → 81 files / 688 tests
+$ pnpm test → 80 files / 689 tests
 $ pnpm test:e2e → 8 passed
 ```
 

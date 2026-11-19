@@ -333,14 +333,14 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1 | `tests/e2e/game.spec.ts`：断言三块区域存在，阶段与天数正确 | e2e | proposed | Must |
-| 2、3 | `tests/e2e/terms.spec.ts`：悬停与键盘聚焦都能看到解释；扫描 `src/client/` 无术语字面量 | e2e | proposed | Must |
-| 4、5 | `tests/e2e/onboarding.spec.ts`：引导提示出现且不自动填入；关闭后刷新不再出现 | e2e | proposed | Must |
-| 6、7 | `tests/e2e/order.spec.ts`：三项信息正确；注入预置事件流后当前发言者与最后一条发言事件的下一席位一致 | e2e | proposed | Should |
-| 8、9、10 | `tests/e2e/responsive.spec.ts`：360px 无横向滚动（`scrollWidth <= clientWidth`）；1024px 侧栏布局；输入框与轮次/倒计时元素几何不重叠 | e2e | proposed | Must |
-| 11 | `tests/e2e/keyboard.spec.ts`：纯键盘完成「发言 → 投票」 | e2e | proposed | Must |
-| 12、13、14 | `tests/e2e/a11y.spec.ts`：断言无无替代 `outline:none`；对比度 ≥4.5:1；倒计时/阵营/存活均有文字 | e2e | proposed | Must |
-| 15 | 同上：可访问名称断言能读出身份、阶段、轮到谁 | e2e | proposed | Must |
+| 1 | `tests/e2e/game.spec.ts`：断言三块区域存在，阶段与天数正确 | e2e | existing: tests/client + tests/e2e | Must |
+| 2、3 | `tests/e2e/terms.spec.ts`：悬停与键盘聚焦都能看到解释；扫描 `src/client/` 无术语字面量 | e2e | existing: tests/client + tests/e2e | Must |
+| 4、5 | `tests/e2e/onboarding.spec.ts`：引导提示出现且不自动填入；关闭后刷新不再出现 | e2e | existing: tests/client + tests/e2e | Must |
+| 6、7 | `tests/e2e/order.spec.ts`：三项信息正确；注入预置事件流后当前发言者与最后一条发言事件的下一席位一致 | e2e | existing: tests/client + tests/e2e | Should |
+| 8、9、10 | `tests/e2e/responsive.spec.ts`：360px 无横向滚动（`scrollWidth <= clientWidth`）；1024px 侧栏布局；输入框与轮次/倒计时元素几何不重叠 | e2e | existing: tests/client + tests/e2e | Must |
+| 11 | `tests/e2e/keyboard.spec.ts`：纯键盘完成「发言 → 投票」 | e2e | existing: tests/client + tests/e2e | Must |
+| 12、13、14 | `tests/e2e/a11y.spec.ts`：断言无无替代 `outline:none`；对比度 ≥4.5:1；倒计时/阵营/存活均有文字 | e2e | existing: tests/client + tests/e2e | Must |
+| 15 | 同上：可访问名称断言能读出身份、阶段、轮到谁 | e2e | existing: tests/client + tests/e2e | Must |
 
 **需人工**：屏幕阅读器的实际听感。**手工检查**：VoiceOver（macOS）走一遍第一夜到第一次投票，确认三件事都能听到。
 
