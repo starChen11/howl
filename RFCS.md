@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.49 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
+> 版本 v2.50 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -44,7 +44,7 @@
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Reviewed |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Reviewed |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
-| [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Not started |
+| [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Implemented |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Not started |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Not started |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
@@ -407,6 +407,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.50 | RFC-008 实现完成（Status → Implemented）：`MetaStore`（唯一出口，返回副本）+ `GameRegistry`（事件流为唯一权威、按需 replay）+ 四个对局路由 + 会话 cookie；幂等按 `(gameId, expectedVersion, type, seat)` 区分重试与冲突；保留最近 3 局完整事件 |
 | 2026-11-18 | v2.49 | RFC-006 Round 4 复核（Status → `Reviewed`）：C-56 闭环（`<wolf_chat>` + 转义 + 数据声明；M3/M4 红、真实投影探针通过）；C-55 闭环（`APIUserAbortError` + `cause` 分类；M1/M2 红、两条 meta `TIMEOUT`）；N-R2 / N-R3 行为落地，TEST-STRATEGY 的 `Exists?` 回填，RFC-007 D-2 标注被本 RFC 修订；C-50 / C-55 / C-56 关闭，C-53 / C-57 保持 Open（非阻塞），新登记 C-58（RFC-006 文档回填，非阻塞）。详见 `reviews/REVIEW-RFC-006.md` Round 4 |
 | 2026-11-18 | v2.48 | RFC-006 Round 3 复核（Status → `Changes requested`）：B4 闭环（schema 不限长 + `toAction` 截断 + decide 层 301 字用例）；B6 的端点 / AC-13 闭环，但真实超时仍被记成 `SERVER_ERROR`（C-55）；B3 的私有狼聊渲染落地但未封装（C-56）；C-54 的依赖方向恢复，但 `shared/` 的 ARCH-2 例外扩大（C-57）。C-50 保持 Open，C-51 / C-52 / C-54 关闭，C-53 保持 Open。详见 `reviews/REVIEW-RFC-006.md` Round 3 |
 | 2026-11-18 | v2.47 | RFC-006 Round 2 修复（Status → Implemented）：C-50 schema 不再限长 + decide 层截断用例；C-52 端点收敛到 client.ts、AC-13 不依赖引号、错误码断言；C-54 把 `wrapPublicUtterance` 移到 shared、恢复依赖方向。提示补私有事件（狼聊/查验）与 speech/claim 契约 |

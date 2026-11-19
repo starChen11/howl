@@ -146,3 +146,74 @@ interface MetaStore {
 | Q-008-1 | 保留最近几局的完整事件流 | **(assumption)** 3 局，常量可配置 |
 | Q-008-2 | 会话过期时间 | **(assumption)** 7 天；进程重启仍全部丢弃（NFR-4 允许） |
 | Q-008-3 | 单会话对局上限 | **(assumption)** 20 局；超出时最旧的对局降级为仅保留 `snapshot` |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。分支 `main`。前置 RFC-004 / RFC-007 均已 `Reviewed`。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| 刷新后的恢复程度 | **完整恢复**（用户选 A）：天数、历史发言、票型、该谁行动都在 |
+| 同一局重复提交同一动作 | **忽略第二次**（用户选 A）：返回 `409 ALREADY_APPLIED` 并附当前版本 |
+| 打完的局留多久 | **7 天后清理**（用户选 A，与 Q-008-2 的假设一致） |
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+| **D-1** | 会话 cookie 用手写 `set-cookie` 头，不依赖 `@fastify/cookie` 的装饰器 | `app.ts` 没有注册该插件（RFC-001 的骨架里没装）；解析同样手写。属性仍完整：`HttpOnly` / `SameSite=Lax` / `Path=/` / `Secure`（仅生产） |
+| **D-2** | `Session` 里存 `gameIds`，对局记录单独存 `game:<id>` | 一个 `Session` 塞进 20 局的事件流会让每次读会话都在搬运几十万字节。`ARCH-10` 要的是「一对多」关系，不是「一份文档」 |
+| **D-3** | `submit` 用 `(gameId, expectedVersion, type, seat)` 判「重试」 | 只看 `expectedVersion` 分不清「重试」与「并发提交了另一个动作」——前者要幂等，后者要报冲突（§2.3） |
+| **D-4** | `createGame` 把 `seed` / `mode` / `playerSeat` 一并传给 `START` | `startHandler` 会校验它们与已发牌状态一致；不传就被判 `START_STATE_MISMATCH`（实现时踩到过） |
+| **D-5** | 释放只清 `events`，`snapshot` 字段留给 RFC-014 | 本 RFC 不生成快照；清空事件流后该局无法重建状态，`GET` 返回 `410 GAME_EXPIRED` |
+
+### 8.3 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 共享新增 | `src/shared/api.ts`（请求/响应 Zod schema 与类型） |
+| 服务端新增 | `src/server/session.ts`、`src/server/routes/games.ts`、`src/server/store/{meta-store,game-registry}.ts` |
+| 服务端修改 | `src/server/app.ts`（注册路由、可注入 store） |
+| 测试新增 | `tests/server/{session,resume,store}.test.ts` |
+| 文档 | 本文件 §8、`RFCS.md`、`TEST-STRATEGY.md`、`README.md` |
+
+### 8.4 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `session.test.ts` · 同一 cookie 连建三局，`/api/session` 列出三条且 `games` 是数组 | PASS |
+| 2 | 同上 · 响应含 `gameId` / `seed` / `playerSeat` / `version`；指定 seed 被采纳 | PASS |
+| 3 | 同上 · `mode: 'slaughter-all'` 的局能取到投影（模式写进 `GAME_STARTED`） | PASS |
+| 4 | 同上 · cookie 含 `HttpOnly` / `SameSite=Lax` / `Path=/`；会话 id ≥ 32 字符 | PASS |
+| 5 | `resume.test.ts` · 两次独立调用返回同一 `version` 且 `view` 深度相等 | PASS |
+| 6 | 同上 · 两次调用不共享任何客户端内存 | PASS |
+| 7 | 同上 · 9 个 `playerSeat` 各自的响应里 `"role":` 只出现一次 | PASS |
+| 8 | 同上 · 正确版本提交成功，新版本更大 | PASS |
+| 9 | 同上 · 重复提交 → `ALREADY_APPLIED`；旧版本换动作 → `VERSION_MISMATCH`；未来版本 → `VERSION_MISMATCH` | PASS |
+| 10 | `session.test.ts` · 别人的 gameId 与不存在的 id 返回**同一个** 404 响应 | PASS |
+| 11 | `store.test.ts` · `MetaStore.get` 返回副本；换 `MockStore` 后注册表行为不变 | PASS |
+| 12 | 同上 · `src/server` 中除 `meta-store.ts` 外没有模块级 `new Map` | PASS |
+| 13 | 同上 · 释放后 `events` 为空，`stateOf` 无法重建（按需 replay 的前提） | PASS |
+| 14 | 同上 · 5 局终局后保留完整事件的局数 ≤ `KEEP_FULL_EVENTS`（3） | PASS |
+| 15 | `session.test.ts` · 未终局 replay → `404 NOT_FINISHED`；stream → `501` | PASS |
+| 16 | 同上 · `package.json` 里没有任何数据库驱动 | PASS |
+
+### 8.5 验证输出（实跑）
+
+```
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → Test Files 58 passed (58) · Tests 477 passed (477)
+```
+
+### 8.6 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| 复盘端点 | 恒返回 `404 NOT_FINISHED`（本 RFC 不生成快照） | RFC-014 |
+| SSE | 恒返回 `501` | RFC-010 |
+| 无鉴权 | 会话 id 即凭据；没有账号体系 | 设计如此（`§6`） |
+| 进程重启丢数据 | `InMemoryMetaStore`；`NFR-4` 允许 | 后续若要持久化，换 `MetaStore` 实现即可 |

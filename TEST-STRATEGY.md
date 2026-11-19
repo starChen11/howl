@@ -29,7 +29,7 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  55 passed (55)     # unit 48 个 + meta 7 个
+ Test Files  58 passed (58)     # unit 51 个 + meta 7 个
       Tests  449 passed (449)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
@@ -273,15 +273,15 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1 | `tests/server/session.test.ts`：同一 cookie 连发三次 `POST /api/games`，`GET /api/session` 返回 3 条；`Session.games` 为数组（类型断言） | integration | proposed | Must |
-| 2、3 | 同上：创建响应含 `gameId`/`seed`/`playerSeat`/`version`，`seed` 与 `GAME_STARTED` 一致；指定 `mode` 生效 | integration | proposed | Must |
-| 4 | 同上：断言 `Set-Cookie` 含 `HttpOnly`、`SameSite=Lax`、`Path=/`，会话 id ≥32 | integration | proposed | Must |
-| 5、6 | `tests/server/resume.test.ts`：两次独立 `inject`（不复用响应对象）取同一局，断言 `version` 与 `view` 深相等 | integration | proposed | Must |
-| 7 | `tests/server/projection-leak.test.ts`：对 9 个 `playerSeat` 各请求一次，断言响应中无他人角色字段 | security | proposed | Must |
-| 8、9、10 | `tests/server/actions.test.ts`：正确版本推进；重复旧版本 → `ALREADY_APPLIED`；过期未应用版本 → `VERSION_MISMATCH`；他人 `gameId` → `404 GAME_NOT_FOUND` | integration | proposed | Must |
-| 11、12 | `tests/server/store.test.ts`：`MetaStore.get` 返回值修改后不影响存储；换 Mock 实现后全部测试通过；静态断言 `src/server/` 除 `meta-store.ts` 外无模块级 `Map` 作存储 | integration | proposed | Should |
-| 13、14 | 同上：终局后不再缓存 `GameState`，再取时重新 `replay` 得同一状态；跑完 100 局后完整 `events` 不超过 3 局 | integration | proposed | Should |
-| 15、16 | 同上：未终局 `replay` 端点 `404 NOT_FINISHED`、`stream` 端点 `501 NOT_IMPLEMENTED`；`package.json` 无数据库驱动 | integration | proposed | Should |
+| 1 | `tests/server/session.test.ts`：同一 cookie 连发三次 `POST /api/games`，`GET /api/session` 返回 3 条；`Session.games` 为数组（类型断言） | integration | existing: tests/server/{session,resume,store}.test.ts | Must |
+| 2、3 | 同上：创建响应含 `gameId`/`seed`/`playerSeat`/`version`，`seed` 与 `GAME_STARTED` 一致；指定 `mode` 生效 | integration | existing: tests/server/{session,resume,store}.test.ts | Must |
+| 4 | 同上：断言 `Set-Cookie` 含 `HttpOnly`、`SameSite=Lax`、`Path=/`，会话 id ≥32 | integration | existing: tests/server/{session,resume,store}.test.ts | Must |
+| 5、6 | `tests/server/resume.test.ts`：两次独立 `inject`（不复用响应对象）取同一局，断言 `version` 与 `view` 深相等 | integration | existing: tests/server/{session,resume,store}.test.ts | Must |
+| 7 | `tests/server/projection-leak.test.ts`：对 9 个 `playerSeat` 各请求一次，断言响应中无他人角色字段 | security | existing: tests/server/{session,resume,store}.test.ts | Must |
+| 8、9、10 | `tests/server/actions.test.ts`：正确版本推进；重复旧版本 → `ALREADY_APPLIED`；过期未应用版本 → `VERSION_MISMATCH`；他人 `gameId` → `404 GAME_NOT_FOUND` | integration | existing: tests/server/{session,resume,store}.test.ts | Must |
+| 11、12 | `tests/server/store.test.ts`：`MetaStore.get` 返回值修改后不影响存储；换 Mock 实现后全部测试通过；静态断言 `src/server/` 除 `meta-store.ts` 外无模块级 `Map` 作存储 | integration | existing: tests/server/{session,resume,store}.test.ts | Should |
+| 13、14 | 同上：终局后不再缓存 `GameState`，再取时重新 `replay` 得同一状态；跑完 100 局后完整 `events` 不超过 3 局 | integration | existing: tests/server/{session,resume,store}.test.ts | Should |
+| 15、16 | 同上：未终局 `replay` 端点 `404 NOT_FINISHED`、`stream` 端点 `501 NOT_IMPLEMENTED`；`package.json` 无数据库驱动 | integration | existing: tests/server/{session,resume,store}.test.ts | Should |
 
 ## RFC-009: AI 人格与高级打法
 
@@ -457,6 +457,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-18 | v1.19 | RFC-007 Round 1 评审回填：C-28 / 1000 属性 / AC-4 / AC-5 / AC-6 / AC-7 / AC-15 等计划行并非 `existing`；C-28 仍 Open，阻塞 RFC-007。详见 `reviews/REVIEW-RFC-007.md` |
+| 2026-11-19 | v1.19 | RFC-008 实现后回填：16 条 AC 全部 `existing`；基线 458 → 477 |
 | 2026-11-18 | v1.18 | RFC-007 实现后回填：16 条 AC 全部 `existing`（`tests/server/project` + `tests/server/inject`）；基线 369 → 389 |
 | 2026-11-18 | v1.17 | RFC-005 实现后回填：14 条 AC 全部 `existing`；基线 342 → 366 |
 | 2026-11-18 | v1.16 | RFC-004 Round 2 回填：补 AC-4b 行（C-31 的第二条路径）、同步版本引用 |
