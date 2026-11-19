@@ -563,3 +563,146 @@ efddae1f...  src/server/project/index.ts
 **Non-blocking**：AC-11 的 stub 输入 / `pending` 证据缺口；`nextActor` 缺猎人开枪阶段；AC-2 的状态变体（非空查验史 / 药水 used / `canShoot` 两态）；旧 `orchestrator.test` 的误导性用例；C-99（AC-3/4 已获用户批准顺延，但 RFC-012 / TEST-STRATEGY 仍未承接）；C-104（TEST-STRATEGY 回填）；RFC §8.6 旧描述。
 
 **状态**：RFC-011 → `Changes requested`。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r3-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），三个源码文件 SHA-256 与探针前一致；临时探针测试已删除；探针恢复后（写评审文件前）`git status --porcelain` 为空，之后只改了 `RFCS.md` 与本评审文件，没有代码改动。
+
+## Round 4 — 2026-11-19
+
+> 被评审提交：`e140209 fix(rfc-011): 玩家原文断言、AC-1 结构检查与通道接线（Round 3）`
+> 评审方式：全新上下文的 subagent，只读仓库文件后实跑；本会话没有写过 RFC-011 的实现代码。
+> 结论：**Changes requested**
+> 范围：按用户指示只复核 **B-R3-1 / B-R3-2 / B-R3-3** 三项。AC-3 / AC-4 的用户批准顺延不重开；C-100 已 Closed、AC-10 / AC-14 不重查；AC-7 / AC-8 / AC-11 / AC-13 没有新提交，沿用前判并注明未重查。C-101 / C-106 仅在它们与 B-R3-3 的生产接线相交处引用，不重开。
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · 评审开始时 HEAD `e140209`，工作树 clean。
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+✓ 14 modules transformed (client) · built in 74ms
+✓ 46 modules transformed (server) · built in 17ms
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  75 passed (75)
+      Tests  620 passed (620)
+   Duration  21.53s
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+```
+
+`pnpm selfplay` 仍以退出码 1 结束并提示 RFC-015，按 RFC-011 的范围记 **N/A**，不是本轮回归。
+
+### 1. 产品类型与跳过项
+
+`PRD.md` 的 **Product Type** 是 **game（主）+ web app（交付形态）**。本轮采用 game 的状态机 / 视野 / 跨 RFC 契约检查，以及 web app 的服务端输入校验检查。UI、无障碍与响应式检查随 AC-3 / AC-4 顺延到 RFC-012，**显式跳过**；本轮不冒充已检查。
+
+### 2. 用户列出的三项逐条复核
+
+| 用户声明 | 判定 | 一手证据 |
+|---|---|---|
+| **B-R3-1**：玩家原文断言这次真写进 `orchestrator.test.ts`，换成错误文本会红 | **PASS** | `tests/server/orchestrator.test.ts:184-191` 先按 `isPlayer` 找玩家席位，再找该席位的 `SPEECH`，断言 `payload.text === '我过关。'`；AI 的台词是 `我过了。`，两者不同，不会互相冒充。P-R4-1 把 `playerAction` 的 `text: input.text` 换成 `'错误文本'`，运行 `tests/server/orchestrator.test.ts` → **1 failed / 2 passed**，失败在 `:191` `expected '错误文本' to be '我过关。'`。P-R4-2 把玩家轮改成 `SPEECH_SKIP` → 仍 **1 failed / 2 passed**，失败在 `:190` `玩家没有发言`。两种退化都能打红。 |
+| **B-R3-2**：AC-1 改成遍历五种角色值的结构检查 | **PASS（针对被点名的 `roleId` 泄漏）/ 有非阻塞残项** | `tests/server/id-card.test.ts:47-66` 在 9 席循环里把投影 `JSON.stringify` 后，对 `['wolf','seer','witch','hunter','villager']` 逐个检查：任何**非自己**的角色值出现就失败。P-R4-3 在 `project()` 返回的 `self` 上注入 `leakedRoles: [{ seat, roleId: role }]`（含全员真实身份），`tests/server/id-card.test.ts` → **1 failed / 6 passed**，失败在 `:65`，泄漏值 `['wolf','witch','hunter','villager']`；上一轮的 P-R3-5 退化现在有牙。残项：P-R4-4 注入的是中文 `roleLabel`（狼人 / 预言家 / …）时 **7/7 绿**——结构检查只认五种角色 id，不认角色名；另外 `otherRoles.has(role) || otherRoles.size > 0` 里的 `has` 永远不影响结果（9 席时 `size > 0` 恒真），`otherRoles` 是死代码。这两点是测试质量问题，不是对 `roleId` 泄漏的否定。 |
+| **B-R3-3**：`ChannelRegistry` 接进 `buildApp`，POST 的发言交给挂起的 `HttpInputChannel`，新增 `POST /api/games/:id/input` 同步草稿；用例「先挂起 read 再 POST，断言收到玩家原话」成立，删掉接线会超时红 | **字面声明成立；生产回路仍不成立（C-103 仍 Open）** | 逐条见 §3：`buildApp` 确实构造 `ChannelRegistry`（`src/server/app.ts:40-41`）；`POST /actions` 确实先调 `channels.submit`（`src/server/routes/games.ts:157-160`）；`POST /input` 确实存在（`:104-118`）；新用例确实先 `forGame(gameId).input.read(...)` 再 POST（`tests/server/channels.test.ts:216-232`），删掉接线后该用例 **1 failed / 10 passed**，在 `:196` 以 5007ms 超时红（P-R4-5）。**但**：`ChannelRegistry.forGame` 与 `runGame` 在 `src/` 都没有调用者（`grep -rn "forGame\|runGame" src` 只命中定义：`src/server/channels/session.ts:27`、`src/server/orchestrator.ts:97`），所以生产里 `byGame` 永远为空，`channels.submit` / `setDraft` 都是 no-op；新用例自己调用 `forGame` 把通道塞进注册表，不能证明生产回路。更严重的是，路由在 `registry.submit` **之前**把文本交给通道：P-R4-6 在 `NIGHT_WOLF_CHAT` 提交 SPEECH，HTTP **200**，响应是一条 `REJECTED / PHASE_MISMATCH`，挂起的通道却已经收到 `{ kind: 'speak', text: '我先说' }`。P-R4-7 把 `runGame` 与真实路由接起来后，路由在 day 阶段写出 `SPEECH seq=15 ts=1`，`runGame` 用读之前捕获的旧 `state.seq` 再提交一次，最终记录里的同一条 `SPEECH seq=15 ts=1795072275205` 覆盖了路由写入——**双写 / 丢更新**。详见 §3 的 P-R4-6 / P-R4-7。 |
+
+### 3. 变异探针与临时集成探针
+
+所有探针从 `/tmp/howl-rfc011-r4-probes/backup/` 的**文件备份**恢复，**未使用 `git checkout` / `git restore`**。探针前三个源码文件的 SHA-256：
+
+```text
+a671a65e...  src/server/orchestrator.ts
+efddae1f...  src/server/project/index.ts
+909a2402...  src/server/routes/games.ts
+```
+
+每次探针后都 `cp` 回备份并 `shasum -a 256 -c`；最后一次三个文件全部 `OK`。临时探针 `tests/server/__r4_probe.test.ts` / `__r4_race_probe.test.ts` 已删除；探针后（写评审文件前）全量 **75 files / 620 tests** 绿，`git status --porcelain` 为空；没有 `git commit`。
+
+| 探针 | 注入 / 场景 | 定向测试 | 结果 | 证明 |
+|---|---|---|---|---|
+| **P-R4-1** | `orchestrator.ts` 的 `playerAction` 把 `text: input.text` 改成 `'错误文本'`（`speech` 同步改） | `tests/server/orchestrator.test.ts` | **1 failed / 2 passed**；`:191` 期望 `我过关。` 实得 `错误文本` | B-R3-1 的原文断言有牙 |
+| **P-R4-2** | 同一处把 `SPEECH` 改成 `SPEECH_SKIP` | 同上 | **1 failed / 2 passed**；`:190` `玩家没有发言` | 不只锁文本，也锁「玩家确实发过言」 |
+| **P-R4-3** | `project()` 的 `self` 增加 `leakedRoles: [{ seat, roleId: role }]`（全员真实身份） | `tests/server/id-card.test.ts` | **1 failed / 6 passed**；`:65` 泄漏 `['wolf','witch','hunter','villager']` | B-R3-2 对 `roleId` 泄漏有牙 |
+| **P-R4-4** | `project()` 的 `self` 增加其他席位的中文 `roleLabel`（狼人 / 预言家 / 女巫 / 猎人 / 村民） | 同上 | **7/7 passed** | 结构检查只认五种角色 id，不认角色名（非阻塞残项） |
+| **P-R4-5** | `routes/games.ts` 删掉 `channels.submit(...)` 三行 | `tests/server/channels.test.ts` | **1 failed / 10 passed**；`:196` 5007ms 超时 | 新用例确实是接线的回归锁；但锁的是「测试手工挂起的通道」 |
+| **P-R4-6** | 真实 `buildApp`，创建对局后（`NIGHT_WOLF_CHAT`）先 `forGame(...).input.read()`，再 `POST /actions` 提交 `SPEECH` | 临时探针 | `ACTION_STATUS 200`，响应含 `REJECTED / PHASE_MISMATCH`；`PENDING { kind: 'speak', text: '我先说' }` | 被拒绝的动作仍然消费挂起输入；新用例的 `expect([200,409])` 正好放过了这种情形 |
+| **P-R4-7** | 真实 `GameRegistry` 推到 `DAY_SPEECH`，启动 `runGame` 等玩家输入；由真实 `POST /actions` 兑现通道 | 临时集成探针 | 路由响应 `SPEECH seq=15 ts=1`；`runGame` 结束后最终记录 `SPEECH seq=15 ts=1795072275205`，`steps=8`、`status=active`，共 8 条 `SPEECH` | 路由与编排层**双写**；编排层用读之前的旧 `state.seq` 覆盖了路由写入（丢更新） |
+| **P-R4-8** | 真实 `buildApp`；挂起 `read(timeoutMs:100)`，`POST /input` 传 `'字'.repeat(301)` | 临时探针 | `DRAFT_STATUS 200`；100ms 后 `pending` 为 `{ kind: 'timeout', text.length: 301 }` | 新草稿端点没有 300 字校验；超时会把它当发言交出 |
+
+> P-R4-7 的 ts 差异是关键：路由响应里的 `SPEECH` 是 `ts=1`，最终记录里的同 seq 事件是 `Date.now()`（`playerAction` 的 `now()`），说明最终事件来自编排层的第二次提交，而不是路由的第一次写入。两份记录都基于 `seq=14`，后写覆盖前写。
+
+### 4. 验收标准（本轮范围）
+
+| AC | 判定 | 说明 |
+|---|---|---|
+| 1 | **PASS（P-R4-3 红）** | 9 席位循环 + 五种角色值结构检查 + `"role":` 计数 + `self.seat`；`leakedRoles[].roleId` 退化会红。残项见 P-R4-4（中文角色名；同角色他人按代码推断未覆盖，因为检查排除了 `role === ctx.self.role`）。 |
+| 2 | **未重查（Round 3 PASS）** | 五角色扫描、`goal`、女巫药水、狼队友、猎人开枪文案的锁在 Round 3 已成立；本轮没有改身份卡实现或测试。 |
+| 6 | **PASS（编排层回归锁）/ 生产草稿回路仍未闭环** | 玩家原文进入 `SPEECH.payload.text` 的断言在 P-R4-1 / P-R4-2 下会红；`speech.test.ts` 仍覆盖「超时交出草稿」。但 `POST /input` 没有 300 字校验（P-R4-8），且真实路由 + `runGame` 会双写（P-R4-7）；「倒计时归零 → 草稿完整进入事件流」没有生产级端到端用例。 |
+| 9 | **静态 PASS（未重查）/ 生产调用者 FAIL** | `tests/security/channel-isolation.test.ts` 仍证明 `src/engine/` 不出现两个类型；但 AC-9 在 C-103 里的另一半「通道/编排有生产调用者」仍未成立：`forGame` / `runGame` 在 `src/` 无调用者，`SseOutputChannel` 无 `emit` 调用者（`src/server/orchestrator.ts:144-145` 只有 `flush`）。 |
+| 12 | **FAIL（沿用 / C-103）** | 新用例没有新增通道实现，而是手工 `forGame` 后 POST；`ChannelRegistry.forGame` 在生产没有调用者。`SseOutputChannel` 的 `bus.publish` 仍无断言，`runGame` 仍不 `emit`。 |
+| 3 / 4 | **未重查（用户批准的 D-5 顺延）** | 身份卡与输入框界面部件 / DOM 扫描仍归 RFC-012，不重开这项范围决定。 |
+| 7 / 8 / 11 / 13 | **未重查（沿用 Round 2/3）** | 没有本轮提交；AC-7 仍缺「超时为空 → `SPEECH_SKIPPED` → 对局继续」的事件流锁，AC-8 仍缺玩家提交 → 他人投影的端到端，AC-11 仍有 stub 输入证据缺口（C-106），AC-13 仍只有纯函数 / 通道单测。 |
+
+### 5. 五个维度
+
+#### 5.1 RFC ADHERENCE — **NEEDS WORK**
+
+B-R3-1 与 B-R3-2 真修好：P-R4-1 / P-R4-2 / P-R4-3 都会打红。B-R3-3 的字面接线成立，但**生产回路仍不成立**：`ChannelRegistry` 被构造出来后没有任何生产代码调用 `forGame`，`runGame` 仍只被测试调用，`SseOutputChannel` 仍不 `emit`；新用例自己把通道塞进注册表，因此只能证明「路由 → 已存在的 pending 通道」，不能证明「服务端跑一局时玩家输入会走通道」。真实路由 + `runGame` 还会双写（P-R4-7），所以不能把 AC-9 / AC-12 的 `Open` 改成 `Closed`。
+
+#### 5.2 RULES COMPLIANCE — **NEEDS WORK**
+
+- **SEC-4**：新增 `POST /api/games/:id/input` 没有 `isWithinLimit` / Zod 校验（`src/server/routes/games.ts:104-118`）；`HttpInputChannel.setDraft` 原样保存（`src/server/channels/http.ts:62-63`），超时后 `normalizeInput` 原样交出（`:48-55`），编排层的 `playerAction` 原样写进 `SPEECH`（`src/server/orchestrator.ts:159-166`），绕开了路由在 `:141` 的 300 字校验。这不是重开 C-100，而是本轮新增端点新开的一个口；今天因为 `runGame` 没有生产调用者而不可达，接线后就是 AC-5 / SEC-4 的旁路。
+- **TEST-1**：新用例 `expect([200, 409]).toContain(res.statusCode)`（`tests/server/channels.test.ts:230`）允许被拒绝的动作；P-R4-6 正是 200 + `REJECTED`，用例仍绿。没有断言「这个 SPEECH 进了事件流」，也没有让 `runGame` 参与。
+- **DOC-1**：RFC §8.9（`:219`）写「`ChannelRegistry` 接进 `buildApp`」「反向探针会红」——这些字面成立；但它把「通道没有生产调用者」写成已解决，与 `grep` 事实不符。RFCS v2.100 的「POST 能兑现挂起输入」也只在这一条测试的意义上成立。建议在下一轮把「生产回路 / `forGame` 调用点」明确写成缺口，而不是继续当成已修。
+- **ARCH-9 / SEC-5**：本轮没有削弱按席位投影；`runGame` 仍由测试驱动，未发现新的投影泄漏。
+
+#### 5.3 SECURITY — **NEEDS WORK**
+
+- 新草稿端点可写入 >300 字（P-R4-8），超时随后把它当发言；当前不可达只是因为 `runGame` 没有生产调用者，不是代码安全。
+- `POST /actions` 先喂通道、后提交引擎（`src/server/routes/games.ts:157-167`）；P-R4-6 证明被拒绝的动作也会消费玩家输入，真实回路中会导致「玩家看到 200 / 输入被吃掉 / 事件流里却没有这句话」。
+- 未发现新的投影 / 席位越权：`POST /input` 仍校验会话拥有该局，`POST /actions` 仍有席位校验。
+
+#### 5.4 PERFORMANCE — **N/A**
+
+没有新增数据库或网络热路径。`ChannelRegistry` 的 Map 没有释放 / 淘汰逻辑（一局一个 entry），属于长期运行的内存卫生问题，不是本轮性能阻塞；`runGame` 每步一次投影，规模可忽略。
+
+#### 5.5 MAINTAINABILITY — **NEEDS WORK**
+
+- `tests/server/id-card.test.ts:48-56` 为了拿 `otherRoles` 重新 `step` 了一局，但 `(otherRoles.has(role) || otherRoles.size > 0)` 里的前半永远不影响结果；这段是死代码，应该删掉或改成真正按 key 的递归扫描。
+- 新用例的 `POST /input` 只断言 `200`（`tests/server/channels.test.ts:234-240`），没有断言草稿真的进了挂起通道 / 超时被用上；因此 `setDraft` 的接线没有回归锁。
+- `ChannelRegistry.forGame` 无生产者、无清理；`SseOutputChannel` 无 `emit` 消费者；`runGame` 无生产入口。`src/server/channels/session.ts` 的注释说「不能放在 router 里临时 new」，但没有说明谁负责 `forGame`。
+- `tests/server/channels.test.ts:113` 的 `void input` 仍在；虽然 `scriptedInput()` 后面确实调用了 `input.read`，这条语句仍会误导读者。
+
+### 6. 非阻塞建议
+
+1. **B-R3-1 / B-R3-2**：可以关闭 C-105 / C-102。若想再收紧 AC-1，把值扫描改成按键名递归（`/role/i`）并同时覆盖 `ROLE_LABELS`；同时补「其他席位与自己同角色」的定向用例。AC-2 的状态变体（非空查验史、药水 `used`、`canShoot` 两态）仍是 Round 3 的非阻塞缺口。
+2. **B-R3-3 的正确接线**：先决定**单一写者**。若 `read()` 挂起，`POST /actions` 只把文本交给通道（返回 202「已接收」），由 `runGame` 在重新读取当前状态后提交；没有挂起时才由路由直接 `registry.submit`。或者反过来：路由提交成功后，把**已应用的事件 / 文本**交给通道，编排层不再提交。两种方案都要补一个真实 `runGame` + 真实路由的集成用例，而不是测试里手工 `forGame`。
+3. **生产入口**：`buildApp` 只构造 `ChannelRegistry` 还不够；必须有一个生产路径在开局时调用 `forGame(gameId)` 并启动 `runGame`（或明确本轮只做层、把 C-103 的顺延写成用户批准的范围）。`SseOutputChannel` 需要至少一条 `bus.publish` 断言，`runGame` 也应在合适的回合 `emit`，而不是只 `flush`。
+4. **草稿端点**：在 `/input` 用同一 `isWithinLimit` 判据（或 Zod schema）拒绝 >300 字，并在 `HttpInputChannel` / `playerAction` 再兜一层；补「301 字草稿 → 4xx / 不产出超长 SPEECH」的回归用例。草稿端点还应补「没有通道时返回 404 / 或 409」的语义，避免 200 假成功。
+5. **新用例**：把 `expect([200,409])` 改成明确的成功路径（先把对局推到 `DAY_SPEECH`），并断言响应里/事件流里有该席位 `SPEECH.payload.text === '我先说'`；同时断言 `POST /input` 的草稿真的被超时使用。这样才能覆盖 AC-6 而不只是「通道被兑现」。
+6. **文档**：RFCS v2.100 / RFC §8.9 的「生产调用者已解决」应改成「路由 → 通道已接，`forGame` / `runGame` 尚无生产入口」；README 的「7 Reviewed / 0 Changes requested」与 RFCS 现状不一致（本轮不代改）。
+
+### 7. 结论
+
+**Overall Risk Level: High。**
+
+B-R3-1 和 B-R3-2 都真修好了：原文断言在换文本 / 换 `SPEECH_SKIP` 两种退化下都会红，`roleId` 泄漏探针也会红。B-R3-3 的字面接线成立（删掉会超时红），但**它仍不是生产回路**：`forGame` / `runGame` 在 `src/` 没有调用者，新用例自己挂起通道；真实路由 + `runGame` 会双写并丢更新（P-R4-7），被拒绝的动作也会消费挂起输入（P-R4-6）。此外，新草稿端点绕过了 300 字校验（P-R4-8）。因此 C-103 仍 Open，RFC-011 不能进入 `Reviewed`。
+
+**Blocking Issues**：
+
+- **B-R4-1（C-103 / AC-9 / AC-12，阻塞）**：生产侧仍没有 `ChannelRegistry.forGame` / `runGame` 的调用者；`ChannelRegistry` 的 Map 在 `src/` 永远不会被填充；新用例靠测试自己 `forGame`。`POST /actions` 在引擎提交之前把文本交给通道，P-R4-6 证明被 `REJECTED` 的动作也会消费输入；P-R4-7 证明真实路由 + `runGame` 对同一条发言双写，编排层用旧 `state.seq` 覆盖路由写入。`SseOutputChannel` 仍无 `emit` 消费者。**修法见 §6.2 / §6.3。**
+- **B-R4-2（新路径的 SEC-4 / AC-5 旁路，阻塞）**：`POST /api/games/:id/input` 没有 `isWithinLimit` / Zod 校验，`setDraft` 与超时路径原样保存 / 交出 301 字；P-R4-8 实测 301 字草稿 200 + `{ kind: 'timeout', text.length: 301 }`。当前因 `runGame` 无生产入口而不可达，但 B-R4-1 一修就会变成真实的「超时自动提交超长发言」。**修法见 §6.4。**
+
+**Non-blocking**：AC-1 只认角色 id，不认 `ROLE_LABELS` / 同角色他人（P-R4-4）；`otherRoles` 条件里的 `has` 是死代码；新用例的 `expect([200,409])` 与 `/input` 仅 200 的断言太弱；`ChannelRegistry` 无清理；AC-7 / AC-8 / AC-11 / AC-13 沿用前判；C-99 / C-104 未重查；README 状态行过期。
+
+**状态**：RFC-011 → `Changes requested`（从 `Implemented` 回退）。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r4-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），三个源码文件 SHA-256 与探针前一致；临时探针测试已删除；探针恢复后（写评审文件前）全量 **75 files / 620 tests** 绿、`git status --porcelain` 为空。
