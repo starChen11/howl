@@ -1,9 +1,9 @@
 # RFC-010 评审 · 流式发言、思考指示与降级
 
 > **评审会话**：独立 subagent，全新上下文；本会话没有参与本仓库任何代码 / RFC / 测试的写作。
-> **日期**：2026-11-19（Round 3；Round 2 / Round 1 同日）
-> **分支 / HEAD**：`main` / `066f554`
-> **结论**：**Changes requested**（Round 3）
+> **日期**：2026-11-19（Round 4；Round 3 / 2 / 1 同日）
+> **分支 / HEAD**：`main` / `c2ec4a0`
+> **结论**：**Changes requested**（Round 4）
 > **整体风险**：**High**
 
 ## Round 1 -- 2026-11-19
@@ -1115,3 +1115,330 @@ $ pnpm test
 - **C-87 交接**：§8.4 仍把 AC-10 / 11 写成 PASS，但 `degradeEvents` 没有 `GameRegistry` 写回入口、`runTurn` 没有调用者；按「代码 + 实测」判为未验收。若把接线交给 RFC-011，必须改 §8.4 / §8.6 并登记依赖。
 - **C-88 新连接**：Q-010-2 只规定「断线超出窗口」；当前无 `Last-Event-ID` 且总线已满时也返回 `SNAPSHOT_REQUIRED`（P9）。本轮按保守解释接受为「先拉快照」，但要求写进 §2.2 / §8.6 或区分两种情形。
 - **C-92（未重查）**：`TEST-STRATEGY.md` / `README.md` / RFC-010 §8.4 与实现仍不一致；本轮按代码 + 实测判，文档待回写。
+
+## Round 4 -- 2026-11-19
+
+**结论：Changes requested · Overall Risk Level: High**
+
+本轮只复核用户点名的四项：**C-96 / C-86 / C-89 / C-87**。已关闭的 C-85 / C-88 不重查；C-90 ~ C-95 为非阻塞项，按 Round 1 / 2 / 3 的记录保持，本轮不重查（C-92 的文档漂移在第四项复核时顺带观察到，仍是非阻塞，见 §9）。
+
+一句话：**C-89 真正关闭；C-96 / C-86 / C-87 都没有闭合。** C-96 的 `replay` 只重放 `thinking` / `delta`，历史里的 `done` 不重放，且会让已经看完的发言从 `done` 退回 `speaking`；C-86 的三条新增客户端用例都成立，但 P3 的拼接顺序、P4 的「全事件映射成 `done`」、生产侧发布者一个都没动；C-87 的预算检查与旧实现等价，20s + 20s 仍跑到 40s，且没有任何测试能区分新旧代码。
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。评审开始时 HEAD `c2ec4a0`，`git status --porcelain` 为空。
+
+```
+$ pnpm typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+> eslint .
+LINT_EXIT=0
+
+$ pnpm format:check
+> prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+vite v8.3.8 building client environment for production...
+✓ built in 65ms
+vite v8.3.8 building ssr environment for production...
+✓ 42 modules transformed.
+dist/server/index.js  89.99 kB │ gzip: 29.98 kB
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  68 passed (68)
+      Tests  568 passed (568)
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+```
+
+覆盖率（`tests/meta/coverage.test.ts` 生成，只覆盖 `src/engine/**`）：
+
+```
+lines: 96.96% (544/561)   branches: 92.85% (364/392)
+```
+
+**Product Type**：`PRD.md` 是 **game（主）+ web app（交付形态）**。本轮检查服务端 SSE 协议、客户端 reducer、降级编排与测试证据；**显式跳过** UI / A11Y / 响应式 / 浏览器兼容 / 首屏性能 / Playwright（A 方案把界面留给 RFC-012，`tests/e2e/` 为空）。HTTP 端点与事件流仍检查，因为它们是本 RFC 的交付物。
+
+**探针后的复跑**：所有探针都是独立临时测试文件，或从 `/tmp/howl-rfc010-r4-backup/` 的文件备份恢复；源码四处 `md5` 与备份逐一相同（见 §7），临时探针文件已删除，`git status --porcelain` 为空；恢复后全量 `pnpm test` 复跑 **68 files / 568 tests 全绿**。没有 `git commit`。
+
+---
+
+### 1. C-89 · 关闭
+
+**判断：关闭（有真正的回归锁）。**
+
+- `src/client/use-stream.ts:81-93` 的 `done` 分支现在计算 `sameSpeech = state.speechId === message.id`，对 `firstDeltaAt` 与 `sawThinking` 都按段重置；空文本 `done` 也不再覆盖 `text`。
+- `tests/client/use-stream.test.ts:96-107` 的用例走「上一段 `thinking` + `delta` + `done` → 下一段只有 `done`」，同时断言 `sawThinking === false`、`firstDeltaAt === null`、`text === '第二段'`。这正是 Round 3 P2b 的反例。
+- **M2**（删掉 `done` 分支的 `firstDeltaAt` / `sawThinking` 两行）实跑：
+
+  ```
+  FAIL tests/client/use-stream.test.ts > C-89 · done 也要按段重置…
+  AssertionError: expected true to be false
+  Tests  1 failed | 9 passed (10)
+  ```
+
+  Round 3 的「修复无回归锁」不成立；本轮这条阻塞可以关闭。
+
+---
+
+### 2. C-86 · 仍 Open（阻塞）
+
+Round 3 的 C-86 一共有四块：① 客户端吞掉下一段 `done`；② committed 与总线增量的拼接顺序；③ 每个可见事件都映射成 `done`；④ 生产侧没有发布者 / 文档归属矛盾。本轮的修复让 ① 和「空文本抹正文」成立，但 ②③④ 一个都没关。
+
+#### 已修且已被锁住
+
+- **空文本 `done` 不再抹正文**：`use-stream.ts:88`；`tests/client/use-stream.test.ts:109-119`。**M4**（把该行改回 `text: message.text`）实跑 `1 failed | 9 passed`。
+- **跨段 `done` 可以进来**：`use-stream.ts:45-47` 把去重收窄为「同 id + 已 done + 是 done」；`tests/client/use-stream.test.ts:121-127` 断言 `done(5)` → `done(9)` 后 `text === '乙'`、`speechId === 9`。**M5**（恢复旧的 `phase === 'done' && type === 'done'` 守卫）实跑 `1 failed | 9 passed`。
+- **刷新后正文不再被最后一条空 `done` 清空**：真实一局、两次 `SPEECH`、无 `Last-Event-ID`，把路由响应逐条喂 reducer，最终 `text === '第二段发言'`。Round 3 的 P10「刷新后 `text=''`」在本轮确实消失了。
+
+#### 仍 Open 1：committed 与总线增量仍是「先 A 后 B」硬拼（P-R4-3）
+
+`src/server/routes/stream.ts:81-86` 先写全部 `committedMessages`，再写全部 `bus.replay`，两者没有按 id 合并、排序或去重。
+
+探针（真实一局，真实 `SPEECH` seq 15 已提交，bus 里同一 seq 的 `thinking` / 首字 `delta`，带 `Last-Event-ID: 14`）：
+
+```
+messages= [["done",15],["thinking",15],["delta",15]]
+经 streamReducer 后：
+{"phase":"speaking","seat":2,"text":"我","firstDeltaAt":0,"lastId":15,"speechId":15,...}
+```
+
+完整发言先作为 `done` 到达，随后被同一 id 的 `thinking` / `delta` 回退成半句。Round 3 的 P3 可原样复现；AC-5 的「不重复、不丢失」仍不成立。只要生产侧按 §2.2 先发布增量、再提交 `SPEECH`，这个顺序就会出现在真实重连里。
+
+#### 仍 Open 2：`committedMessages` 仍不读事件类型（P-R4-4）
+
+`src/server/routes/stream.ts:34-44` 对每个可见事件一律返回 `{ type: 'done', text: payload.text ?? '' }`。探针（真实对局 + 追加一条 `DEGRADED` seq 15）：
+
+```
+last= {"type":"done","id":15,"seat":2,"text":""}
+```
+
+`DEGRADED` 到不了客户端的 `degraded` 分支，AC-9 在历史补偿路径上仍失败；`DAY_STARTED` / `PHASE_CHANGED` / `SPEECH_SKIPPED` 也继续冒充空文本 `done`。`tests/server/stream.test.ts:117-119` 的期望集合是「全部 public 事件的 seq」，恰好把这个错误映射锁成了基线；按类型过滤时这条用例会先红。
+
+#### 仍 Open 3：生产侧没有发布者，§8.6 仍与代码相反
+
+- `grep bus.publish src/` **零命中**；`publish` 的调用者只有测试。
+- `runTurn` / `degradeEvents` 在 `src/` 里仍无调用者（`grep` 只命中定义与 `bus.ts` 的注释）。
+- `RFCs/RFC-010...:163` §8.6 仍写「路由用 `reply.send` 一次写完……持续推送在 RFC-012」，而路由早已是 `PassThrough` 长连接、§8.8 也说生产侧在 RFC-011。三处仍未统一，`RFCS.md` §3 的依赖表里 RFC-010 的后继仍是「—」。
+
+**C-86 结论**：三条新增客户端用例是真的，刷新路径也修好了；但 Round 3 判阻塞的协议侧（②③④）未动，C-86 不能关闭。
+
+---
+
+### 3. C-96 · 仍 Open（阻塞）
+
+`src/server/stream/bus.ts:60-68` 新增了 `trailingSpeech`：重放所有 `id === lastEventId` 的 `thinking` / `delta`，再接 `id > lastEventId` 的消息。它确实让「发言还没结束就断线」能继续收到剩余增量（**M3** 删掉这段后 `tests/server/stream.test.ts` `1 failed | 10 passed`，说明增量这一半有锁），但它没有解决 C-96 的完整语义。
+
+#### P-R4-1：断线期间发言完成 → `done` 永远收不到
+
+探针（真实一局，真实 `SPEECH` seq 15；断线时只收到第一个 delta；断线期间 `thinking` / `delta` / `done` 全部已进总线；带 `Last-Event-ID: 15` 重连）：
+
+```
+types= [ 'thinking', 'delta', 'delta' ]
+ids=   [ 15, 15, 15 ]
+```
+
+`done` 的 id 也是 15（与 `committedMessages` 的 `id = event.seq` 一致），被 `id > lastEventId` 过滤，而 `trailingSpeech` 只收 `thinking` / `delta`。这段发言的终结消息客户端收不到，会停在 `speaking`。这正是 Round 3 P11 的「丢 done」，只是 delta 回来了、done 仍没回来。
+
+**为什么现有用例没抓到**：`tests/server/stream.test.ts:307-314` 是在**连接建立之后**才 `bus.publish(done)`（`:313`），`done` 走的是实时订阅而不是 `replay`。把 `done` 挪到连接之前，`types[types.length - 1]` 会变成 `delta`，用例即红。测试名「重放该段剩余的增量」与实际覆盖不符。
+
+#### P-R4-2：重连会把已经看完的发言从 `done` 拉回 `speaking`
+
+更严重的是反向行为。客户端已完整收到该发言的 `thinking` / `delta` / `done`（`lastId === speechId`），网络断开后 EventSource 自动带 `Last-Event-ID: speechId` 重连；`replay` 因为「id 等于断点且是 thinking/delta」把**整段旧增量从头重放**，客户端重新经历 `thinking` → `speaking`，而 `done` 仍不重放：
+
+```
+types= [ 'thinking', 'delta', 'delta' ]
+state= {"phase":"speaking","seat":2,"text":"我觉得 2 号像狼","firstDeltaAt":0,"lastId":15,"speechId":15,...}
+```
+
+文本这次是完整的（`thinking` 重置后所有 delta 都重放了），但 `phase` 停在 `speaking`（直到下一条更大 id 的消息），且这是一次无意义的整段重播。AC-5 的「不重复」和 UI 的完成态都被破坏。Round 3 建议的「协议信号 + 客户端按信号重置」只做了一半：没有信号，且没有把终结消息纳入重放。
+
+#### 规范仍未同步
+
+`RFCs/RFC-010...:33-35` 仍写「每条消息 id 等于 seq，从下一个 seq 继续」，D-3 仍写多个 delta 共享 id；两者在「发言中途断线」下仍不能同时满足。§8.4 的 AC-5 仍写 PASS（`:141`），与上面两个探针相反。C-96 的修复只是启发式，不是正式偏离，也没有走 `/manage-changes`。
+
+**修法建议**：① 至少把 `done` 纳入 trailing 重放（`id === lastEventId` 的 `done` 排在增量之后）；② 增加明确的「从该发言起点重放」信号，客户端收到后重置 `text` 而不是盲目拼接；③ 或者改 id 方案（每个 `delta` 单调递增，`done` 用 seq），并同步 §2.2 / §4 / D-3 / AC-5 与 `TEST-STRATEGY.md`。无论选哪条，都必须补「发言在断线期间完成」和「已收到 done 后重连」两条用例。
+
+---
+
+### 4. C-87 · 仍 Open（阻塞）
+
+#### 预算「修复」与旧实现等价（P-R4-6）
+
+`src/server/llm/turn.ts:64-75` 把检查从「一次失败之后」挪到「下一次尝试之前」：
+
+```ts
+for (let index = 0; index < 2; index += 1) {
+  if (index > 0 && input.now() - input.startedAt >= input.limitMs) break;
+  ...
+}
+```
+
+在旧实现里，检查位于 `if (!last.failed) break;` 之后——也就是同一个循环迭代末尾、下一次尝试之前；两者之间只差 `index` 自增和失败判断。因此行为只在「恰好等于上限」这一点上从 `>` 变成 `>=`，20s + 20s 的场景完全没变。
+
+探针（`limitMs = 30_000`，每次 `attempt` 消耗 20 秒）：
+
+```
+clock= 40000 calls= 2 degraded= true
+```
+
+30 秒硬上限仍被跑到 40 秒；NFR-1 / AC-7 的「硬超时后必须降级」仍不成立。`attempt` 没有收到剩余预算，也没有 `AbortSignal`，第二次一旦开始就必然跑满。
+
+#### 这条「修复」没有任何测试锁（M6）
+
+把 `turn.ts` 临时恢复成 Round 2 的旧检查（失败之后、下一次之前）后：
+
+```
+✓ tests/server/degrade.test.ts (15 tests)
+Tests  15 passed (15)
+```
+
+`tests/server/degrade.test.ts:235-254` 只覆盖「第一次 attempt 结束时就已经超上限」（`now() => 10_000`，`limitMs = 5_000`）——旧代码也会只调用 1 次。Round 3 明确要求的「20s + 20s → 只调用 1 次 / 总时长 ≤ limit」用例至今不存在。
+
+#### 其余 C-87 阻塞项未动
+
+- `GameRegistry` 仍没有追加原始事件的入口（`src/server/store/game-registry.ts` 只有 `submit`）；`degradeEvents` 返回的信封无法落盘。
+- `runTurn` / `degradeEvents` 仍无生产调用者；AC-10 的「下一席位正常获得发言机会」没有集成测试。
+- §8.4 仍把 AC-10 / 11 / 12 写成 PASS（`:146-148`），§8.6 没有 RFC-011 交接记录。
+
+**C-87 结论**：本轮只改了一处边界（`>` → `>=`），没有让重试守住整体预算，也没有测试锁；Round 3 的三项阻塞全部仍在。
+
+---
+
+### 5. 逐条验收标准（只列本轮受影响的）
+
+| AC | Round 3 | Round 4 | 依据 |
+|---|---|---|---|
+| 1 | PARTIAL | **PARTIAL** | C-89 的 per-speech `firstDeltaAt` 已修；`thinking` 仍无生产源，≥30 次真实 p95 仍是手工项（D-6） |
+| 2 | FAIL | **NEEDS WORK** | reducer 的两个中间态与刷新路径成立；但 live 生产侧仍无发布者，P-R4-3 会让重连回退到半句 |
+| 3 | PARTIAL | **PARTIAL** | 真实 p95 手工项，服务端首事件时间仍未记录（C-93） |
+| 4 | FAIL | **PASS** | C-89 关闭；`tests/client/use-stream.test.ts:96-107` 锁住 done-only 新发言的 `sawThinking` |
+| 5 | FAIL | **FAIL** | P-R4-1 / P-R4-2（C-96）；P-R4-3（committed 与总线顺序）仍不重复、不丢失 |
+| 6 | PASS | **PASS** | 未改，Round 1 的逐字节用例仍有效 |
+| 7 | NEEDS WORK | **NEEDS WORK** | 20s + 20s 仍到 40s（P-R4-6） |
+| 8 | PASS（helper） | **PASS（helper）** | 未改；重试层数风险仍在 C-87 |
+| 9 | FAIL | **FAIL** | P-R4-4：`DEGRADED` 仍变成空文本 `done` |
+| 10 | NEEDS WORK | **NEEDS WORK** | `degradeEvents` 无写回入口 / 无调用者 |
+| 11 | PARTIAL | **PARTIAL** | `DEGRADED` 可 replay；仍只有席位、没有轮次标注，无轮次级测试 |
+| 12 | PARTIAL | **PARTIAL** | 4 轮 × 2 次调用的 helper 用例成立；仍无生产调用者 / 无「对局未卡死」集成测试 |
+
+---
+
+### 6. 五个审查维度
+
+#### 6.1 RFC ADHERENCE —— **FAIL**
+
+- 用户点名的四项中，只有 C-89 闭合；C-96 / C-86 / C-87 仍阻塞。
+- 缺功能不变：生产侧 `thinking` / `delta` / `degraded` 发布者；按事件类型映射的 committed 回放；committed 与总线增量的合并 / 去重；发言中途断线（含已完成）的完整续传；`runTurn` / `degradeEvents` 的写回路径；真正的整体预算。
+- 新代码引入的行为回归：C-96 的 `replay` 会让已完成的发言在每次重连时重播并回退到 `speaking`（P-R4-2）。
+
+#### 6.2 RULES COMPLIANCE —— **NEEDS WORK**
+
+| 规则 | 结论 |
+|---|---|
+| `ARCH-1` | **PASS**：本提交没有让 `src/engine/` import UI / server / 网络。 |
+| `ARCH-2` | **未重查**：`src/shared/stream.ts` 的运行时编解码仍归 C-91（非阻塞），本轮不改判。 |
+| `ARCH-4` | **PASS**：`runTurn` 的时钟仍由调用方注入。 |
+| `DATA-1` | **PASS**：SSE 消息 id 取事件 `seq`；`DEGRADED` 折叠后 `seq` 由 `applyEvent` 推进。 |
+| `DATA-3` | **PASS**（Round 2 已关闭）：`DEGRADED` 可 replay。 |
+| `API-2` | **FAIL**：`delta` 共享 `seq` 与 AC-5「从下一个 seq 继续」在断线中途仍冲突（C-96），且这次多了一个「重连重播已完成发言」的反向问题。 |
+| `TEST-1` | **FAIL**：C-96 的用例没覆盖历史里的 `done`（`done` 是连接后实时发布的）；C-87 的预算修改没有测试能区分新旧代码（M6 全绿）。 |
+| `TEST-2` | **PASS**：引擎覆盖率 96.96% / 92.85%，未因本 RFC 下降。 |
+| `DOC-1` | **FAIL**：§8.6 仍写 `reply.send` 一次写完并归 RFC-012；§8.4 的 AC-5 / 9 / 10 / 11 / 12 仍写 PASS；§8.9 把 C-87 的「第二次前检查」写成已修，但与旧实现等价。 |
+| `AI-3` / `AI-7` | **PASS（未改）**：本 RFC 没有改调用超时 / 重试配置；`runTurn` 与 `decide()` 的重试层数叠加风险仍未记录。 |
+| `SEC-5` | **PASS（数据面）**：SSE 仍只发可见事件，没有直接序列化完整 `GameState`；会话检查仍在。 |
+
+#### 6.3 SECURITY —— **PASS**
+
+本轮改动没有新增输入面、密钥或日志：`StreamBus.replay` 只重放内存里已发布给该对局的 `StreamMessage`；`Route` 仍在 `resolveSession` 之后校验 `session.gameIds`；`SNAPSHOT_REQUIRED` 只回显客户端提供的 `Last-Event-ID`；`JSON.stringify` 的帧编码不变。C-90 的可见性回归锁仍是未重查的非阻塞项。
+
+#### 6.4 PERFORMANCE —— **NEEDS WORK**
+
+- `committedMessages` 仍对全部历史可见事件生成 `done`，没有 200 条窗口；每次重连都做一次完整 replay + 全量序列化。
+- C-96 的 trailing 重放会把整段旧增量再发一遍（P-R4-2），重连带宽和客户端重渲染都翻倍；已完成的发言尤其明显。
+- committed 与总线增量可能重复发送同一段发言（P-R4-3），既增加带宽，也让客户端做无用功。
+- `PassThrough` 的 `write` 没有 backpressure 处理；`bus.end` 之后的新连接仍会挂起（Round 3 的 P7，非阻塞）。
+- 没有新增 LLM / 数据库 / 网络调用；`runTurn` 的重试仍可能到 40s+。
+
+#### 6.5 MAINTAINABILITY —— **NEEDS WORK**
+
+- 两份「历史」（`committedMessages` 与 `StreamBus.replay`）仍由路由按「先 A 后 B」硬拼，没有统一的 merge / 排序 / 去重函数；P-R4-3 的根因未变。
+- C-96 的注释说「还没结束的那段发言」，代码却无法判断是否已 `done`；注释与行为不一致，容易让下一位维护者误以为已完成发言不会重放。
+- `done` 分支现在同时承担「终结一段真实发言」「非发言事件」「跳过发言」三种语义，`committedMessages` 又不按类型映射；`text` 的保留规则因此依赖调用方永远不发送空文本的跳过事件。
+- 测试侧：C-96 用例把 `done` 放在连接后发布，测试名却声称覆盖重放；C-87 的预算用例只覆盖「开始时就已超时」。这两处是「测试看起来存在、实际不设防」的典型。
+- 正向：C-89 的修复小而准，既有单测又能反向打红；C-86 的三条客户端用例分别锁住了空文本、跨段、同 id 幂等。
+
+---
+
+### 7. 变异探针与恢复
+
+备份在 `/tmp/howl-rfc010-r4-backup/`，覆盖 `src/client/use-stream.ts`、`src/server/routes/stream.ts`、`src/server/llm/turn.ts`、`src/server/stream/bus.ts`。每个变异用 `cp` 从备份恢复，`md5` 逐项相同；**没有使用 `git checkout`**，也没有 `git commit`。临时探针 `tests/server/__r4-probe.test.ts` 已删除。
+
+| # | 探针 / 变异 | 跑什么 | 结果 |
+|---|---|---|---|
+| P-R4-1 | 发言在断线期间完成（`thinking` + `delta` + `done` 全在历史），带 `Last-Event-ID = speechId` 重连 | 真实路由 | `types=[thinking,delta,delta]`，**没有 done**（C-96） |
+| P-R4-2 | 客户端已收到完整 `done`，再带同一 id 重连，把响应喂 reducer | 真实路由 + reducer | `phase=speaking`，整段旧增量被重播（C-96） |
+| P-R4-3 | 真实 `SPEECH` seq 15 已提交 + bus 同 seq 增量，带 `Last-Event-ID: 14` | 真实路由 + reducer | `[done 15, thinking 15, delta 15]` → `phase=speaking`、`text=我`（C-86 ②） |
+| P-R4-4 | 真实对局 + 追加 `DEGRADED` seq 15 | `committedMessages` | 最后一条 `{"type":"done","id":15,"text":""}`（C-86 ③ / AC-9） |
+| P-R4-5 | 真实一局两次 `SPEECH`、无 `Last-Event-ID`，响应逐条喂 reducer | 真实路由 + reducer | `text=第二段发言`（刷新路径已修） |
+| P-R4-6 | `limitMs=30_000`、每次 attempt 20s | `runTurn` | `clock=40_000 calls=2 degraded=true`（C-87） |
+| M2 | 删掉 `use-stream.ts:89-90` 的 done 分支重置 | `tests/client/use-stream.test.ts` | **1 failed / 9 passed**（C-89 已锁） |
+| M3 | 删掉 `bus.ts:60-68` 的 trailing 重放 | `tests/server/stream.test.ts` | **1 failed / 10 passed**（delta 重放有锁） |
+| M4 | `done` 空文本改回 `text: message.text` | `tests/client/use-stream.test.ts` | **1 failed / 9 passed**（空文本不抹有锁） |
+| M5 | 恢复旧的 `phase === 'done'` 守卫 | `tests/client/use-stream.test.ts` | **1 failed / 9 passed**（跨段 done 有锁） |
+| M6 | 把 `turn.ts` 恢复成 Round 2 的预算检查（失败之后、下一次之前） | `tests/server/degrade.test.ts` | **15/15 全绿**（C-87 的预算修改无锁） |
+
+**恢复校验**：
+
+```
+$ md5 -q src/client/use-stream.ts src/server/routes/stream.ts src/server/llm/turn.ts src/server/stream/bus.ts
+c952aa1d8d3d3ee6d4e896f850c2bffb
+5c46968782c32c78ad6ddfefe0cc56c4
+b88351d93a85c7c36eda144d4978118a
+25d8f0cddcca50683c907399f4c895b2
+
+$ md5 -q /tmp/howl-rfc010-r4-backup/{use-stream.ts,stream.ts,turn.ts,bus.ts}
+c952aa1d8d3d3ee6d4e896f850c2bffb
+5c46968782c32c78ad6ddfefe0cc56c4
+b88351d93a85c7c36eda144d4978118a
+25d8f0cddcca50683c907399f4c895b2
+
+$ git status --porcelain
+（空）
+
+$ pnpm test
+ Test Files  68 passed (68)
+      Tests  568 passed (568)
+```
+
+---
+
+### 8. 结论
+
+- **Overall Risk Level: High**
+- **Summary**：C-89 的 done 分支重置是真正的修复，且反向探针会红；C-86 的三条新增客户端用例也成立，刷新后能看到最后一段发言。但 C-96 的 `replay` 只补了增量、没有补历史里的 `done`，还会把已完成的发言整段重播并退回 `speaking`；C-86 的 committed/总线拼接、按类型映射、生产侧发布者三项仍是 Round 3 原样；C-87 的预算修改与旧实现等价，20s + 20s 仍到 40s，且 M6 证明没有任何测试锁。
+- **Blocking Issues**：
+  1. **C-96**：断线期间完成的发言收不到 `done`（P-R4-1）；已完成发言重连后从 `done` 退回 `speaking`（P-R4-2）；测试把 `done` 放在连接后发布，掩盖了这两条。
+  2. **C-86**：committed 与总线增量的顺序错（P-R4-3）；每个可见事件仍映射成 `done`（P-R4-4，AC-9）；`bus.publish` / `runTurn` / `degradeEvents` 仍无生产调用者，§8.6 仍归 RFC-012。
+  3. **C-87**：整体预算仍可被一次重试推过（P-R4-6）；预算修改无测试锁（M6）；`degradeEvents` 无写回入口、`runTurn` 无调用者、RFC-011 交接未登记。
+- **Improvement Suggestions**：① C-96 至少把 `done` 纳入 trailing 重放，并补「断线期间完成」「已收到 done 后重连」两条用例；更好的做法是给客户端一个「从发言起点重放」信号，或改 delta 的 id 方案并同步 AC-5 / D-3。② C-86 把 committed 与 bus 增量合并成一个按 id 排序、同 id 去重、按类型映射的函数：`SPEECH` → `done`、`DEGRADED` → `degraded`、其余跳过；补 route → reducer 的集成用例；把生产侧 / `runTurn` / `degradeEvents` 的归属写进 §8.6 与 `RFCS.md` §3。③ C-87 给 `attempt` 传 `remainingMs` / `AbortSignal`，并补 20s + 20s 的用例；写回入口要么在 `GameRegistry` 增加，要么正式登记给 RFC-011。④ 同步 §8.4 的 AC-5 / 9 / 10 / 11 / 12 与 §8.6，不再把未验收项写成 PASS。
+- **Suggested status**：**`Changes requested`**。
+
+---
+
+### 9. Open conflicts（登记到 `RFCS.md` §8.31 Round 4 段）
+
+- **C-96 · AC-5 / API-2 vs D-3**：仍未正式裁决。当前实现用「重放 id 相等的 thinking/delta」做启发式，既没有 `done`，也没有「从起点重放」信号；按 AC-5 的 Must「不重复、不丢失」判为阻塞。需要改 id 方案 / 增加信号 / 走 `/manage-changes`，三选一并同步 §2.2 / §4 / D-3 / AC-5 与 `TEST-STRATEGY.md`。
+- **C-86 归属 / 文档**：§8.6 仍把持续推送归给 RFC-012 且说路由 `reply.send` 一次写完；代码已是 `PassThrough` 长连接，§8.8 也说生产侧在 RFC-011。三处仍不一致，`RFCS.md` §3 的依赖表也没有 RFC-011 这个后继。
+- **C-87 交接**：§8.4 仍把 AC-10 / 11 / 12 写成 PASS，但 `degradeEvents` 没有 `GameRegistry` 写回入口、`runTurn` 没有调用者；按「代码 + 实测」判为未验收。
+- **C-92（未重查，非阻塞）**：`TEST-STRATEGY.md:302-312` 的 RFC-010 计划仍全 `proposed`，文件名（`sse.test.ts` / `replay-degrade.test.ts` / `stream.spec.ts`）与实现不符；`README.md:11` 仍写「7 个 Reviewed、8 个 Not started」（实际 9 个 Reviewed、6 个 Not started）。按 Round 1 记录保持非阻塞，待下一次 docs 提交统一回写。
