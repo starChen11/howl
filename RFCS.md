@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.131 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.132 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -49,7 +49,7 @@
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Reviewed |
-| [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Implemented |
+| [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Changes requested |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Not started |
@@ -964,10 +964,37 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 2 后的状态**：**C-137 / C-139 / C-143 关闭**；**C-134 / C-135 / C-136 / C-138 / C-140 / C-141 / C-142 仍 Open（阻塞）**；新增 **C-148 / C-149 / C-151** 为阻塞，**C-150 / C-152 / C-153** 为非阻塞。RFC-013 的 Status = **`Changes requested`**。门禁全绿不改变结论：多个合理回归在官方套件里是绿的。
 
+### 8.49 RFC-013 Round 3 评审（2026-11-19）
+
+> 由 `/review-rfc 013` 登记；完整证据见 [`reviews/REVIEW-RFC-013.md`](reviews/REVIEW-RFC-013.md) 的 `## Round 3 -- 2026-11-19`。评审时 HEAD `98c9262`，工作树 clean；门禁 **84 files / 710 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0、`pnpm test:e2e` **9/9 passed**。结论：**Changes requested**。用户点名的 C-148、客户端 `actions`/`deaths` 渲染代码、App 级定位/观战、记事板 `draft`、`lynch`/`shoot`、面板 key 代码均成立；但 C-138 / C-141（AC-7）/ C-151 / C-136（客户端断言）/ C-135（主路径）/ C-149（回归锁）仍未闭合。C-137 / C-139 / C-143 按用户指示未重查。探针从 `/tmp/howl-rfc013-r3/backup/` 文件备份恢复（**未用 `git checkout` / `git restore`**），6 个源码文件 SHA-256 全部 `OK`；临时探针测试已删除；工作树 clean；没有 `git commit`。
+
+| # | 复核 | 证据 | 状态 |
+|---|---|---|---|
+| **C-134** | AC-1 夜间死亡/放逐 | 夜间死亡、`lynch` / `shoot` 都有真实事件用例；删 lynch 分支 M-R3-5 → `event-panel.test.tsx` **1 failed** | **Closed** |
+| **C-135** | AC-4 面板 → 发言定位 | `jumpTo` no-op M-R3-3 → `spectator.test.tsx` **1 failed**；但夹具只走「无更早发言 → 之后第一条」回退分支，`anchorFor` 改成永远取最后一条发言 M-R3-7 → 官方 **15/15 仍绿**，临时探针才红 | **Open（主路径测试）** |
+| **C-136** | AC-9 夜间行动结果 | C-148 已关闭；客户端 `actions` / `deaths` 渲染代码在 `App.tsx:179-200`，但删掉两段 JSX（M-R3-6）→ 官方 **19/19 仍绿**，临时探针才红 | **Open（客户端断言）** |
+| **C-137** | ACL 8/9/10 内容级断言 | Round 2 已关闭；按用户指示未重查 | **Closed（Round 2）** |
+| **C-138** | AC-11 零事件/事件流深度 | 没有事件流快照/深度断言；`truth.test.ts:142-150` 仍是同义反复；`/truth` 返回前写回 store（M-R3-10）→ 官方 `truth.test.ts` **4/4 仍绿**，临时探针才红 | **Open** |
+| **C-139** | AC-12 客户端入口 | Round 2 已关闭；按用户指示未重查 | **Closed（Round 2）** |
+| **C-140** | AC-13/14 记事板隔离 | 真实「记事板 → 发言」用例存在；把记事板拼进 `syncDraft`（M-R3-4）→ `spectator.test.tsx` **1 failed**；`draft` 已覆盖 | **Closed**（残余：AC-13 只用一个 observer，非阻塞） |
+| **C-141** | AC-5/7 观战内容与终局 | AC-5 新 App 用例有牙（M-R3-8 → **2 failed**）；AC-7 没有 `FINISHED` 用例，隐藏 FINISHED 观战 UI（M-R3-9）→ 官方 **19/19 仍绿**，临时探针才红 | **Open（AC-7）** |
+| **C-142** | API-1 `/truth` 契约 | `src/shared/truth.ts` 定义 `TruthView` / `TruthViewSchema`；`ApiErrorCode` 含 `TRUTH_LOCKED`；客户端返回 `TruthView` | **Closed** |
+| **C-143** | e2e 投票断言 | Round 2 已关闭；按用户指示未重查 | **Closed（Round 2）** |
+| **C-148** | AC-9 动作者字段 | 按角色归因；真实对局探针得到狼/预言家动作；空 Map 回退（M-R3-1）→ `truth.test.ts` **1 failed** | **Closed** |
+| **C-149** | 同 seq 多死者重复 key | 组件 key 已含 `text`；但官方用例自己算 key、不渲染组件；回退 key（M-R3-2）→ 官方 **15/15 仍绿**，临时探针才红 | **Open（仅测试）** |
+| **C-150** | deaths 天数 / null 号 | `truth.ts:70` 仍对每条死亡写 `state.day`；`HUNTER_SHOOT` 的 null 已改「没有开枪」；死因仍显示原始英文 | **Open（非阻塞）** |
+| **C-151** | 共享 schema 只完成一半 | 客户端 `safeParse` 已用，但去掉后官方 **19/19 仍绿**（M-R3-12）；`routes/games.ts:145` 仍不 `parse`；无 `TruthViewSchema` 正/负用例 | **Open** |
+| **C-152** | 文档漂移 | RFC §8.4 / §8.6 / §8.8 仍与实现/实测矛盾；`TEST-STRATEGY.md:353-358` 仍 `proposed`；README RFC 计数未同步；实际 **84/710** | **Open（非阻塞）** |
+| **C-153** | anchor 语义 | 「此前最近」无更早发言时回退 `speeches[0]`；新 App 用例正好走回退分支 | **Open（非阻塞）** |
+| **C-154** | 新 · 死狼仍被记「袭击」 | `truth.ts:36-45` 取全部狼席位（不看 `alive`）；P-R3-8 把死狼改成 `alive:false` 后仍得到 `['袭击了 3 号','袭击了 2 号']` | **Open（非阻塞，数据质量）** |
+
+> **Round 3 后的状态**：**C-134 / C-140 / C-142 / C-148 关闭**；**C-135 / C-136 / C-138 / C-141 / C-149 / C-151 仍 Open（阻塞）**；C-137 / C-139 / C-143 按用户指示未重查，沿用 Round 2 关闭；C-150 / C-152 / C-153 / C-154 为非阻塞。RFC-013 的 Status = **`Changes requested`**。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.132 | RFC-013 Round 3 评审（Status → `Changes requested`）：C-134 / C-140 / C-142 / C-148 关闭；C-135 / C-136 / C-138 / C-141 / C-149 / C-151 仍 Open（阻塞）；新增 C-154（非阻塞，死狼仍被记袭击）。门禁 84 files / 710 tests、9/9 e2e 全绿；M-R3-2/6/7/9/10/12 等合理回归在官方套件里仍绿；探针从 `/tmp/howl-rfc013-r3/backup/` 文件备份恢复、6 个源码文件 SHA-256 全 `OK`、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-013.md`](reviews/REVIEW-RFC-013.md) Round 3 |
 | 2026-11-19 | v2.131 | RFC-013 Round 2 修复（Status → Implemented）：真相动作按角色归因并渲染、出局记录带死因、App 级定位/观战/记事板草稿隔离用例、面板 key 去重、客户端共享契约 |
 | 2026-11-19 | v2.130 | RFC-013 Round 2 评审（Status → `Changes requested`）：**C-137 / C-139 / C-143 关闭**；**C-134 / C-135 / C-136 / C-138 / C-140 / C-141 / C-142 仍 Open**；新增 **C-148**（AC-9 动作者字段与 payload 不匹配、九席 actions 全空）、**C-149**（同 seq 多死者重复 key）、**C-151**（共享 schema 只完成一半）为阻塞，C-150 / C-152 / C-153 为非阻塞。门禁 84 files / 704 tests、9/9 e2e 全绿；M-R2-1/3/4/5/6/7 多个合理回归在官方套件里仍绿；探针从 `/tmp/howl-rfc013-r2/backup/` 文件备份恢复、7 个源码文件 `cmp` 全 `OK`、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-013.md`](reviews/REVIEW-RFC-013.md) Round 2 |
 | 2026-11-19 | v2.129 | RFC-013 Round 1 修复（Status → Implemented）：面板锚点让 A 方案可达、补夜间死亡/放逐、真相含夜间行动、共享 Zod 契约、活人无入口、记事板隔离与零副作用用例 |

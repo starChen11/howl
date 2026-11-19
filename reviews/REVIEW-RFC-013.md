@@ -576,3 +576,191 @@ PROBE_KEY_WARNING Encountered two children with the same key, `%s`. ... 1-death
 - 补 `publicEvents` 的显式 `sort((a,b)=>a.seq-b.seq)` 并喂乱序夹具（Round 1 C-144 仍未做）。
 - 删除未使用的 `resetTruth`，或接进真实重置路径。
 - 让 `truthData` 使用共享 `TruthView` 类型，而不是本地 `{ seats: ... }` 子集。
+
+
+## Round 3 -- 2026-11-19
+
+> 被评审提交：`98c9262 fix(rfc-013): 真相动作归因、面板 key 与 App 级用例（Round 2）`
+> 评审方式：全新上下文的 subagent，只读仓库文件 + 实跑 + 文件备份变异探针；本会话没有写过 RFC-013 的实现代码。
+> 环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · HEAD `98c9262` · 评审开始时工作树 clean。
+> 结论：**Changes requested**。用户点名的 C-148、客户端 `actions`/`deaths` 渲染代码、App 级定位/观战、记事板 `draft`、`lynch`/`shoot`、面板 key 代码均成立；但 **C-138 / C-141（AC-7）/ C-151 / C-136（客户端断言）/ C-135（主路径）/ C-149（回归锁）仍未闭合**。C-137 / C-139 / C-143 按用户指示未重查，沿用 Round 2 的关闭证据。
+
+### 0. 用户点名的修复 + C-138 / C-141：直接回答
+
+| 点名项 | 结论 | 最短证据 |
+|---|---|---|
+| **C-148 按角色归因 + 狼/预言家用例** | **已修，关闭** | `truth.ts:28-63` 不再读 `payload.seat`；真实对局探针 `P-R3-7` 得到 `2/5/9:wolf:袭击了 3 号`、`8:seer:查验了 1 号：好人`。把 `actionsBySeat` 回退成空 Map（M-R3-1）→ `truth.test.ts` **1 failed**（`wolf 2: expected false to be true`），用例有牙。 |
+| **客户端渲染 `actions` / `deaths`** | **代码已渲染，但验收没有断言** | `App.tsx:179-200` 渲染动作、出局记录与死因。把这两段 JSX 删掉（M-R3-6）→ 官方 `event-panel + spectator + app` **19/19 仍绿**；临时探针 P-R3-2 **1 failed**。**C-136 仍 Open（测试）**。 |
+| **App 级点击 → `data-seq` 高亮 + `scrollIntoView`** | **用例有牙，但只覆盖回退分支** | `spectator.test.tsx:147-191` 真实渲染 `App`；`jumpTo` 改 no-op（M-R3-3）→ `spectator.test.tsx` **1 failed**。但夹具是 `DAY_STARTED seq1` + `SPEECH seq2`（没有「此前已有发言」），主路径没有覆盖；把 `anchorFor` 改成永远取最后一条发言（M-R3-7）→ 官方 **15/15 仍绿**，临时探针 P-R3-3 **1 failed**。**C-135 仍 Open（主路径测试）**。 |
+| **App 级观战内容（出局后发言 + 公开事件）** | **已修，关闭 AC-5 部分** | `spectator.test.tsx:193-222` 断言 `后面这局我看完了` 与「公开事件」标题；把 feed/panel 改成只在 `ctx.self.alive` 时渲染（M-R3-8）→ **2 failed**。AC-7 的 `FINISHED` 仍没有 App 级用例（见下）。 |
+| **面板 key 加 `text` 消除同天两名死者重复** | **代码已修，测试是自证的** | `EventPanel.tsx:104` 的 key 为 `${seq}-${kind}-${text}`；但 `event-panel.test.tsx:165-178` 自己用同一公式算 key，**没有渲染 `EventPanel`**。把组件 key 回退成 `${seq}-${kind}`（M-R3-2）→ 官方 **15/15 仍绿**，临时探针 P-R3-1 **1 failed**（React `Encountered two children with the same key ... 1-death`）。**C-149 仍 Open（仅测试；代码已修）**。 |
+| **记事板泄漏断言扩到 `draft`** | **已修，关闭** | `spectator.test.tsx:224-274` 在真实 `App` 里输入记事板哨兵再发言，同时收集 `draft` / `submit`；把记事板拼进 `syncDraft`（M-R3-4）→ `spectator.test.tsx` **1 failed**，body 为 `"我只说公开的话。\n3 号可疑（私密）"`。残余：AC-13 的 9 个 observer 投影仍未构造（见 §5）。 |
+| **`ApiClient.truth` 用 `TruthViewSchema.safeParse`** | **代码已用，测试没有锁；服务端仍不 `parse`** | `api.ts:62-73` 确实 `safeParse`。去掉 `safeParse`（M-R3-12）→ 官方 **19/19 仍绿**，临时探针 P-R3-9 **1 failed**（非法 `{seats:"nope"}` 被原样返回）。`routes/games.ts:145` 仍是 `reply.send(buildTruth(...))`，没有 `TruthViewSchema.parse`；没有任何 `TruthViewSchema` 正/负用例。**C-151 仍 Open**。 |
+| **补 `lynch` / `shoot` 面板条目用例** | **已修，关闭** | `event-panel.test.tsx:140-163` 覆盖 `lynch` 与 `shoot`；删掉 lynch 分支（M-R3-5）→ **1 failed**。 |
+| **C-138 事件流深度（RFC §8.8 声称补了 version 断言）** | **未修，仍有同义反复** | 没有任何用例读 `record.events.length` / `JSON.stringify(record.events)` / `/truth` 前后 `version`；`truth.test.ts:142-150` 仍只比较 `stateOf()` 重建出的新状态。把 `/truth` 改成返回前**真的写回 store**（M-R3-10）→ 官方 `truth.test.ts` **4/4 仍绿**，临时探针 P-R3-6 **1 failed**（`expected 15 to be 14`）。**C-138 仍 Open**。 |
+| **C-141 AC-7 推进到 `FINISHED`** | **未修，没有 App 级终局用例** | 把 `SpectatorBar` / `SpeechFeed` / `EventPanel` 在 `phase === 'FINISHED'` 时隐藏（M-R3-9）→ 官方 `event-panel + app + spectator` **19/19 仍绿**，临时探针 P-R3-4 **1 failed**（找不到「你已出局，正在观战」）。`game-loop.test.ts` 只证明服务端能跑到 `FINISHED`，不经过 `App` 的观战分支。**C-141 仍 Open（AC-7）**。 |
+
+### 1. STEP 0 · 实跑门禁
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+vite v8.3.8 building client environment...
+✓ built in ...
+vite v8.3.8 building ssr environment...
+✓ built in 17ms
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  84 passed (84)
+      Tests  710 passed (710)
+FINAL_TEST_EXIT=0
+
+$ pnpm test:e2e
+Running 9 tests using 1 worker
+  9 passed (5.8s)
+E2E_EXIT=0
+```
+
+注意：RFC §8.8 写「85 files / 710 tests」；`README.md:11` 只写「710 个用例」。实际 `pnpm test` 是 **84 files / 710 tests**（9 条 Playwright 单独计）。这不影响结论，登记在 C-152。
+
+### 2. 产品类型
+
+`PRD.md` 的 **Product Type** 为 **game（主）+ web app（交付形态）**。本轮按 game 的「玩家真的能继续看/继续玩、公开信息完整、真相数据准确」和 web app 的「内容隔离、DOM 行为、真实浏览器」检查；mobile app / library / CLI / service 的检查不适用，跳过。没有真机与屏幕阅读器证据，本轮不宣称这两项通过。
+
+### 3. 全量验收标准对照（Round 3）
+
+| AC | 结果 | 证据 / 缺口 |
+|---|---|---|
+| 1 · 三类公开事件、按 seq | **PASS** | 夜间死亡从 `DAY_STARTED.diedLastNight` 生成（`event-panel.test.tsx:75-90`），`lynch` / `shoot` 从 `PLAYER_DIED.cause` 生成（`:140-163`，M-R3-5 打红）。排序仍没有显式 `sort`、条目没有「阶段」标记（非阻塞 C-144）；同天两名死者的 **key 回归锁**仍缺（C-149）。 |
+| 2 · 不显示角色/夜间细节 | **PASS（弱证据）** | builder 只处理三类公开事件；测试用 `JSON.stringify(...).not.toContain('role')`，是字符串级检查，但实现路径本身没有角色字段。 |
+| 3 · seq + 第 N 天 | **PASS** | `event-panel.test.tsx:86-90` 逐字段断言。 |
+| 4 · 点击定位到发言流 | **PARTIAL** | App 级高亮 + `scrollIntoView` 用例有牙（M-R3-3 打红），但只覆盖「没有更早发言 → 跳之后第一条」的回退分支；把 `anchorFor` 改成永远取最后一条发言，官方 15/15 仍绿（M-R3-7），主路径未锁。禁用分支有测试（`:131-138`）。**C-135 Open**。 |
+| 5 · 出局后仍见后续发言与公开事件 | **PASS** | 新 App 级用例 `spectator.test.tsx:193-222`；M-R3-8 打红。 |
+| 6 · 输入区不可用 + 提示 | **PASS** | `spectator.test.tsx:89-97`。 |
+| 7 · 观战态推进到 FINISHED | **UNVERIFIED** | 没有 App 级 `FINISHED` 用例；M-R3-9 下官方全绿。`game-loop.test.ts` 是服务端循环，不渲染观战态。**C-141 Open**。 |
+| 8 · 默认关闭 + 只含公开信息 | **PASS（继承 Round 2）** | Round 2 已关闭 C-137；本轮按指示未重查。 |
+| 9 · 所有席位角色 + 夜间行动 | **PARTIAL** | 服务端 `actions` 已修并有狼/预言家断言（M-R3-1 打红）；客户端 `actions` / `deaths` 渲染没有断言（M-R3-6 官方全绿、探针打红）；女巫/猎人/开枪分支没有官方用例（M-R3-11 下官方仍绿）。**C-136 Open**；C-148 关闭。 |
+| 10 · 关闭后立即恢复 | **PASS（继承 Round 2）** | Round 2 已关闭 C-137；本轮未重查。 |
+| 11 · 切换不产生任何事件 | **PARTIAL / UNVERIFIED** | `submits === 0`、`drafts === 0` 有断言；事件流深度/快照仍没有（M-R3-10 官方全绿、探针打红）。RFC §8.8 声称的「version 不变」断言不存在。**C-138 Open**。 |
+| 12 · 对局中无入口 + 请求被拒 | **PASS（继承 Round 2）** | Round 2 已关闭 C-139；本轮未重查。e2e `game.spec.ts:113-118` 仍覆盖「进行中没有真相入口」。 |
+| 13 · 其他席位投影不含记事板 | **PASS（结构证明）** | 记事板只写 `localStorage`，服务端源码扫描无 `notepad`；`notepad-isolation.test.ts:18-39` 的投影/提示词断言通过。残余：只用了 `record.playerSeat` 一个 observer，没有构造 9 个 observer（非阻塞）。 |
+| 14 · 提示词不含记事板 | **PASS（真实泄漏路径）** | `spectator.test.tsx:224-274` 在真实 `App` 里输入哨兵再发言，`draft` / `submit` 都不含；服务端 `buildUserMessage` 与源码扫描作为结构证明。未直接构造「记事板 → 投影 → buildUserMessage」的单一用例，但服务端根本收不到记事板，泄漏路径已被客户端用例锁住。 |
+| 15 · 刷新后仍在 | **PASS** | `spectator.test.tsx:137-142`，Round 1 已接受等价覆盖。 |
+
+**总览**：PASS 2 / 3 / 5 / 6 / 8 / 10 / 12 / 13 / 14 / 15（8、10、12 为继承），PARTIAL 1 / 4 / 9 / 11，UNVERIFIED 7。
+
+### 4. Round 2 阻塞项双向复核（C-134 ~ C-151）
+
+| # | Round 2 项 | Round 3 状态 | 本轮证据 |
+|---|---|---|---|
+| **C-134** | AC-1 夜间死亡/放逐 | **Closed** | 夜间死亡、`lynch`、`shoot` 都有真实事件用例；删 lynch 分支 M-R3-5 **1 failed**。排序/阶段标记仍是非阻塞 C-144。 |
+| **C-135** | AC-4 面板 → 发言定位 | **Open（主路径测试）** | App 级 `scrollIntoView` + `data-seq` 高亮用例存在且有牙（M-R3-3 打红）；但只测回退分支，M-R3-7 下官方 15/15 仍绿。 |
+| **C-136** | AC-9 夜间行动结果 | **Open（客户端断言）** | C-148 已关闭；服务端动作有真实对局断言。客户端 `actions` / `deaths` 渲染没有断言：M-R3-6 删掉两段 JSX 后官方 19/19 仍绿。 |
+| **C-137** | ACL 8/9/10 内容级断言 | **Closed（Round 2）** | 按用户指示未重查。 |
+| **C-138** | AC-11 零事件/事件流深度 | **Open** | 没有事件流快照或深度断言；M-R3-10 真实写回 store 后官方 4/4 仍绿。`truth.test.ts:142-150` 仍是同义反复。 |
+| **C-139** | AC-12 客户端入口 | **Closed（Round 2）** | 按用户指示未重查。 |
+| **C-140** | AC-13/14 记事板隔离 | **Closed** | 真实「记事板 → 发言」用例存在，M-R3-4 打红；`draft` 也覆盖。残余：AC-13 只用一个 observer（非阻塞）。 |
+| **C-141** | AC-5/7 观战内容与终局 | **Open（AC-7）** | AC-5 已有 App 级用例且 M-R3-8 打红；AC-7 没有 `FINISHED` 用例，M-R3-9 下官方全绿。 |
+| **C-142** | API-1 `/truth` 契约 | **Closed** | `src/shared/truth.ts` 定义 `TruthView` / `TruthViewSchema`，`ApiErrorCode` 含 `TRUTH_LOCKED`，客户端返回 `TruthView`。服务端响应校验归 C-151。 |
+| **C-143** | e2e 投票断言 | **Closed（Round 2）** | 按用户指示未重查。 |
+| **C-148** | AC-9 动作者字段 | **Closed** | `actionsBySeat` 改为按角色归因；真实对局探针 + M-R3-1 空 Map 打红。残余：只断言狼/预言家正向动作，未断言女巫/猎人/非狼不沾狼刀（非阻塞）。 |
+| **C-149** | 同 seq 多死者重复 key | **Open（仅测试）** | 组件 key 已包含 `text`；但官方用例自己算 key、不渲染组件；M-R3-2 回退 key 后官方 15/15 仍绿，临时探针才打红。 |
+| **C-150** | deaths 天数 / null 号 | **Open（非阻塞）** | `truth.ts:70` 仍对所有死者写 `day: state.day`；App 渲染后会把第 1 天死亡显示成打开真相的当天。`HUNTER_SHOOT` 的 null 已改「没有开枪」。死因仍显示原始英文 `wolf` 等。 |
+| **C-151** | 共享 schema 只完成一半 | **Open** | 客户端 `safeParse` 已用（M-R3-12 去掉后官方全绿、探针打红，说明没有测试）；`routes/games.ts:145` 仍不 `parse`；没有 `TruthViewSchema` 正/负用例。 |
+| **C-152** | 文档漂移 | **Open（非阻塞）** | RFC §8.4:132 仍写「面板只有 death / vote 两类」、:140 仍写 AC-9 PASS、:142 仍只写 submit；§8.6:161 仍写「当前只给角色」；§8.8:187 声称补了 version 断言，实际不存在。`TEST-STRATEGY.md:353-358` 仍全部 `proposed`、文件名仍是 `truth-guard.test.ts` / `notepad.test.tsx`；`README.md:11` 仍写「11 Reviewed、1 Changes requested、4 Not started」，`:36` 仍写「RFC-001 ~ 012」。RFC §8.5 写 83/700、§8.8 写 85/710，实际 **84/710**。 |
+| **C-153** | anchor 语义 | **Open（非阻塞）** | `EventPanel.tsx:31-38` 注释写「此前最近」，无更早发言时回退 `speeches[0]`；新 App 用例正好走回退分支，主路径未测（与 C-135 同一处）。 |
+
+> **Round 3 后状态**：**C-134 / C-140 / C-142 / C-148 关闭**；**C-135 / C-136 / C-138 / C-141 / C-149 / C-151 仍 Open（阻塞）**；C-137 / C-139 / C-143 按用户指示未重查，沿用 Round 2 关闭。C-150 / C-152 / C-153 为非阻塞。
+
+### 5. 新发现（非阻塞）
+
+#### 5.1 C-154 · 死狼仍被记「袭击」
+
+`truth.ts:36-45` 先取**全部**狼席位（不看 `alive`），再对每条 `WOLF_KILL_CHOSEN` 给每只狼 `push`。如果一只狼在第 1 天被放逐/毒死，之后其他狼继续刀人，真相视图仍会把后续刀记到死狼头上。临时探针 P-R3-8 把一只狼改成 `alive:false` 后追加一条 `WOLF_KILL_CHOSEN`，得到：
+
+```text
+P-R3-8 dead wolf actions [ '袭击了 3 号', '袭击了 2 号' ]
+```
+
+这不阻塞 AC-9 的字面（动作确实显示了），但真相数据是错的。修法：按事件发生时的 `seq` 判断该狼是否还活着，或把狼刀明确标成「狼队」而不是逐狼归属。
+
+#### 5.2 其他残余
+
+- **C-150**：`deaths.day` 仍取 `state.day`；`deaths.cause` 在 UI 里显示 `wolf` / `poison` / `lynch` / `shoot` 原始英文，建议映射成中文并在事件循环里记录当天。
+- **C-152**：见上；`DOC-1` 要求实现记录真实，当前 §8.4 / §8.6 / §8.8 互相矛盾。
+- **C-153**：`anchorFor` 的回退语义与注释不一致；与 C-135 的主路径一起定。
+- **C-144**：`buildPanelEntries` 没有显式 `sort((a,b)=>a.seq-b.seq)`，测试只喂顺序输入；条目也没有 RFC §4 的「阶段」标记（AC-3 只要求 seq + 第 N 天，故非阻塞）。
+- `resetTruth()` 仍未被任何代码使用（Round 1 C-145 遗留）。
+- `EventPanel` 的 key 测试应改成真实渲染 + `console.error` 断言（这正是 C-149 的修法）。
+
+### 6. 审查维度
+
+| 维度 | 结论 | 说明 |
+|---|---|---|
+| **1. RFC ADHERENCE** | **NEEDS WORK** | AC-7 / 9 / 11 未完整验证；AC-4 只覆盖回退分支。核心行为大多已实现，但验收测试没有全部锁住。 |
+| **2. RULES COMPLIANCE** | **NEEDS WORK** | `API-1`：服务端 `/truth` 仍不 `parse`，共享 schema 无正/负用例；`TEST-1`：AC-4 主路径、AC-7、AC-9 客户端、AC-11 事件流深度、C-149 重复 key 都没有有牙的测试；`DOC-1`：§8.4 / §8.6 / §8.8 与实现/实测不一致。ARCH-1 / SEC-1 / SEC-5 未见新增违规。 |
+| **3. SECURITY** | **PASS（证据沿用）** | 服务端「活着 → 403」是 Round 2 已确认有牙的断言，本轮未重查；`/truth` 只对已出局者返回；记事板的真实客户端泄漏路径（`draft` / `submit`）已被 M-R3-4 锁住；`src/server` 无 notepad 字段。没有观察到新的越权或投影泄漏。 |
+| **4. PERFORMANCE** | **PASS / N/A** | `buildTruth` 线性扫事件 × 狼数（9 席规模可忽略）；真相只在开关时请求一次；面板构建线性；没有新增 N+1 或无限请求。App 的 1s 轮询是 RFC-012 遗留。 |
+| **5. MAINTAINABILITY** | **NEEDS WORK** | 多个测试「看起来有、实际不锁」：key 用例自算 key、actions/deaths 渲染无断言、safeParse 无断言、事件流深度无断言、主锚点无断言。另有死狼归因、`resetTruth` 未使用、文档漂移。 |
+
+**Overall Risk Level：Medium。** 功能面比 Round 2 完整得多：C-148 的动作归因、观战内容、记事板草稿、lynch/shoot 都有真实回归锁；但 6 个关键行为仍可在官方套件全绿的情况下被改坏，其中 C-138/C-151 是 Round 2 就明确要求的阻塞项。风险不是「功能又坏了」，而是「下一轮改坏时没人知道」。
+
+### 7. 阻塞问题（合并前必须修复）
+
+1. **C-138（AC-11）**：补服务端 `/truth` 前后 `record.events.length`、`JSON.stringify(record.events)`、`version` 相等断言；客户端补 `publicEvents.length` 不变。删掉或改写 `truth.test.ts:142-150` 的同义反复用例。M-R3-10 必须变红。
+2. **C-141（AC-7）**：补一条 App 级 `phase === 'FINISHED'` 用例，断言观战条、发言流、公开事件仍渲染；或由用户明确批准「AC-7 由 RFC-012 的服务端循环覆盖」并同步 RFC/FEATURES/TEST-STRATEGY。M-R3-9 必须变红。
+3. **C-151（API-1）**：`routes/games.ts:145` 改为 `TruthViewSchema.parse(buildTruth(...))`；补 `TruthViewSchema` 正/负用例（缺 `actions`、坏 `seat`、坏 `deaths`），以及 `ApiClient.truth` 非法响应 → `null` 的测试。M-R3-12 必须变红。
+4. **C-136（AC-9 客户端）**：在 `spectator.test.tsx` 的真相用例里断言 `袭击了 1 号` 与 `1 号（第 2 天，wolf）`（或等价的 `actions` / `deaths` 文本）；让 M-R3-6 变红。同时补女巫/猎人/开枪分支的官方断言（至少一条）。
+5. **C-135（AC-4 主路径）**：补夹具 `SPEECH seq1` + `DAY_STARTED seq2` + `SPEECH seq3`，点击死亡条目后断言高亮 `data-seq=1` 且 `scrollIntoView` 收到 `1`；保留回退分支与禁用分支。M-R3-7 必须变红。
+6. **C-149（AC-1 回归锁）**：把「两名夜间死者 key 唯一」改成真实 `render(<EventPanel .../>)` + `console.error` 断言（不得自算 key）；让 M-R3-2 变红。
+
+### 8. 非阻塞建议
+
+- **C-150**：`deaths.day` 按事件发生时的天数记录；`cause` 映射成中文（`wolf → 狼人袭击` 等）；保留 `HUNTER_SHOOT.target === null` 的「没有开枪」。
+- **C-154**：死狼不再获得其死亡后的狼刀；按事件 `seq` 计算存活，或标成狼队动作。
+- **C-152**：回填 `TEST-STRATEGY.md:353-358` 的 `Exists?` 与实际文件名（`truth.test.ts` / `spectator.test.tsx` / `notepad-isolation.test.ts`），修正 RFC §8.4 / §8.6 / §8.8 与 `README.md:11,36`，把测试计数改成 84/710。
+- **C-153 / C-144**：明确 `anchorFor` 的「此前最近」语义；没有更早发言时要么禁用、要么把注释和测试名改成「之后第一条」。补显式 `sort` 与乱序夹具，补「第 N 天 + 阶段」标记。
+- **AC-13 残余**：把 `notepad-isolation.test.ts` 扩展成 9 个 observer 的投影断言（即使服务端结构上不可能有，也让 AC-13 的字面有直接证据）。
+- **AC-9 残余**：服务端动作测试补「非狼席位不沾狼刀」的负向断言，避免归因实现过宽；9 席 UI 的渲染断言也可一并补。
+- 删除未使用的 `resetTruth`，或接进真实重置路径。
+- 排查 `GET /truth` 在已释放对局（`record.events.length === 0`）下 `stateOf` 抛错的 500 路径；`GET /api/games/:id` 已有 410，真相路由没有对应分支（非阻塞，未列入本轮阻塞）。
+
+### 9. 探针与恢复记录
+
+所有源码探针都从 `/tmp/howl-rfc013-r3/backup/` 的**文件备份**恢复，**未使用 `git checkout` / `git restore`**。每个探针前都断言目标字符串存在；恢复后 `shasum -a 256 -c` 六个文件全部 `OK`；临时探针测试已删除；`git status --porcelain` 为空；没有 `git commit`。
+
+| 探针 | 改动 | 结果 | 结论 |
+|---|---|---|---|
+| **M-R3-1** | `buildTruth` 的 actions 改成空 `Map` | `truth.test.ts` **1 failed**（`wolf 2: expected false to be true`） | C-148 有牙 |
+| **M-R3-2** | `EventPanel` key 回退成 `${seq}-${kind}` | 官方 `event-panel + spectator` **15/15 passed**；临时渲染探针 **1 failed**（duplicate key `1-death`） | C-149 测试无牙 |
+| **M-R3-3** | `App.jumpTo` 改 no-op | `spectator.test.tsx` **1 failed**（`scrolls` 不含 `2`） | C-135 回退分支有牙 |
+| **M-R3-4** | `App.syncDraft` 拼入 `localStorage` 记事板 | `spectator.test.tsx` **1 failed**（draft 含 `3 号可疑`） | C-140 有牙 |
+| **M-R3-5** | 删除 `PLAYER_DIED.cause === 'lynch'` 分支 | `event-panel.test.tsx` **1 failed**（缺 `banish`） | C-134 有牙 |
+| **M-R3-6** | 删除 `App` 的 `actions` / `deaths` JSX | 官方 `event-panel + spectator + app` **19/19 passed**；临时探针 P-R3-2 **1 failed** | C-136 客户端无牙 |
+| **M-R3-7** | `anchorFor` 改成永远返回最后一条发言 | 官方 `event-panel + spectator` **15/15 passed**；临时探针 P-R3-3 **1 failed**（收到 `3`，期望 `1`） | C-135 主路径无牙 |
+| **M-R3-8** | feed/panel 只在 `ctx.self.alive` 时渲染 | `spectator.test.tsx` **2 failed** | AC-5 有牙 |
+| **M-R3-9** | `FINISHED` 时隐藏观战条/feed/panel | 官方 `event-panel + app + spectator` **19/19 passed**；临时探针 P-R3-4 **1 failed** | C-141 AC-7 无牙 |
+| **M-R3-10** | `/truth` 返回前把带一条额外事件的记录**写回 store** | 官方 `truth.test.ts` **4/4 passed**；临时探针 P-R3-6 **1 failed**（`expected 15 to be 14`） | C-138 无牙 |
+| **M-R3-11** | 删除 `WITCH_POTION_USED` 的 `push` | 官方 `truth.test.ts` **4/4 passed**；临时探针 P-R3-8 **1 failed**（女巫 actions 为空） | 女巫分支无官方断言 |
+| **M-R3-12** | 去掉 `ApiClient.truth` 的 `safeParse` | 官方 `event-panel + app + spectator` **19/19 passed**；临时探针 P-R3-9 **1 failed**（非法响应被原样返回） | C-151 客户端无牙 |
+
+> 控制项：`GET /truth` 里只 `record.events.push(...)`（M-R3-10a）不会持久化，因为 `GameRegistry.getGame()` 返回 `MetaStore` 的副本；该探针官方与临时用例都绿。因此本轮改用「写回 store」的 M-R3-10 证明 C-138 的测试缺口。这一点也说明：Round 2 的 `record.events.push` 探针本身不足以证明写路径，但不影响“没有事件流断言”的结论。
+
+两个不改源码的探针：
+
+- **P-R3-7**：真实对局 `buildTruth` 输出 `2/5/9:wolf:袭击了 3 号`、`8:seer:查验了 1 号：好人`，证明 C-148 的代码修复在真实事件流上成立。
+- **P-R3-8**：女巫/猎人动作可正确归因（`使用解药（目标 2 号）`、`没有开枪`），但死狼仍得到 `['袭击了 3 号', '袭击了 2 号']`（C-154）。
+
+### 10. 结论
+
+**Changes requested。** 本轮确实关掉了 C-134 / C-140 / C-142 / C-148，并且用户点名的 App 级定位、观战内容、记事板 `draft`、`lynch`/`shoot`、客户端 `truth` 契约代码都已落地；C-137 / C-139 / C-143 按指示未重查。但 **C-135 / C-136 / C-138 / C-141（AC-7）/ C-149 / C-151** 仍没有能在行为退化时变红的验收证据：其中 C-138 是 Round 2 明确要求的「事件流快照相等」，C-151 是 `API-1` 的服务端一半，C-136/C-135 是用户可见路径的客户端断言。现在不能标 `Reviewed`。
