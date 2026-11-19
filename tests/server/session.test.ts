@@ -155,7 +155,7 @@ describe('AC-10 · 不泄露存在性', () => {
 });
 
 describe('AC-14 / AC-15 · 未实现的端点与对局上限', () => {
-  it('replay 未终局 → 404 NOT_FINISHED；stream → 501', async () => {
+  it('replay 未终局 → 404 NOT_FINISHED；stream 返回 SSE 帧', async () => {
     const app = makeApp();
     const created = await app.inject({
       method: 'POST',
@@ -177,7 +177,10 @@ describe('AC-14 / AC-15 · 未实现的端点与对局上限', () => {
       url: `/api/games/${gameId}/stream`,
       headers: { cookie },
     });
-    expect(stream.statusCode).toBe(501);
+    // 开局事件本身是 `server` 可见的（它含身份分配），所以此刻流可以为空——
+    // 真正的 SSE 帧与重连断言在 stream.test.ts。
+    expect(stream.statusCode).toBe(200);
+    expect(stream.headers['content-type']).toContain('text/event-stream');
   });
 
   it('会话对局上限是常量（超出时释放最旧的一局）', () => {

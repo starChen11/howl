@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.71 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.72 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -46,7 +46,7 @@
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
-| [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Not started |
+| [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Implemented |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
@@ -587,6 +587,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.72 | RFC-010 实现完成（Status → Implemented）：SSE 契约与端点（id=seq、Last-Event-ID 续传、200 条补偿窗口）、增量解析（逐字节中文不乱码）、超时/失败降级（≤10 字短句、连续 3 次提示、不许全跳过）、客户端纯状态机 |
 | 2026-11-19 | v2.71 | RFC-009 Round 3 复核（Status → `Reviewed`）：C-77 / C-79 / C-80 关闭（P3-R1 / R3 / R4 / R5 / R6 / R7 / R8 各自打红）；timeout 断言（N-R3-1）、C-79 的空真风险（N-R3-2）、AC-9 的玩家席位 / 类型 / 重复 seq（N-R3-3）与 C-84 文档漂移为非阻塞。门禁 65/532 全绿、覆盖率 96.96 / 92.80；探针从 `/tmp/howl-r9r3-backup/` 文件备份恢复、`md5` 一致、工作树 clean；无 commit。详见 `reviews/REVIEW-RFC-009.md` Round 3 |
 | 2026-11-19 | v2.70 | RFC-009 Round 2 修复（Status → Implemented）：token 缩放断言、跨 action 人格稳定、label 逐项比对、scenario 覆盖三类打法 |
 | 2026-11-19 | v2.69 | RFC-009 Round 2 复核（Status → `Changes requested`）：C-78 / C-81 / C-82 / C-83 关闭；C-77 缺 `max_tokens` 断言（P2-R2 全绿）、C-79 的 AC-1 只覆盖开局（P2-R4 全绿）、C-80 的 AC-9 真实场景只覆盖自曝（P2-R3 全绿）且 AC-5 标签映射未锁（P2-R5 全绿）——三项阻塞；C-84 文档仍漂移。门禁 65/528 全绿；探针从 `/tmp/howl-r9r2-backup/` 文件备份恢复（`personas.ts` 一处 `git checkout` 方法偏差），工作树 clean；无 commit。详见 `reviews/REVIEW-RFC-009.md` Round 2 |

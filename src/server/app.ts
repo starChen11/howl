@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import { registerGameRoutes } from './routes/games';
+import { registerStreamRoutes } from './routes/stream';
 import { GameRegistry } from './store/game-registry';
 import { InMemoryMetaStore, type MetaStore } from './store/meta-store';
 
@@ -27,10 +28,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.get(HEALTH_PATH, async () => ({ ok: true }));
 
   const store = options.store ?? new InMemoryMetaStore();
-  registerGameRoutes(app, {
-    registry: new GameRegistry(store),
-    production: options.production ?? false,
-  });
+  const registry = new GameRegistry(store);
+  const production = options.production ?? false;
+  registerGameRoutes(app, { registry, production });
+  registerStreamRoutes(app, { registry, production });
 
   return app;
 }

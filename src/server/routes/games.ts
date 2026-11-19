@@ -156,8 +156,4 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
 
     return reply.code(404).send({ error: 'NOT_FINISHED', message: '复盘由 RFC-014 实现' });
   });
-
-  app.get<{ Params: { id: string } }>('/api/games/:id/stream', async (_request, reply) =>
-    reply.code(501).send({ error: 'NOT_IMPLEMENTED', message: '流式由 RFC-010 实现' }),
-  );
 }
