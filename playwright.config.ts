@@ -20,7 +20,8 @@ export default defineConfig({
     channel: 'chrome',
   },
   webServer: {
-    command: 'pnpm exec tsx scripts/e2e-server.ts',
+    // 先构建：否则改了源码仍在跑旧 bundle（C-130）。
+    command: 'pnpm build && pnpm exec tsx scripts/e2e-server.ts',
     url: `http://127.0.0.1:${PORT}/api/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,

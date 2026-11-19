@@ -111,3 +111,34 @@ describe('AC-14 · 文字表达', () => {
     expect(text).not.toContain('轮到');
   });
 });
+
+describe('C-121 · 跨天发言只算最近一天', () => {
+  it('第二天开始时，前一天说过话的人不算「已发言」', () => {
+    const day1 = {
+      gameId: 'g',
+      seq: 1,
+      ts: 0,
+      type: 'DAY_STARTED',
+      visibleTo: 'public',
+      payload: { day: 1, diedLastNight: [], speechStartSeat: 1 },
+    } as never;
+    const day2 = {
+      gameId: 'g',
+      seq: 5,
+      ts: 0,
+      type: 'DAY_STARTED',
+      visibleTo: 'public',
+      payload: { day: 2, diedLastNight: [2], speechStartSeat: 1 },
+    } as never;
+
+    const ctx2 = ctx({
+      day: 2,
+      aliveSeats: [1, 3],
+      deadSeats: [2],
+      publicEvents: [day1, speech(2, 1), speech(3, 2), speech(4, 3), day2],
+    });
+
+    expect(spokenSeats(ctx2)).toEqual([]);
+    expect(buildBoard(ctx2).speakingSeat).toBe(1);
+  });
+});

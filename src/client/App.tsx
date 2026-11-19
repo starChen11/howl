@@ -5,7 +5,6 @@ import { ApiClient } from './api';
 import { boardAnnouncement, buildBoard, speakingSeat } from './game-state';
 import { IdCard } from './components/IdCard';
 import { VoteInput } from './components/VoteInput';
-import { TermHint } from './components/TermHint';
 import { SeatGrid } from './components/SeatGrid';
 import { SpeechFeed, type SpeechLine } from './components/SpeechFeed';
 import { SpeechInput } from './components/SpeechInput';
@@ -59,6 +58,15 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   );
 
   const board = useMemo(() => (view === null ? null : buildBoard(view.view)), [view]);
+
+  // 读屏公告只在「阶段 / 天数 / 轮到谁」变化时更新；跟着倒计时每秒刷会淹掉读屏（C-123）。
+  const [announcement, setAnnouncement] = useState('');
+  const announcementKey =
+    view === null ? '' : `${view.view.phase}|${view.view.day}|${board?.speakingSeat ?? 'x'}`;
+  useEffect(() => {
+    if (view === null) return;
+    setAnnouncement(boardAnnouncement(view.view, 0));
+  }, [announcementKey]);
 
   const lines: SpeechLine[] = useMemo(() => {
     if (view === null) return [];
@@ -132,24 +140,19 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
         <SpeechFeed lines={lines} />
       </main>
       <p className="sr-only" role="status" aria-live="polite">
-        {boardAnnouncement(ctx, remaining)}
+        {announcement}
       </p>
       <footer className="app__footer">
         {myTurn ? (
           <SpeechInput remaining={remaining} onSubmit={submit} onSkip={skip} onDraft={syncDraft} />
         ) : null}
-        {ctx.phase === 'DAY_VOTE' && ctx.legalTargets.includes(ctx.self.seat) === false ? (
+        {ctx.phase === 'DAY_VOTE' || ctx.phase === 'DAY_VOTE_RUNOFF' ? (
           <VoteInput
             aliveSeats={ctx.aliveSeats.filter((seat) => seat !== ctx.self.seat)}
             onVote={vote}
           />
         ) : null}
-        <p className="app__hint">
-          轮到你时可以说说你的怀疑；想了解
-          <TermHint termKey="vote">投票</TermHint>、<TermHint termKey="knife">刀</TermHint> 或
-          <TermHint termKey="fakeSeerClaim">悍跳</TermHint>
-          是什么意思，悬停或聚焦即可。
-        </p>
+        <p className="app__hint">轮到你时可以说说你的怀疑；不认识的词可以在下方的说明里查。</p>
         <OnboardingHints role={ctx.self.role} goal="先听一两轮，再决定信谁。" />
       </footer>
       {error === null ? null : (

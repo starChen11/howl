@@ -145,9 +145,10 @@ export function isStillTheirTurn(
 export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResult> {
   const { registry, session, input, decide } = deps;
   const maxSteps = deps.maxSteps ?? 500;
-  let record = (await registry.getGame(session.gameIds[session.gameIds.length - 1] ?? '')) as
-    GameRecord | undefined;
-  if (record === undefined) throw new Error('没有可推进的对局');
+  const targetId = deps.gameId ?? session.gameIds[session.gameIds.length - 1] ?? '';
+  const initial = await registry.getGame(targetId);
+  if (initial === undefined) throw new Error('没有可推进的对局');
+  let record: GameRecord = initial;
 
   let steps = 0;
   let skipped = 0;
@@ -180,7 +181,10 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
 
     // 玩家触发点：白天发言（AC-11）与白天投票（AC-11 的「发言 → 投票」）。
     // 夜间的目标选择仍是另一套输入，先用注入的 `decide` 代劳。
-    const playerPhase = state.phase === 'DAY_SPEECH' || state.phase === 'DAY_VOTE';
+    const playerPhase =
+      state.phase === 'DAY_SPEECH' ||
+      state.phase === 'DAY_VOTE' ||
+      state.phase === 'DAY_VOTE_RUNOFF';
     const action =
       seat === record.playerSeat && playerPhase
         ? await playerAction(seat, state.phase, deps)
@@ -227,10 +231,10 @@ async function playerAction(
   const input = await deps.input.read({
     seat: seat as never,
     timeoutMs: 60_000,
-    kind: phase === 'DAY_VOTE' ? 'vote' : 'speech',
+    kind: phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF' ? 'vote' : 'speech',
   });
 
-  if (phase === 'DAY_VOTE') {
+  if (phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF') {
     // 投票轮把「目标席位」放在同一个 `text` 字段里；空 → 弃权。
     const parsed = input.kind === 'skip' ? Number.NaN : Number.parseInt(input.text, 10);
     return {

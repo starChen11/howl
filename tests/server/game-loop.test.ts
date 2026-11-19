@@ -124,3 +124,42 @@ describe('AC-15 · 一局能从开局跑到 FINISHED', () => {
     expect(second.json()).toEqual({ started: false });
   });
 });
+
+describe('C-122 · 同一会话多局时只推进指定的那一局', () => {
+  it('启动第一局，第二局不受影响', async () => {
+    const { app, registry } = await makeHarness();
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side', seed: 15 },
+    });
+    const rawFirst = first.headers['set-cookie'];
+    const cookie = String(Array.isArray(rawFirst) ? rawFirst[0] : rawFirst).split(';')[0] ?? '';
+    const firstId = first.json<{ gameId: string }>().gameId;
+
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side', seed: 16 },
+      headers: { cookie },
+    });
+    const secondId = second.json<{ gameId: string }>().gameId;
+    expect(secondId).not.toBe(firstId);
+
+    const secondBefore = (await registry.getGame(secondId))?.events.length ?? 0;
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/games/${firstId}/play`,
+      headers: { cookie },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const firstAfter = await registry.getGame(firstId);
+    const secondAfter = await registry.getGame(secondId);
+
+    expect(firstAfter?.events.length ?? 0).toBeGreaterThan(1);
+    expect(secondAfter?.events.length ?? 0).toBe(secondBefore);
+  });
+});

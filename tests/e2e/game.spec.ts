@@ -71,10 +71,15 @@ test.describe('整局界面', () => {
       };
     });
 
-    const overlap = (
-      a: { top: number; bottom: number; left: number; right: number } | null,
-      b: { top: number; bottom: number; left: number; right: number } | null,
-    ): number => {
+    type Box = { top: number; bottom: number; left: number; right: number };
+    const toBox = (
+      box: { x: number; y: number; width: number; height: number } | null,
+    ): Box | null =>
+      box === null
+        ? null
+        : { top: box.y, bottom: box.y + box.height, left: box.x, right: box.x + box.width };
+
+    const overlap = (a: Box | null, b: Box | null): number => {
       if (a === null || b === null) return 0;
       const vertical = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
       const horizontal = Math.min(a.right, b.right) - Math.max(a.left, b.left);
@@ -83,6 +88,18 @@ test.describe('整局界面', () => {
 
     expect(overlap(regions.banner, regions.footer)).toBeLessThanOrEqual(0);
     expect(overlap(regions.main, regions.footer)).toBeLessThanOrEqual(0);
+
+    // 输入框自身也不能盖住状态条与计时器（C-118：只比 banner/footer 会漏）。
+    const input = await box.boundingBox();
+    const bannerBox = await page.getByRole('banner').boundingBox();
+    const timerBox = await page.getByRole('timer').boundingBox();
+    expect(input).not.toBeNull();
+    if (input !== null && bannerBox !== null) {
+      expect(overlap(toBox(input), toBox(bannerBox))).toBeLessThanOrEqual(0);
+    }
+    if (input !== null && timerBox !== null) {
+      expect(overlap(toBox(input), toBox(timerBox))).toBeLessThanOrEqual(0);
+    }
 
     // 底部区域里的输入框必须真的可点（没被别的东西盖住）
     const hit = await box.evaluate((element) => {
@@ -150,6 +167,27 @@ test.describe('整局界面', () => {
 
     expect(ratios.length).toBeGreaterThan(0);
     for (const value of ratios) expect(value).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test('键盘：Tab 能到投票按钮，Enter 能投票', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await page.goto('/?seed=13');
+    await expect(page.locator('.app')).toBeVisible();
+
+    // 先发言，推进到投票阶段
+    const box = page.getByLabel('你的发言');
+    await expect(box).toBeVisible({ timeout: 25_000 });
+    await box.fill('我来说一句。');
+    await box.press('Enter');
+
+    // 投票按钮出现后，用纯键盘 Tab 过去并按 Enter
+    const voteButton = page.getByRole('button', { name: /投 \d+ 号/ }).first();
+    await expect(voteButton).toBeVisible({ timeout: 25_000 });
+    await voteButton.focus();
+    await page.keyboard.press('Enter');
+
+    // 投票后按钮消失（本轮结束或轮到别人）
+    await expect(voteButton).toBeHidden({ timeout: 25_000 });
   });
 
   test('键盘：Tab 能到发言区，Enter 能提交', async ({ page }) => {

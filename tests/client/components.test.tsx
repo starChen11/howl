@@ -96,7 +96,7 @@ describe('AC-4 / AC-5 · 新手提示', () => {
   it('显示身份说明，提示语不代填', () => {
     render(<OnboardingHints role="seer" goal="今晚挑一个人查验。" />);
 
-    expect(screen.getByText(/你的身份是 seer/)).toBeTruthy();
+    expect(screen.getByText(/你的身份是 预言家/)).toBeTruthy();
     expect(screen.getByText(/今晚挑一个人查验/)).toBeTruthy();
   });
 
@@ -160,5 +160,56 @@ describe('AC-1 · 发言流', () => {
     rerender(<SpeechFeed lines={[{ id: 1, seat: 2, text: '我觉得 3 号像' }]} />);
     expect(screen.getByText('2 号')).toBeTruthy();
     expect(screen.getByText('我觉得 3 号像')).toBeTruthy();
+  });
+});
+
+describe('C-122 · 草稿同步', () => {
+  it('输入变化会回调 onDraft', async () => {
+    const user = userEvent.setup();
+    const drafts: string[] = [];
+    render(
+      <SpeechInput
+        remaining={30}
+        onSubmit={() => undefined}
+        onSkip={() => undefined}
+        onDraft={(text) => drafts.push(text)}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('你的发言'));
+    await user.paste('我怀疑 7 号。');
+
+    expect(drafts.at(-1)).toBe('我怀疑 7 号。');
+  });
+});
+
+describe('C-123 · 身份卡有技能与目标', () => {
+  it('渲染技能、目标与身份标签', async () => {
+    const { IdCard } = await import('@client/components/IdCard');
+    const ctx = {
+      self: { seat: 3, role: 'witch', alive: true, personaId: null },
+      phase: 'NIGHT_WITCH',
+      day: 1,
+      aliveSeats: [1, 2, 3],
+      deadSeats: [],
+      publicEvents: [],
+      privateEvents: [],
+      knowledge: {
+        teammates: [],
+        checks: [],
+        potions: { heal: 'available', poison: 'used' },
+        canShoot: false,
+        knownKillTarget: null,
+      },
+      legalTargets: [1, 2],
+      pending: 'witch',
+    } as never;
+
+    render(<IdCard ctx={ctx} />);
+
+    expect(screen.getByText(/女巫/)).toBeTruthy();
+    expect(screen.getByText(/一瓶解药/)).toBeTruthy();
+    expect(screen.getByText(/解药 1 次/)).toBeTruthy();
+    expect(screen.getByText(/决定用不用解药/)).toBeTruthy();
   });
 });

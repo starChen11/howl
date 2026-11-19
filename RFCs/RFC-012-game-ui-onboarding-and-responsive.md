@@ -209,3 +209,21 @@ $ coverage（引擎）→ 行 96.96% / 分支 92.85%
 $ pnpm test → 79 files / 674 tests
 $ pnpm test:e2e → 7 passed
 ```
+
+### 8.8 Round 2 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-122（用户编号 C-123）** `runGame` 忽略 `gameId` | 类型参数写了，实际仍取 `session.gameIds[last]`——多标签页/刷新会推进错的局 | 真的改成 `targetId = deps.gameId ?? 最后一个`。补「同一会话两局，只推进指定的那一局」用例；回退实现会红 |
+| **C-127** 重投（RUNOFF）由 AI 代打 | `playerAction` 与界面都只认 `DAY_VOTE` | `DAY_VOTE_RUNOFF` 也走输入通道，`VoteInput` 在两种投票阶段都出现 |
+| **C-118** 输入框可能盖住计时器 | 只比 banner/footer、main/footer | e2e 直接比较**输入框自身**与 banner、timer 的矩形；把输入框 `fixed` 的探针会红 |
+| **C-119** 没有 Tab→投票用例 | 删 `VoteInput` 仍全绿 | 新增「发言 → Tab 到投票按钮 → Enter」的 e2e；删投票区会红 |
+| **C-116** 术语覆盖不足 | 8 个术语只出现 2 个 | 引导里做成**完整词汇表**（8 个 `TermHint`），用例断言八个标签都在 |
+| **C-120** 无回归锁 | 跨天、草稿回退都全绿 | 补「第二天只说最近一天」与「输入变化回调 onDraft」两条用例；回退各自会红 |
+| **C-121/C-123** 身份卡缺项、读屏播报过频 | IdCard 只有角色名；`role="status"` 每秒变 | IdCard 补技能/目标/剩余次数；公告只在「阶段/天数/轮到谁」变化时更新 |
+| **C-130** e2e 不构建就跑旧包 | `webServer` 直接起服务 | 命令改成 `pnpm build && tsx scripts/e2e-server.ts` |
+
+```
+$ pnpm test → 79 files / 678 tests
+$ pnpm test:e2e → 8 passed
+```

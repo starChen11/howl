@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.118 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.119 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -48,7 +48,7 @@
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
-| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Changes requested |
+| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Implemented |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
@@ -860,6 +860,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.119 | RFC-012 Round 2 修复（Status → Implemented）：`runGame(gameId)` 真的生效、RUNOFF 走玩家、输入框几何直接断言、Tab→投票 e2e、八个术语词汇表、跨天/草稿回归锁、身份卡补项、e2e 先构建 |
 | 2026-11-19 | v2.118 | RFC-012 Round 2 复核（Status → `Changes requested`）：八项中「等 `.app` 再量宽度」「跨天过滤」「三段式布局」「草稿同步」的实现已修；但 `runGame` 仍忽略 `gameId`（A/B 探针 `requested=A → advanced=B`）、`DAY_VOTE_RUNOFF` 由 AI 代打、IdCard 缺技能/目标/剩余次数、`role="status"` 每秒播报、AC-10 输入框 e2e 假绿、AC-11 无 Tab→投票 e2e、跨天/草稿/IdCard 无回归锁、`pnpm test:e2e` 仍不构建。新增 C-127 ~ C-130 阻塞、C-131 非阻塞。门禁 79 files / 674 tests、7/7 e2e 全绿；探针从 `/tmp/howl-rfc012-r2-probes/backup/` 文件备份恢复、10 个文件 SHA-256 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 2 |
 | 2026-11-19 | v2.117 | RFC-012 Round 1 修复（Status → Implemented）：e2e 等挂载再量；三段式 grid 消除 42px 重叠；投票走输入通道 + VoteInput；真浏览器焦点/对比度用例；术语接进界面；跨天过滤；草稿同步；IdCard 与 `runGame(gameId)` |
 | 2026-11-19 | v2.116 | RFC-012 Round 1 评审（Status → `Changes requested`）：门禁 79 files / 671 tests、`pnpm test:e2e` 5/5 绿，但 AC-8/10/11 是假绿、AC-12/13 没有真浏览器用例；AC-2/3/6/7/10/11/14/15 不成立或未验证；新增 C-116 ~ C-123 阻塞（术语未接、跨天推导、手机 footer 遮挡、无投票/夜间输入、超时丢输入、身份卡/读屏、`runGame` 推进错局、e2e/jsdom 假绿）与 C-124 ~ C-126 非阻塞。探针从 `/tmp/howl-rfc012-probes/backup/` 文件备份恢复、六个文件 SHA-256 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 1 |

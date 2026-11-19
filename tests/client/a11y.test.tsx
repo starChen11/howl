@@ -146,12 +146,24 @@ describe('C-116/C-119 · 焦点与对比度也有真浏览器以外的锁', () =
   });
 });
 
-describe('C-120 · 术语真的被界面使用', () => {
-  it('App 的提示区出现术语触发器', async () => {
-    const { readFileSync } = await import('node:fs');
-    const source = readFileSync('src/client/App.tsx', 'utf8');
+describe('C-120 · 八个术语都被界面使用', () => {
+  it('引导里的词汇表覆盖 TERMS 的全部标签', async () => {
+    const { OnboardingHints } = await import('@client/components/OnboardingHints');
+    const { TERMS } = await import('@shared/terms');
+    const { cleanup } = await import('@testing-library/react');
+    cleanup();
 
-    expect(source).toContain('<TermHint');
-    expect(source).toMatch(/termKey="(knife|vote|fakeSeerClaim)"/);
+    const { getAllByRole } = render(<OnboardingHints role="seer" goal="查验" />);
+    const triggers = getAllByRole('button').filter((element) =>
+      Object.values(TERMS).some((term) => term.label === element.textContent),
+    );
+
+    // AC-2 点名的八个术语：刀 / 验 / 放逐 / 悍跳 / 自曝 / 屠边 / 屠城 / 垫飞
+    const required = ['刀', '验 / 查验', '放逐', '悍跳', '自曝', '屠边', '屠城', '垫飞'];
+    const labels = new Set(triggers.map((element) => element.textContent));
+    for (const label of required) {
+      expect(labels.has(label), `缺少术语 ${label}`).toBe(true);
+    }
+    expect(triggers.length).toBeGreaterThanOrEqual(required.length);
   });
 });
