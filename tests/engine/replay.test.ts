@@ -289,15 +289,16 @@ describe('AC-4 · replay 只靠事件流重建状态', () => {
     const [startedEvent] = eventsOfStart();
     if (startedEvent === undefined) throw new Error('缺少 GAME_STARTED');
 
-    const speech: GameEvent = {
+    // DEGRADED 从 RFC-010 起有折叠分支了，所以这里用一个**真的不存在**的类型。
+    const unknown = {
       gameId: startedEvent.gameId,
       seq: 2,
       ts: 0,
-      type: 'DEGRADED',
+      type: 'NOT_A_REAL_EVENT',
       visibleTo: 'public',
-      payload: { seat: 3 },
-    };
+      payload: {},
+    } as unknown as GameEvent;
 
-    expect(() => replay([startedEvent, speech])).toThrow(UnknownEventError);
+    expect(() => replay([startedEvent, unknown])).toThrow(UnknownEventError);
   });
 });

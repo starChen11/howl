@@ -66,3 +66,29 @@ describe('降级与错误', () => {
     expect(markUnstable(initialStreamState, 2).warned).toBe(false);
   });
 });
+
+describe('C-89 · 跨发言必须重置正文与首字时间', () => {
+  it('第二段发言的 text 不含第一段，firstDeltaAt 重新计', () => {
+    let state = streamReducer(initialStreamState, { type: 'thinking', id: 1, seat: 3 });
+    state = streamReducer(state, { type: 'delta', id: 1, seat: 3, text: '第一段' }, 200);
+    state = streamReducer(state, { type: 'done', id: 1, seat: 3, text: '第一段' });
+
+    state = streamReducer(state, { type: 'thinking', id: 2, seat: 4 });
+    state = streamReducer(state, { type: 'delta', id: 2, seat: 4, text: '第二' }, 900);
+
+    expect(state.text).toBe('第二');
+    expect(state.firstDeltaAt).toBe(900);
+  });
+
+  it('没有 thinking 直接来的 delta（缓存命中）也按新发言处理', () => {
+    let state = streamReducer(
+      initialStreamState,
+      { type: 'delta', id: 5, seat: 1, text: '甲' },
+      100,
+    );
+    state = streamReducer(state, { type: 'delta', id: 9, seat: 2, text: '乙' }, 300);
+
+    expect(state.text).toBe('乙');
+    expect(state.firstDeltaAt).toBe(300);
+  });
+});

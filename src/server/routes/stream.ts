@@ -65,10 +65,28 @@ export function registerStreamRoutes(app: FastifyInstance, options: StreamRoutes
         ? Number(lastEventIdRaw)
         : 0;
 
-    const messages = messagesFor(record, record.playerSeat, registry.stateOf(record))
-      .filter((message) => message.id > lastEventId)
-      // 补偿窗口：只发最近 200 条，超出要求客户端重新拉快照
-      .slice(-REPLAY_WINDOW);
+    const all = messagesFor(record, record.playerSeat, registry.stateOf(record));
+    const afterLast = all.filter((message) => message.id > lastEventId);
+
+    // 补偿窗口只覆盖最近 200 条。若断线位置早于窗口起点，**不能**静默地只发窗口内的
+    // 那一段——客户端会以为中间没发生过事（C-88）。改为显式要求重新拉快照。
+    const windowStart = Math.max(0, all.length - REPLAY_WINDOW);
+    const oldestInWindow = all[windowStart]?.id;
+    const hasGap =
+      afterLast.length > REPLAY_WINDOW &&
+      oldestInWindow !== undefined &&
+      lastEventId < oldestInWindow;
+
+    if (hasGap) {
+      const frame = encodeSseFrame({
+        type: 'error',
+        id: lastEventId,
+        message: 'SNAPSHOT_REQUIRED',
+      });
+      return reply.send(frame);
+    }
+
+    const messages = afterLast.slice(-REPLAY_WINDOW);
 
     reply
       .header('content-type', 'text/event-stream')

@@ -116,6 +116,7 @@ export interface GameState {
   /** 本夜暂存。undefined 表示「还没有任何夜间信息」。 */
   night?: NightContext;
   /** 药水位。undefined 视为「两瓶药都没用过」。 */
+  degradations?: SeatId[];
   potionsUsed?: PotionUsage;
   /**
    * 自本夜开始以来出局的席位，按**结算顺序**（这是内部顺序；公开的 `DAY_STARTED.diedLastNight` 会按座位重排，C-31）。

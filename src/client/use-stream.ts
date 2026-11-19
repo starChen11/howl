@@ -18,6 +18,8 @@ export interface StreamState {
   firstDeltaAt: number | null;
   /** 最近一条消息的 `seq`，重连时作为 `Last-Event-ID`。 */
   lastId: number | null;
+  /** 当前这段发言的 id（同一段发言的多个 delta 共享它）。 */
+  speechId: number | null;
   /** 是否已提示「模型不稳定」。 */
   warned: boolean;
   /** `phase` 变成 `speaking` 之前是否经历过 `thinking`。 */
@@ -30,6 +32,7 @@ export const initialStreamState: StreamState = {
   text: '',
   firstDeltaAt: null,
   lastId: null,
+  speechId: null,
   warned: false,
   sawThinking: false,
 };
@@ -40,34 +43,55 @@ export function streamReducer(state: StreamState, message: StreamMessage, now = 
   if (state.lastId !== null && message.id < state.lastId) return state;
   if (state.phase === 'done' && message.type === 'done') return state;
 
+  // 新一段发言：`text` / `firstDeltaAt` 必须重置，否则第二段会把第一段的正文接上去，
+  // per-speech 的首字延迟也会一直停在上一段（C-89）。
+  const startsNewSpeech = message.type === 'thinking';
+  const base = startsNewSpeech
+    ? { ...state, text: '', firstDeltaAt: null, sawThinking: false }
+    : state;
+
   switch (message.type) {
     case 'thinking':
       return {
-        ...state,
+        ...base,
         phase: 'thinking',
         seat: message.seat,
         lastId: message.id,
+        speechId: message.id,
         sawThinking: true,
       };
-    case 'delta':
+    case 'delta': {
+      // 没有 thinking 的流（例如缓存命中）：第一条 delta 也算新一段发言。
+      const sameSpeech = state.speechId === message.id;
       return {
         ...state,
         phase: 'speaking',
         seat: message.seat,
-        text: state.text + message.text,
-        firstDeltaAt: state.firstDeltaAt ?? now,
+        text: (sameSpeech ? state.text : '') + message.text,
+        firstDeltaAt: sameSpeech ? (state.firstDeltaAt ?? now) : now,
         lastId: message.id,
+        speechId: message.id,
       };
+    }
     case 'done':
       return {
         ...state,
         phase: 'done',
         seat: message.seat,
-        text: message.text,
+        text: state.speechId === message.id ? message.text : message.text,
         lastId: message.id,
+        speechId: message.id,
       };
     case 'degraded':
-      return { ...state, phase: 'degraded', seat: message.seat, lastId: message.id };
+      return {
+        ...state,
+        phase: 'degraded',
+        seat: message.seat,
+        text: '',
+        firstDeltaAt: null,
+        lastId: message.id,
+        speechId: message.id,
+      };
     case 'error':
       return { ...state, phase: 'error', lastId: message.id };
   }

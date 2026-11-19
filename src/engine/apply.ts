@@ -87,6 +87,10 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       return base;
     case 'WOLF_CHAT_POSTED':
       return { ...base, wolfChat: [...(base.wolfChat ?? []), event.payload] };
+    case 'DEGRADED':
+      // 降级是**发言质量**的标记，不改变局面：被替换的短句本身会以 SPEECH 事件写入，
+      // 引擎照常推进（RFC-010 §2.3 / NFR-10）。状态里只记次数，供复盘统计。
+      return { ...base, degradations: [...(base.degradations ?? []), event.payload.seat] };
     case 'SELF_EXPOSE':
       // 自曝本身不改状态：它的后果是「当日终止」，由相位转移表达。
       return base;
@@ -98,7 +102,7 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       return { ...base, phase: 'FINISHED' };
     default:
       // 类型合法但本 RFC 还没实现折叠，或者运行时出现了不在 GameEventMap 里的 type。
-      throw new UnknownEventError(event.type);
+      throw new UnknownEventError((event as { type: string }).type);
   }
 }
 

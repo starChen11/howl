@@ -112,3 +112,80 @@ describe('超时判定边界', () => {
     expect(degradeSentence(DEGRADE_SENTENCES.length)).toBe(DEGRADE_SENTENCES[0]);
   });
 });
+
+describe('C-87 · 一轮发言的编排（重试 → 降级 → 可推进的 SPEECH）', () => {
+  it('第一次失败、第二次成功：不降级，尝试 2 次', async () => {
+    const { runTurn } = await import('@server/llm/turn');
+    let calls = 0;
+
+    const result = await runTurn({
+      seat: 1 as never,
+      attempt: async () => {
+        calls += 1;
+        return calls === 1 ? { text: '', failed: true } : { text: '我过了', failed: false };
+      },
+      startedAt: 0,
+      now: () => 100,
+      limitMs: 5_000,
+      degradation: initialDegradation(),
+      sentenceIndex: 0,
+    });
+
+    expect(result.degraded).toBe(false);
+    expect(result.text).toBe('我过了');
+    expect(result.attempts).toBe(2);
+  });
+
+  it('两次都失败：降级，短句 ≤ 10 字，且产出 DEGRADED + SPEECH', async () => {
+    const { runTurn, degradeEvents } = await import('@server/llm/turn');
+
+    const result = await runTurn({
+      seat: 2 as never,
+      attempt: async () => ({ text: '', failed: true }),
+      startedAt: 0,
+      now: () => 100,
+      limitMs: 5_000,
+      degradation: initialDegradation(),
+      sentenceIndex: 1,
+    });
+
+    expect(result.degraded).toBe(true);
+    expect(result.text.length).toBeLessThanOrEqual(DEGRADE_SENTENCE_LIMIT);
+    expect(result.attempts).toBe(2);
+
+    const events = degradeEvents({
+      gameId: 'g',
+      ts: 1,
+      seat: 2 as never,
+      text: result.text,
+      seq: 1,
+    });
+    expect(events.map((event) => event.type)).toEqual(['DEGRADED', 'SPEECH']);
+  });
+
+  it('连续 3 次降级后第 4 次仍然尝试真实调用（不许全跳过）', async () => {
+    const { runTurn, canAttempt } = await import('@server/llm/turn');
+    let state = initialDegradation();
+    let calls = 0;
+
+    for (let index = 0; index < 4; index += 1) {
+      const result = await runTurn({
+        seat: 1 as never,
+        attempt: async () => {
+          calls += 1;
+          return { text: '', failed: true };
+        },
+        startedAt: 0,
+        now: () => 100,
+        limitMs: 5_000,
+        degradation: state,
+        sentenceIndex: index,
+      });
+      state = result.degradation;
+      expect(canAttempt(state)).toBe(true);
+    }
+
+    // 每次都重试一次 → 4 轮 × 2 次
+    expect(calls).toBe(8);
+  });
+});

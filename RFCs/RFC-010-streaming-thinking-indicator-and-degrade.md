@@ -161,3 +161,18 @@ $ pnpm test → Test Files 68 passed (68) · Tests 552 passed (552)
 | 真实 p95 | AC-1 / 3 的 p95 需要真实模型采样，本 RFC 只交付测量口径与可控流测试 | 手工验收 |
 | 界面渲染 | `useStream` 的 reducer 已就绪；逐字渲染与「模型不稳定」提示的 UI 在 RFC-012 | RFC-012 |
 | 真实 SSE 长连接 | 路由用 `reply.send` 一次写完（补偿窗口内的历史），持续推送在 RFC-012 接界面时补 | RFC-012 |
+
+### 8.7 Round 1 回应（Changes requested · High）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-85** `DEGRADED` 没有折叠分支 | 事件在 `GameEventMap` 里，但 `applyEvent` 遇它就抛 `UnknownEventError`；`project()` / `replay()` 全线不可用。AC-7/10/11 与 RFC-014 都依赖它 | `applyEvent` 增加 `DEGRADED` 分支：状态里累计 `degradations: SeatId[]`（供复盘统计），局面不变。原来那条「未实现折叠」的用例改用真正的未知类型 |
+| **C-86** SSE 只发 `done`，且客户端吞掉后续 | 路由把每个可见事件映射成 `done`，`thinking` / `delta` 从不产生；客户端在 `phase === 'done'` 后再也不收 `done` | 客户端去重改为「只在终结类消息上判重」；`thinking` 触发新一段发言并重置正文。服务端持续推送留到 RFC-012 接界面时补（§8.6），本轮用 `runTurn` 提供可推进的发言 |
+| **C-87** 降级没有生产调用者 | 纯函数没人调，短句不写成 `SPEECH` → 发言 cursor 不前进 | 新增 `src/server/llm/turn.ts`：`runTurn()` 做「重试 1 次 → 降级 → 产出可推进文本」，`degradeEvents()` 给出 `DEGRADED` + `SPEECH` 两条事件。补端到端用例：两次失败降级、一次失败一次成功不降级、连续 4 轮仍在真实调用 |
+| **C-88** 断线超窗静默丢事件 | `filter(...).slice(-200)` 在 300 条事件、`Last-Event-ID: 50` 时返回 101..300，51..100 无声丢失 | 计算窗口起点；断线位置早于起点时返回一条 `error` 帧（`SNAPSHOT_REQUIRED`），要求客户端重新拉快照。补用例锁定 `101` 这个边界 |
+| **C-89** reducer 跨发言不重置 | 第二段 `text` 变成「第一段第二」，`firstDeltaAt` 停在上一段 | `thinking` 与「不同的 id 的 delta」都视为新一段发言：重置 `text` / `firstDeltaAt` / `sawThinking`。补两条用例 |
+| **C-90** D-2 回归锁缺失 | 把过滤改成只看 `public` 仍全绿 | 见 §8.8（下一轮处理） |
+
+```
+$ pnpm test → 68 files / 559 tests
+```

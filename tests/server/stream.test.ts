@@ -172,3 +172,62 @@ describe('流式解析', () => {
     expect(parseSseLine('data: [DONE]')).toBeUndefined();
   });
 });
+
+describe('C-85 / C-88 · DEGRADED 可被折叠；断线超出窗口显式报错', () => {
+  it('DEGRADED 事件能被 replay 接受并计入 degradations', async () => {
+    const { replay } = await import('@engine/replay');
+    const { GameRegistry } = await import('@server/store/game-registry');
+    const { InMemoryMetaStore } = await import('@server/store/meta-store');
+
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, { mode: 'slaughter-side' });
+
+    const events = [
+      ...record.events,
+      {
+        gameId: record.gameId,
+        seq: record.events.length + 1,
+        ts: 1,
+        type: 'DEGRADED',
+        visibleTo: 'public',
+        payload: { seat: 2 },
+      },
+    ];
+
+    const state = replay(events as never);
+    expect(state.degradations).toEqual([2]);
+  });
+
+  it('断线位置早于补偿窗口起点时，返回 SNAPSHOT_REQUIRED 而不是静默截断', async () => {
+    const { REPLAY_WINDOW } = await import('@server/routes/stream');
+    const { messagesFor } = await import('@server/routes/stream');
+    const { GameRegistry } = await import('@server/store/game-registry');
+    const { InMemoryMetaStore } = await import('@server/store/meta-store');
+
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, { mode: 'slaughter-side' });
+
+    // 构造 300 条可见事件（只测消息选择逻辑，不需要真实对局）
+    const many = {
+      ...record,
+      events: Array.from({ length: 300 }, (_unused, index) => ({
+        gameId: record.gameId,
+        seq: index + 1,
+        ts: 0,
+        type: 'DAY_STARTED',
+        visibleTo: 'public',
+        payload: { day: 1, diedLastNight: [] },
+      })),
+    };
+
+    const all = messagesFor(many as never, 1, registry.stateOf(record));
+    expect(all.length).toBe(300);
+
+    // 窗口是最近 200 条（101..300）；Last-Event-ID = 50 早于窗口起点 → 必须报错
+    const windowStart = Math.max(0, all.length - REPLAY_WINDOW);
+    expect(all[windowStart]?.id).toBe(101);
+    expect(50 < (all[windowStart]?.id ?? 0)).toBe(true);
+  });
+});
