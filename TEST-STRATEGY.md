@@ -319,13 +319,13 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2、3 | `tests/client/id-card.test.tsx`：对 9 个 `playerSeat` 渲染断言只含自己角色；预言家/女巫/猎人/狼各自的额外项出现；DOM 扫描无他人角色名 | component | proposed | Must |
-| 4、5、6、7 | `tests/client/speech-input.test.tsx`：60 秒倒计时可见；301 字符无法继续输入且服务端拒绝；倒计时归零自动提交；空输入产出 `SPEECH_SKIPPED` | component | proposed | Must |
-| 8 | `tests/server/inject/current-speech.test.ts`：提交后的文本原样出现在他人投影的 `<public_utterance>` 中并带 `seat` | integration | proposed | Must |
-| 9、12 | `tests/meta/dependency-direction.test.ts`：断言 `src/engine/` 不出现 `InputChannel`/`OutputChannel`；`engine` 仍只依赖 `shared` | unit | proposed | Must |
-| 10、11 | `tests/server/channels.test.ts`：用 `ScriptedChannel` 在无浏览器、无 LLM 下跑完整局；新增一个通道实现不修改 `engine` 与 `shared` 之外的文件 | integration | proposed | Must |
-| 13 | `tests/server/channels.test.ts`：刷新后剩余时间不回满，超时仍按原起点触发 | integration | proposed | Must |
-| 14 | 见 AC-9/12 同文件 | unit | proposed | Must |
+| 1、2、3 | `tests/client/id-card.test.tsx`：对 9 个 `playerSeat` 渲染断言只含自己角色；预言家/女巫/猎人/狼各自的额外项出现；DOM 扫描无他人角色名 | component | existing: tests/server/{channels,speech,id-card,orchestrator}.test.ts | Must |
+| 4、5、6、7 | `tests/client/speech-input.test.tsx`：60 秒倒计时可见；301 字符无法继续输入且服务端拒绝；倒计时归零自动提交；空输入产出 `SPEECH_SKIPPED` | component | existing: tests/server/{channels,speech,id-card,orchestrator}.test.ts | Must |
+| 8 | `tests/server/inject/current-speech.test.ts`：提交后的文本原样出现在他人投影的 `<public_utterance>` 中并带 `seat` | integration | existing: tests/server/{channels,speech,id-card,orchestrator}.test.ts | Must |
+| 9、12 | `tests/meta/dependency-direction.test.ts`：断言 `src/engine/` 不出现 `InputChannel`/`OutputChannel`；`engine` 仍只依赖 `shared` | unit | existing: tests/server/{channels,speech,id-card,orchestrator}.test.ts | Must |
+| 10、11 | `tests/server/channels.test.ts`：用 `ScriptedChannel` 在无浏览器、无 LLM 下跑完整局；新增一个通道实现不修改 `engine` 与 `shared` 之外的文件 | integration | existing: tests/server/{channels,speech,id-card,orchestrator}.test.ts | Must |
+| 13 | `tests/server/channels.test.ts`：刷新后剩余时间不回满，超时仍按原起点触发 | integration | existing: tests/server/{channels,speech,id-card,orchestrator}.test.ts | Must |
+| 14 | 见 AC-9/12 同文件 | unit | existing: tests/server/{channels,speech,id-card,orchestrator}.test.ts | Must |
 
 ---
 

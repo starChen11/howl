@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.112 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.114 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -47,7 +47,7 @@
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
-| [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Implemented |
+| [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
@@ -803,10 +803,21 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 9 后的状态**：C-111 关闭；**C-113 的行为修复成立，但 B-R8-1 的端到端回归锁仍 Open（阻塞，测试）**——M-R9-2 全量 75/642 绿、M-R9-3 复现 `REJECTED seq24 PHASE_MISMATCH`。RFC-011 的 Status = **`Changes requested`**。
 
+### 8.40 RFC-011 Round 10 复核（2026-11-19）
+
+> 由 `/review-rfc 011` 登记；完整证据见 [`reviews/REVIEW-RFC-011.md`](reviews/REVIEW-RFC-011.md) Round 10。评审时 HEAD `bafcd1e`，工作树 clean；门禁 **75 files / 643 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0；`pnpm test:e2e` 跳过（`tests/e2e/` 为空）；`pnpm selfplay` exit 1 是 RFC-015 占位，按 RFC-011 范围记 N/A。本轮按用户指示只复核 **B-R9-1（C-113）**；已关闭项（C-99 ~ C-112、C-114、C-115）不重查。探针从 `/tmp/howl-rfc011-r10-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），四个源码 / 测试文件 SHA-256 与探针前一致；没有 `git commit`。
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-113** | **B-R9-1 的端到端回归锁已落地**：`tests/server/channels.test.ts:637-805` 用真实 `buildApp` + 真实 `POST /actions` + `runGame`；按种子搜索「最后发言者 == 投票第一个行动者」的拓扑，选中 seed 13（`last=1`、`startSeat=3`、`alive=[1,3..9]`、`playerSeat=1`、提交前 `DAY_SPEECH`）。路由接受 `SPEECH` 后兑现挂起的输入；断言事件流无 `REJECTED`（`:800`）且该席位只有一条 `SPEECH`（`:801-804`）。**M-R10-1** 把 `src/server/orchestrator.ts:162` 换回旧表达式 → 定向用例 **1 failed / 19 skipped**（`:800`），诊断 `REJECTED seq24 PHASE_MISMATCH`（`self:1`）、`SPEECH seq22`、`PHASE_CHANGED seq23`；**M-R10-2** 删 `isStillTheirTurn` 的相位比较 → 同样 1 failed；**M-R10-3** 删路由的 `channels.submit` → **5010ms 超时**；定向用例连续 20 次全绿。 | **Closed（Round 10）。** 核心回归锁有牙；**M-R10-4 显示只留相位的调用点回退全量 75/643 仍绿**，第一发言者 e2e 缺口仍未补（P-R9-A，非阻塞）。其余非阻塞建议：补最后一位 `SPEECH_SKIP` 的端到端变体、把 `setTimeout(30)` 换成确定性同步点、修正实际 `startSeat=3` 的说明、修 helper 的 `HUNTER_SHOOT` actor 与 `REJECTED` 检查。 | **Closed（Round 10）** · `tests/server/channels.test.ts:637-805`、`src/server/orchestrator.ts:103-110,161-163`、`src/server/routes/games.ts:236-242`；`reviews/REVIEW-RFC-011.md` Round 10 · M-R10-1 / M-R10-2 / M-R10-3 / M-R10-4 |
+
+> **Round 10 后的状态**：B-R9-1 / C-113 关闭；RFC-011 的 Status = **`Reviewed`**。其余已关闭项不重查；非阻塞文档项沿用 C-104 / C-114。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.114 | RFC-011 Round 10 复核（Status → `Reviewed`）：B-R9-1 关闭——端到端用例（seed 13，最后一位 1 号 == 投票第一个行动者）真实 `buildApp` + `POST /actions` + `runGame`；M-R10-1 回退调用点 → 1 failed（`:800`，诊断 `REJECTED seq24 PHASE_MISMATCH`）；M-R10-2 删相位比较 → 1 failed；M-R10-3 删路由通知 → 5010ms 超时；定向用例 20/20 绿；门禁 75 files / 643 tests 全绿；探针从 `/tmp/howl-rfc011-r10-probes/backup/` 文件备份恢复、四个文件 SHA-256 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-011.md`](reviews/REVIEW-RFC-011.md) Round 10 |
 | 2026-11-19 | v2.113 | RFC-011 Round 9 修复（Status → Implemented）：补端到端并发用例（最后一位发言 == 第一个投票），回归锁有效 |
 | 2026-11-19 | v2.112 | RFC-011 Round 9 复核（Status → `Changes requested`）：C-111 关闭（`DAY_STARTED` 起点与递减有真实路由锁；M-R9-4 2 failed / 12 passed、M-R9-5 递减用例 1 failed）；B-R8-1 行为修复成立（P-R9-A/B/C 无 `REJECTED`；M-R9-1 删相位比较 → 1 failed），但 Round 8 要求的端到端回归锁仍缺——M-R9-2 把调用点换回旧表达式后全量 75/642 绿，M-R9-3 复现 `REJECTED seq24 PHASE_MISMATCH`。门禁 75 files / 642 tests 全绿；探针从 `/tmp/howl-rfc011-r9-probes/backup/` 文件备份恢复、四个文件 SHA-256 一致、临时探针已删除、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-011.md`](reviews/REVIEW-RFC-011.md) Round 9 |
 | 2026-11-19 | v2.111 | RFC-011 Round 8 修复（Status → Implemented）：`isStillTheirTurn` 含相位比较；timer 的 `DAY_STARTED` 起点与递减有锁 |

@@ -1457,3 +1457,144 @@ B-R8-2 按声明修好并锁住：两条 `DAY_STARTED` 用例走真实路由，�
 **Non-blocking**：`toBe(60)` 的精确断言有慢机偶发风险；`orchestrator.ts:159-160` 的注释没有提相位条件；「席位已变」纯函数用例没有覆盖 `?? nextActor` fallback；B-R8-2 的夹具把 `DAY_STARTED` 塞进不可 replay 的夜间事件流；RFC §8.14 未记录「集成用例未补」。
 
 **状态**：RFC-011 → `Changes requested`。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r9-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），四个文件 SHA-256 与探针前一致；临时探针测试已删除；探针恢复后全量 **75 files / 642 tests** 绿、`git status --porcelain` 为空。
+
+## Round 10 — 2026-11-19
+
+> 被评审提交：`bafcd1e test(rfc-011): 端到端并发用例锁住最后一位发言者（Round 9）`
+> 评审方式：全新上下文的 subagent，只读仓库文件后实跑；本会话没有写过 RFC-011 的实现代码。
+> 结论：**Reviewed**
+> 范围：按用户指示只复核 **B-R9-1（C-113 / AC-9 / TEST-1）**。已关闭项（C-99 ~ C-112、C-114、C-115）与前判 AC-1 / 2 / 5 / 6 / 7 / 8 / 10 / 11 / 12 / 14 不重查；AC-3 / AC-4 的界面顺延仍是用户批准的 D-5；AC-13 已在 Round 9 关闭，本轮不重查。
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · 评审开始时 HEAD `bafcd1e`，工作树 clean。
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+✓ 14 modules transformed (client)
+✓ 46 modules transformed (server)
+dist/server/index.js  97.94 kB │ gzip: 32.37 kB
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  75 passed (75)
+      Tests  643 passed (643)
+   Duration  27.58s
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+
+$ pnpm selfplay
+pnpm selfplay 未实现（RFC-015）
+SELFPLAY_EXIT=1
+```
+
+`pnpm selfplay` 的 exit 1 是 RFC-015 的占位，按 RFC-011 的范围记 **N/A**，不是本轮回归。
+
+### 1. 产品类型与跳过项
+
+`PRD.md` 的 **Product Type** 是 **game（主）+ web app（交付形态）**。本轮采用 game 的数据完整性检查与 web app 的真实 HTTP 路由检查。UI、无障碍与响应式检查随 AC-3 / AC-4 顺延到 RFC-012，**显式跳过**；`tests/e2e/` 为空，e2e 也显式跳过。本轮没有冒充已检查。
+
+### 2. B-R9-1 逐条复核
+
+| 用户声明 | 判定 | 一手证据 |
+|---|---|---|
+| **B-R9-1**：新增端到端用例，按种子搜索「最后一位发言者 == 投票第一个行动者」的拓扑（`startSeat = 2` 时最后一位正好是 1 号） | **PASS** | `tests/server/channels.test.ts:637-805`。真实 `buildApp`（`:763-766`）+ 真实 `POST /api/games/:id/actions`（`:797-805`）+ 真实 `runGame`（`:785-793`）；被选中的种子 **13** 的真实拓扑是 `last = 1`、`alive = [1,3,4,5,6,7,8,9]`、`startSeat = 3`、`playerSeat = 1`，提交前相位 `DAY_SPEECH`。`startSeat = 3` 是因为 2 号夜里已死，不是 `startSeat = 2`；这不影响拓扑成立：投票顺序按存活席位升序，第一个行动者仍是 1 号。 |
+| 用真实路由提交最后一句、同时兑现编排层挂起的输入 | **PASS** | 路由接受 `SPEECH` 后调用 `channels.submit(record.gameId, text)`（`src/server/routes/games.ts:236-239`），兑现 `runGame` 挂起的 `input.read`。M-R10-3 删掉这一行后，定向用例 **5010ms 超时**——用例不是靠通道超时或别的路径结束的。 |
+| 断言事件流里**没有 `REJECTED`**、该席位只有一条 `SPEECH` | **PASS** | `:800` 断言全部事件无 `REJECTED`；`:801-804` 过滤 `SPEECH` 且 `payload.seat === last`，断言长度 1。 |
+| 把守卫换回旧表达式会红（已实跑） | **PASS** | M-R10-1 把 `src/server/orchestrator.ts:162` 换回 `(seatToSpeak(latestState) ?? nextActor(latestState)) === seat`，定向用例 **1 failed / 19 skipped**，失败在 `tests/server/channels.test.ts:800`（`expected true to be false`）。诊断输出：`REJECTED seq24 PHASE_MISMATCH`（`visibleTo: self:1`）、`SPEECH seq22 seat:1 '最后一句'`、`PHASE_CHANGED seq23 DAY_SPEECH→DAY_VOTE`，与 Round 9 的 `M-R9-3` 完全一致。全量 `pnpm test` 的 3 files / 4 tests 失败中，真正的行为失败只有这条新用例；`tests/meta/commands.test.ts` / `tests/meta/coverage.test.ts` 的另外 3 条是嵌套跑全量时的下游红。 |
+
+**正向重复运行**：定向用例单独跑 **1 passed**（约 152ms）；连续 20 次重复运行 **20/20 passed**，没有出现种子搜索漂移或时序偶发失败。
+
+**为什么这个锁是有效的**：老表达式在重读后看到 `DAY_VOTE`，`seatToSpeak` 为 `undefined`，`nextActor` 返回投票第一个行动者 1 号，于是误判「还在等你」，把同一句话再提交一次；新用例的种子正好让「最后发言者」与「投票第一个行动者」重合，所以旧表达式必然追加 `REJECTED`。`isStillTheirTurn` 的相位比则是让这条路径提前返回 `false` 的原因；M-R10-2 删掉相位比较（`orchestrator.ts:108`）后，这条端到端用例同样 **1 failed**，说明它锁的不只是调用点，也锁住了修复的核心条件。
+
+### 3. 变异探针与临时探针
+
+所有探针从 `/tmp/howl-rfc011-r10-probes/backup/` 的**文件备份**恢复，**未使用 `git checkout` / `git restore`**。探针前的源码 / 测试 SHA-256：
+
+```text
+b8fa54c34cd65961d1dd5288b3931712a2e3425321960d8b36ff43748c962c7a  src/server/orchestrator.ts
+d5711265d1f7bd5f35a12878ea3bb6482aa9189e64d441a0c5853c99351ef0a2  src/server/routes/games.ts
+4eebadb92a675bd7cab0040fdc077a799872c60ccb60589ed7380cf54376f853  src/server/channels/http.ts
+2542b054f59b27598c46f874fcfda1e886c8d814c4026131816ccea56f4fd0ec  tests/server/channels.test.ts
+```
+
+每次探针后都 `cp` 回备份并用 `shasum -a 256 -c` 验证；最后一次四个文件全部 `OK`。没有临时探针测试文件残留，`git status --porcelain` 为空，没有 `git commit`。
+
+| 探针 | 注入 / 场景 | 定向测试 | 结果 | 证明 |
+|---|---|---|---|---|
+| **M-R10-1** | 把 `src/server/orchestrator.ts:162` 的调用换回旧表达式 `(seatToSpeak(latestState) ?? nextActor(latestState)) === seat`（`isStillTheirTurn` 保留） | `channels.test.ts -t 'B-R9-1'` | **1 failed / 19 skipped**（`:800` `expected true to be false`）；诊断见上（`REJECTED seq24`） | 新用例能抓住 Round 8 的原缺陷；不再出现「全量 642 绿」的静默回归 |
+| **M-R10-2** | 删掉 `isStillTheirTurn` 的相位比较 `if (latest.phase !== previousPhase) return false;`，保留席位判断 | 同上 | **1 failed / 19 skipped**（同一断言） | 用例锁住了「相位必须没变」这一核心条件，而不只是调用点写法 |
+| **M-R10-3** | 删掉路由接受 `SPEECH` 后的 `channels.submit(record.gameId, text)`（`routes/games.ts:238`） | 同上 | **1 failed**，`Test timed out in 5000ms` | 用例确实依赖真实路由兑现挂起输入，不是靠 60 秒超时或别的路径 |
+| **M-R10-4** | 把 `:162` 改成 `latestState.phase === state.phase`（只留相位、去掉席位判断；`isStillTheirTurn` 本身不动） | 全量 `pnpm test` + 定向 B-R9-1 | 全量 **75 files / 643 tests 全绿**；定向 **1 passed** | 新用例只锁「相位变化」这一半；「同相位、席位已变」的调用点回退仍静默。这是 P-R9-A（第一位发言者）的残余覆盖缺口，非阻塞（见 §5.5 / §6） |
+| **P-R10-A** | 干净代码，定向用例连续运行 20 次 | 同上 | **20/20 passed** | 种子搜索与时序在 InMemory 存储下稳定；不是一次偶发绿 |
+
+### 4. 验收标准（本轮范围）
+
+| AC | 判定 | 说明 |
+|---|---|---|
+| 9 | **PASS** | 端到端用例覆盖「路由接受后兑现挂起输入」的正向路径，并同时锁住「重读后不重复提交」；M-R10-1 / M-R10-2 / M-R10-3 三个退化探针都会红。 |
+| 3 / 4 | **DEFERRED（用户批准 D-5）** | 身份卡与输入框界面部件 / DOM 扫描归 RFC-012，不重开。 |
+| 13 | **不重查（Round 9 已关闭）** | 按用户指示不重查已关闭项。 |
+| 其余 AC | **不重查（沿用前判）** | AC-1 / 2 / 5 / 6 / 7 / 8 / 10 / 11 / 12 / 14 本轮无相关改动。 |
+
+### 5. 五个维度
+
+#### 5.1 RFC ADHERENCE — **PASS**
+
+B-R9-1 的端到端回归锁已落地，且经三个退化探针验证有牙。实现本身没有改动，仍满足 AC-9 的「引擎接受后通知、拒绝时不通知」；新用例只是把「接受后通知 + 重读后跳过」的组合行为锁在真实 `buildApp` + `runGame` 路径上。Round 9 的 B-R9-1 可以关闭。
+
+#### 5.2 RULES COMPLIANCE — **PASS**
+
+- **TEST-1**：B-R9-1 现在有真实端到端自动化用例；M-R10-1 证明换回旧实现会红，不再是「测试存在但不锁行为」。
+- **DOC-1（非阻塞）**：RFC §8.15 与测试注释写「`startSeat = 2` 时最后一位正好是 1 号」，实际选中的 seed 13 是 `startSeat = 3`（2 号已死），最后一位仍是 1 号。描述作为「一般情况」成立，但读者可能误以为夹具就是 `startSeat = 2`；建议在 §8.15 或注释里直接写「实际 seed 13：2 号已死、startSeat=3，最后一位 1 号」。
+- **SEC-4 / SEC-5 / ARCH-9**：新用例只读事件流并走真实路由，没有引入新的投影泄漏、输入校验退化或客户端状态机。
+- **UI-4**：本轮没有改 timer / 发言规则，沿用 Round 9 的判定。
+
+#### 5.3 SECURITY — **PASS**
+
+新代码是测试用例，不增加生产攻击面。用例走真实的会话 cookie / 席位绑定路由（`headers: { cookie: ... }`，`seat: last`），没有把完整状态直接序列化给客户端；断言的事件流来自 `registry.getGame`（服务端），不是投影，因此不会误把「测试可见的服务端事件」当成玩家视图。没有新增日志或敏感信息输出。
+
+#### 5.4 PERFORMANCE — **N/A**
+
+没有新增数据库 / 网络热路径。用例的种子搜索最多 40 局、每局在 InMemory 存储上推进到白天；定向用例约 152ms，连续 20 次也没有明显退化。生产代码零改动。
+
+#### 5.5 MAINTAINABILITY — **PASS（有非阻塞建议）**
+
+- 用例的 `setTimeout(30)` 是一个时序启发式，不是同步信号。当前 InMemory 存储下 `runGame` 的等待在微任务里完成，20/20 稳定；但如果未来换持久存储或事件流变大，建议改成确定性的「通道已挂起」信号（例如让测试可观察 pending，或由通道提供测试钩子），而不是睡 30ms。
+- `driveToLastSpeaker` 的夜间循环把 `HUNTER_SHOOT` 的 actor 选成了 witch（`tests/server/channels.test.ts:684-689`）；这会让「夜里被刀的猎人」种子被跳过，而不是真的开枪。当前 seed 13 不经过这个分支，所以不影响本用例；但这是测试 helper 的潜在缺陷。
+- `registry.submit` 对引擎 `REJECTED` 仍返回 `ok: true`；helper 只检查 `if (!r.ok) break`，如果未来某个种子在发言循环里被拒绝，可能原地空转（同相位、同 `spoken`）。当前算出的发言顺序与引擎一致，不会触发；建议在 helper 里同时检查 `r.events.some(e => e.type === 'REJECTED')`。
+- Round 9 建议的「第一位发言者」与「最后一位 `SPEECH_SKIP`」两个端到端变体没有提交。M-R10-4 实测：把调用点改成只比较相位（`latestState.phase === state.phase`）后，全量 **75 files / 643 tests 仍全绿**，定向 B-R9-1 也绿——第一发言者的「同相位、席位已变」调用点回退没有 e2e 锁。核心守卫是共享的，纯函数用例也覆盖了「席位已变」，所以这不阻塞本轮对「相位回归」的关闭；但补上第一发言者变体会让回归锁更完整。
+
+### 6. 非阻塞建议
+
+1. **补两个端到端变体（P-R9-A / P-R9-C）**：第一位发言者（`startSeat` 为玩家席位的常见路径）和最后一位 `SPEECH_SKIP`（路由 `channels.submit('')` → 编排层 `skip`）。不是本轮阻塞项，因为 M-R10-1 / M-R10-2 已证明核心守卫有牙；但 M-R10-4 是「只留相位的调用点回退仍全绿」的具体证据，第一发言者变体能补上这一半。
+2. **把 `setTimeout(30)` 换成确定性同步点**：避免慢机 / 持久存储下的偶发；当前 20/20 通过。
+3. **文档精确化**：RFC §8.15 / `channels.test.ts:739-741` 的 `startSeat = 2` 是示例，实际 seed 13 是 `startSeat = 3`（2 号已死）；补一句实际夹具，读者不会误判。
+4. **修 helper 的 `HUNTER_SHOOT` actor 与 `REJECTED` 检查**：防止未来种子在 helper 里空转或静默跳过。
+5. **TEST-STRATEGY 的 RFC-011 小节**：仍全部 `proposed`，新用例没有登记（C-104，非阻塞；本轮按指示不重查）。
+6. **README 状态计数**：仍是旧的「7 Reviewed / 8 Not started」（C-114 非阻塞，本轮未改）。
+
+### 7. 结论
+
+**Overall Risk Level: Low。**
+
+B-R9-1 的核心（相位回归）已按用户声明闭环：仓库里现在有真实 `buildApp` + `POST /actions` + `runGame` 的端到端用例，种子 13 的「最后一位发言者 = 1 号 = 投票第一个行动者」拓扑成立；换回旧守卫会在 `:800` 打出 `REJECTED seq24 PHASE_MISMATCH`，删相位比较同样会红，删路由通知会超时。20 次重复运行全绿，门禁 75 files / 643 tests 全绿。**M-R10-4 另有一项残余覆盖缺口**：把调用点改成只比较相位后全量仍绿，说明第一发言者的「同相位、席位已变」调用点回退没有 e2e 锁（P-R9-A）；这是测试补强项，不作为本轮阻塞。没有阻塞项。
+
+**Blocking Issues**：无。B-R9-1 / C-113 关闭。
+
+**状态**：RFC-011 → `Reviewed`。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r10-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），四个文件 SHA-256 与探针前一致；没有临时探针测试残留；探针恢复后（写入本评审前）全量 **75 files / 643 tests** 绿、`git status --porcelain` 为空；随后只修改本文件与 `RFCS.md`。
+
+**Non-blocking**：`startSeat = 2` 的说明与实际 seed 13（`startSeat = 3`）不一致；`setTimeout(30)` 的时序启发式；helper 的 `HUNTER_SHOOT` actor 与 `REJECTED` 检查；缺少第一位发言者 / `SPEECH_SKIP` 的端到端变体（M-R10-4：只留相位的调用点回退全量仍绿）；`TEST-STRATEGY.md` 的 RFC-011 小节仍为 `proposed`；README 状态计数仍是旧值（C-114）。
