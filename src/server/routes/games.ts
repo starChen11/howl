@@ -15,6 +15,7 @@ import { project } from '../project';
 import { replay } from '@engine/replay';
 import { buildTruth, canSeeTruth } from '../view/truth';
 import { TruthViewSchema } from '@shared/truth';
+import { ReplaySnapshotSchema } from '@shared/replay-schema';
 import { nextActor, pendingForPhase } from '../orchestrator';
 import { isWithinLimit, remainingSeconds } from '../speech';
 import { resolveSession } from '../session';
@@ -139,6 +140,9 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       }
       if (record.status !== 'finished') {
         return reply.code(404).send({ error: 'NOT_FINISHED', message: '对局还没有结束' });
+      }
+      if (record.events.length === 0) {
+        return reply.code(410).send({ error: 'GAME_EXPIRED', message: '对局已释放' });
       }
 
       const seat = Number(request.params.seat);
@@ -344,6 +348,6 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
     }
 
     // 快照在终局时生成并落盘；即便事件流被释放，它仍然在（AC-13）。
-    return reply.send(record.snapshot);
+    return reply.send(ReplaySnapshotSchema.parse(record.snapshot));
   });
 }

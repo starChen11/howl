@@ -183,3 +183,20 @@ $ coverage（引擎）→ 行 96.96% / 分支 92.85%
 | 导出/分享 | 不做（F51 是 Won't） | — |
 | 票型可视化 | Q-014-3 的假设是不需要，列表足够 | 后续 |
 | 视角面板只显示事件类型 | 没有把每条事件渲染成完整句子 | 后续打磨 |
+
+### 8.7 Round 1 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-156** 生产路径从不产出 `AI_THOUGHT` | `toThought` 只有定义没有调用，真实对局里 `thoughts = []`——复盘最核心的一项其实是空的 | `AgentDecision` 增加 `thought`；LLM Agent 从结构化 `decision.reason` 带出；`runGame` 提交成功后落一条 `AI_THOUGHT`（含 `seat`）。补用例：带 `thought` 的决策 → 事件流与快照都有；回退会红 |
+| **C-157** `usage` 只记成功调用 | 失败/重试没有计入，与 `CallMeta` 聚合不一致 | 改为通过 `usageMetaLog`（实现 `CallMetaLog` 的 `record`）记录**每一次**调用；补「失败 + 成功 = 2 次」用例，只记成功会红 |
+| **C-158** 视角端点没有路由级测试 | 用例建了 app 却 `void app`，路由改成忽略 `seq` 仍绿 | 补真实 `app.inject` 用例：3 席 × 3 个 `seq`，响应与 `project(replay(截断事件), …, seat, null)` 深度相等；忽略 `seq` 会红 |
+| **C-159** AC-13 用户路径断裂 | 释放局 `GET /games/:id` 返回 410 后 App 崩溃，到不了复盘页 | `ApiClient.game` 对非 2xx 抛错；`App.refresh` 捕获后退到 `client.replay()`，无 view 但有快照时直接渲染复盘页；视角端点在已释放局返回 **410** 而不是 500 |
+| **C-160** API-1 服务端不校验 | 只 `reply.send(snapshot)` | 改用 `ReplaySnapshotSchema.parse` |
+| **C-161** 复盘页不显示用量 | F31 AC-7 要求展示 | 复盘页显示调用次数与三类 token |
+| AC-2 / AC-5 / AC-6 断言同义反复 | 断言的是自己构造的对象 | 由真实对局快照 + 路由级用例覆盖 |
+
+```
+$ pnpm test → 87 files / 743 tests
+$ pnpm test:e2e → 10 passed
+```

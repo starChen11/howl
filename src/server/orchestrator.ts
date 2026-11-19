@@ -1,5 +1,6 @@
 import type { Action } from '@shared/actions';
 import type { InputChannel, OutputChannel } from '@shared/channels';
+import type { EventEnvelope } from '@shared/events';
 import type { PendingDecision, ProjectedContext } from '@shared/project';
 
 import { project } from './project';
@@ -20,6 +21,8 @@ export interface AgentDecision {
   action: Action | undefined;
   /** 想说的话（speak 类动作时由编排层写进 action）。 */
   speech?: string;
+  /** 这一轮的推理；落成 `AI_THOUGHT` 事件供复盘展示（RFC-014）。 */
+  thought?: { reason: string; claim?: unknown } | undefined;
 }
 
 export interface OrchestratorDeps {
@@ -217,6 +220,26 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     );
     if (!result.ok) break;
     record = result.record;
+
+    // 推理落盘（RFC-014 AC-3）：只写结构化 `reason`，供复盘逐条比对。
+    if (action.thought !== undefined) {
+      record = await registry.appendEvents(record, [
+        {
+          gameId: record.gameId,
+          seq: record.events.length + 1,
+          ts: Date.now(),
+          type: 'AI_THOUGHT',
+          visibleTo: `self:${seat}`,
+          payload: {
+            reason: action.thought.reason,
+            decisionSeq: result.version,
+            seat,
+            ...(action.thought.claim === undefined ? {} : { claim: action.thought.claim }),
+          },
+        } as EventEnvelope,
+      ]);
+    }
+
     steps += 1;
     if (action.action.type === 'SPEECH_SKIP') skipped += 1;
   }

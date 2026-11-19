@@ -3,7 +3,7 @@ import type { PendingDecision, ProjectedContext } from '@shared/project';
 
 import { decide } from '../llm/client';
 import { toAction } from '../llm/to-action';
-import { recordUsage } from '../llm/usage';
+import { usageMetaLog } from '../llm/usage';
 
 /**
  * AI 的行动来源（RFC-012 的整局入口）。
@@ -15,6 +15,8 @@ import { recordUsage } from '../llm/usage';
 export interface AgentDecision {
   action: Action | undefined;
   speech?: string;
+  /** 这一轮的推理（只来自结构化 `reason`，AI-5）。 */
+  thought?: { reason: string; claim?: unknown } | undefined;
 }
 
 export type Decider = (input: {
@@ -78,12 +80,11 @@ export function createLlmAgent(input: {
     const personaId = ctx.self.personaId ?? null;
 
     const outcome = await decide(
-      { config },
+      { config, metaLog: usageMetaLog as never },
       { gameId: input.gameId, seq: input.seq(), ctx, mode: input.mode, personaId },
     );
 
     if ('duplicate' in outcome) return { action: undefined };
-    recordUsage(input.gameId, outcome.meta);
 
     const translated = toAction(
       outcome.decision,
@@ -96,8 +97,15 @@ export function createLlmAgent(input: {
       Date.now(),
     );
 
-    if ('reject' in translated) return { action: undefined, speech: outcome.decision.reason };
-    return { action: translated.action };
+    const thought: { reason: string; claim?: unknown } = {
+      reason: outcome.decision.reason,
+    };
+    if (outcome.decision.claim !== undefined) thought.claim = outcome.decision.claim;
+
+    if ('reject' in translated) {
+      return { action: undefined, speech: outcome.decision.reason, thought };
+    }
+    return { action: translated.action, thought };
   };
 }
 

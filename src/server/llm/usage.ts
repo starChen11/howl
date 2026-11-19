@@ -42,3 +42,18 @@ export function usageOf(gameId: string): UsageTotals {
 export function resetUsage(): void {
   totals.clear();
 }
+
+/**
+ * 供 `decide()` 用的元数据 sink。
+ *
+ * 它记录**每一次调用**（包括失败与重试），这样复盘的「调用次数」与真实调用一致——
+ * 只在成功时记账会少算失败的那次重试。
+ */
+export const usageMetaLog = {
+  record(meta: CallMeta): void {
+    recordUsage(meta.gameId, meta);
+  },
+  get size(): number {
+    return totals.size;
+  },
+};

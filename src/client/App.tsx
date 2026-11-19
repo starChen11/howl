@@ -39,8 +39,12 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   const refresh = useCallback(async () => {
     try {
       setView(await client.game(gameId));
+      setError(null);
     } catch (cause) {
+      // 对局已被释放（GET 410）时仍然可以看复盘：这里退到复盘接口。
       setError(cause instanceof Error ? cause.message : '读取对局失败');
+      const snapshot = await client.replay(gameId);
+      if (snapshot !== null) setReplay(snapshot);
     }
   }, [client, gameId]);
 
@@ -83,6 +87,14 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
 
   const board = useMemo(() => (view === null ? null : buildBoard(view.view)), [view]);
   const panelEntries = useMemo(() => (view === null ? [] : buildPanelEntries(view.view)), [view]);
+
+  const restart = useCallback(() => {
+    setRestarting(true);
+    void client.restart().then((nextGameId) => {
+      if (nextGameId !== null) window.location.search = `?game=${nextGameId}`;
+      else setRestarting(false);
+    });
+  }, [client]);
 
   const jumpTo = useCallback((seq: number) => {
     setHighlight(seq);
@@ -128,6 +140,9 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   }, [view, stream]);
 
   if (view === null || board === null) {
+    if (replay !== null) {
+      return <ReplayPage snapshot={replay} onRestart={restart} />;
+    }
     return <p role="status">正在载入对局…</p>;
   }
 
@@ -137,13 +152,7 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
         snapshot={replay}
         loadPerspective={(seat, seq) => client.replayPerspective(gameId, seat, seq)}
         restarting={restarting}
-        onRestart={() => {
-          setRestarting(true);
-          void client.restart().then((nextGameId) => {
-            if (nextGameId !== null) window.location.search = `?game=${nextGameId}`;
-            else setRestarting(false);
-          });
-        }}
+        onRestart={restart}
       />
     );
   }

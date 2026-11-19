@@ -75,6 +75,9 @@ export function ReplayPage({
         </p>
         <p className="replay__meta">
           共 {snapshot.timeline.length} 条记录 · 降级 {snapshot.degraded.length} 次
+          {snapshot.usage === undefined || snapshot.usage.calls === 0
+            ? ''
+            : ` · 模型调用 ${snapshot.usage.calls} 次，输入 ${snapshot.usage.inputTokens} / 输出 ${snapshot.usage.outputTokens} tokens`}
         </p>
         <button
           type="button"

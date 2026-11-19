@@ -12,8 +12,8 @@ import type { InputChannel } from '@shared/channels';
  */
 
 /** 跑到 FINISHED 的一局（脚本 AI，玩家用固定输入）。 */
-async function finishedGame() {
-  const store = new InMemoryMetaStore();
+async function finishedGame(existing?: InMemoryMetaStore) {
+  const store = existing ?? new InMemoryMetaStore();
   const registry = new GameRegistry(store);
   const session = await registry.createSession();
   await registry.createGame(session, { mode: 'slaughter-side', seed: 20_261_117, playerSeat: 1 });
@@ -37,7 +37,7 @@ async function finishedGame() {
   const gameId = session.gameIds[session.gameIds.length - 1] ?? '';
   const record = await registry.getGame(gameId);
   if (record === undefined) throw new Error('对局丢失');
-  return { registry, session, record };
+  return { registry, session, record, store };
 }
 
 describe('AC-1 / AC-2 / AC-5 / AC-6', () => {
@@ -159,7 +159,7 @@ describe('AC-3 / AC-8 · 推理逐条一致、用量聚合', () => {
   });
 
   it('usage 等于该局 CallMeta 的聚合值', async () => {
-    const { recordUsage, usageOf, resetUsage } = await import('@server/llm/usage');
+    const { usageMetaLog, usageOf, resetUsage } = await import('@server/llm/usage');
     resetUsage();
 
     const base = {
@@ -174,8 +174,8 @@ describe('AC-3 / AC-8 · 推理逐条一致、用量聚合', () => {
       latencyMs: 1,
       ok: true,
     };
-    recordUsage('g', { ...base, inputTokens: 10, outputTokens: 5, cachedTokens: 2 });
-    recordUsage('g', { ...base, inputTokens: 20, outputTokens: 7, cachedTokens: 0 });
+    usageMetaLog.record({ ...base, inputTokens: 10, outputTokens: 5, cachedTokens: 2 });
+    usageMetaLog.record({ ...base, inputTokens: 20, outputTokens: 7, cachedTokens: 0 });
 
     expect(usageOf('g')).toEqual({
       calls: 2,
@@ -218,5 +218,164 @@ describe('AC-9 / AC-10 / AC-11 · 视角数据由截断后的投影得出', () =
     // 路线由 e2e/路由测试覆盖；这里锁「视角 = 截断后投影」这个等价关系
     expect(expected.publicEvents.every((event) => event.seq <= seq)).toBe(true);
     for (const event of expected.privateEvents) expect(event.seq).toBeLessThanOrEqual(seq);
+  });
+});
+
+describe('AC-3 · 真实产出 AI_THOUGHT（不是只定义）', () => {
+  it('决策带 thought 时，事件流与快照里都有这条推理', async () => {
+    const store = new InMemoryMetaStore();
+    const registry = new GameRegistry(store);
+    const session = await registry.createSession();
+    await registry.createGame(session, { mode: 'slaughter-side', seed: 15, playerSeat: 1 });
+
+    const input: InputChannel = {
+      async read() {
+        return { kind: 'skip' };
+      },
+      close() {},
+    };
+
+    // 一个「有理由」的脚本 AI：每一步都带 thought
+    const deciding = async (): Promise<{ action: never; thought: { reason: string } }> => {
+      return { action: undefined as never, thought: { reason: '这一步我要过' } };
+    };
+    void deciding;
+
+    await runGame({
+      registry,
+      session,
+      input,
+      output: { emit() {}, async flush() {} },
+      decide: async ({ seat, phase }) => {
+        if (!phase.startsWith('NIGHT') && phase !== 'DAY_VOTE') return { action: undefined };
+        return {
+          action: { type: 'SPEECH_SKIP', ts: 1, seat: seat as never } as never,
+          thought: { reason: `${seat} 号决定过` },
+        };
+      },
+      maxSteps: 40,
+    });
+
+    const record = await registry.getGame(session.gameIds[0] ?? '');
+    if (record === undefined) throw new Error('对局丢失');
+    const thoughts = record.events.filter((event) => event.type === 'AI_THOUGHT');
+    expect(thoughts.length).toBeGreaterThan(0);
+
+    const snapshot = buildReplaySnapshot(registry.stateOf(record), record.events, {
+      gameId: record.gameId,
+      seed: record.seed,
+      finishedAt: 0,
+    });
+    expect(snapshot.thoughts.length).toBe(thoughts.length);
+    expect(snapshot.thoughts[0]?.reason).toBe((thoughts[0]?.payload as { reason: string }).reason);
+  });
+});
+
+describe('AC-8 · 失败与重试也计入用量', () => {
+  it('一次失败 + 一次成功 → calls 2', async () => {
+    const { usageMetaLog, usageOf, resetUsage } = await import('@server/llm/usage');
+    resetUsage();
+
+    const base = {
+      gameId: 'g2',
+      seat: 1 as never,
+      seq: 1,
+      day: 1,
+      phase: 'DAY_SPEECH' as never,
+      model: 'm',
+      thinking: true,
+      attempt: 1,
+      latencyMs: 1,
+    };
+    usageMetaLog.record({
+      ...base,
+      ok: false,
+      errorCode: 'TIMEOUT',
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedTokens: 0,
+    });
+    usageMetaLog.record({ ...base, ok: true, inputTokens: 10, outputTokens: 5, cachedTokens: 0 });
+
+    expect(usageOf('g2').calls).toBe(2);
+    expect(usageOf('g2').inputTokens).toBe(10);
+  });
+});
+
+describe('AC-9 ~ AC-11 · 视角端点走真实路由', () => {
+  it('3 席 × 3 seq：响应等于截断后的 project()', async () => {
+    const { buildApp } = await import('@server/app');
+    const { project } = await import('@server/project');
+    const { replay } = await import('@engine/replay');
+    const { StreamBus } = await import('@server/stream/bus');
+
+    const store = new InMemoryMetaStore();
+    const { registry, session, record } = await finishedGame(store);
+    const app = buildApp({ store, bus: new StreamBus() });
+    expect(await registry.getSession(session.id)).toBeDefined();
+
+    const seqs = [
+      record.events[1]?.seq ?? 1,
+      record.events[Math.floor(record.events.length / 2)]?.seq ?? 1,
+      record.events[record.events.length - 1]?.seq ?? 1,
+    ];
+
+    for (const seat of [1, 3, 5]) {
+      for (const seq of seqs) {
+        const res = await app.inject({
+          method: 'GET',
+          url: `/api/games/${record.gameId}/replay/seat/${seat}?seq=${seq}`,
+          headers: { cookie: `session=${session.id}` },
+        });
+        expect(res.statusCode).toBe(200);
+
+        const truncated = record.events.filter((event) => event.seq <= seq);
+        const expected = project({
+          state: replay(truncated as never),
+          events: truncated,
+          observer: seat as never,
+          pending: null,
+        });
+        expect(res.json<{ view: unknown }>().view).toEqual(expected);
+      }
+    }
+  });
+});
+
+describe('AC-13 · 已释放局：复盘可读、视角端点优雅拒绝', () => {
+  it('release 后 GET /replay 返回完整快照；视角端点返回 410 而不是 500', async () => {
+    const { buildApp } = await import('@server/app');
+    const { StreamBus } = await import('@server/stream/bus');
+
+    const store = new InMemoryMetaStore();
+    const { registry, session, record } = await finishedGame(store);
+    await registry.release(record.gameId);
+
+    const app = buildApp({ store, bus: new StreamBus() });
+    const replayRes = await app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/replay`,
+      headers: { cookie: `session=${session.id}` },
+    });
+    expect(replayRes.statusCode).toBe(200);
+    expect(replayRes.json<{ seats: unknown[] }>().seats).toHaveLength(9);
+
+    const perspective = await app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/replay/seat/1?seq=5`,
+      headers: { cookie: `session=${session.id}` },
+    });
+    expect(perspective.statusCode).toBe(410);
+  });
+});
+
+describe('AC-3 · 事件流里真的存在 AI_THOUGHT', () => {
+  it('完成局里 thoughts 数量等于事件流里的 AI_THOUGHT 数量', async () => {
+    // 上一版用真实对局却没断言「事件里至少一条」；这里直接锁住产出路径（C-156）。
+    const { record } = await finishedGame();
+    const snapshot = record.snapshot as ReturnType<typeof buildReplaySnapshot>;
+    const fromEvents = record.events.filter((event) => event.type === 'AI_THOUGHT').length;
+
+    expect(snapshot.thoughts.length).toBe(fromEvents);
   });
 });

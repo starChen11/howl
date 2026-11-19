@@ -129,3 +129,16 @@ describe('AC-7 / AC-14 · 降级标注与再来一局', () => {
     expect(screen.getByText(/2 号是狼/)).toBeTruthy();
   });
 });
+
+describe('AC-8 · 复盘页展示用量', () => {
+  it('有 usage 时显示调用次数与 token', () => {
+    const withUsage = {
+      ...snapshot,
+      usage: { calls: 12, inputTokens: 3400, outputTokens: 900, cachedTokens: 100 },
+    };
+    render(<ReplayPage snapshot={withUsage} onRestart={() => undefined} />);
+
+    expect(screen.getByText(/模型调用 12 次/)).toBeTruthy();
+    expect(screen.getByText(/输入 3400/)).toBeTruthy();
+  });
+});
