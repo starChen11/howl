@@ -180,10 +180,16 @@ test.describe('整局界面', () => {
     await box.fill('我来说一句。');
     await box.press('Enter');
 
-    // 投票按钮出现后，用纯键盘 Tab 过去并按 Enter
+    // 投票按钮出现后，**真的按 Tab** 走过去并按 Enter（不能用 .focus() 作弊）
     const voteButton = page.getByRole('button', { name: /投 \d+ 号/ }).first();
     await expect(voteButton).toBeVisible({ timeout: 25_000 });
-    await voteButton.focus();
+
+    let reached = false;
+    for (let hop = 0; hop < 40 && !reached; hop += 1) {
+      await page.keyboard.press('Tab');
+      reached = await voteButton.evaluate((element) => element === document.activeElement);
+    }
+    expect(reached, 'Tab 到不了投票按钮').toBe(true);
     await page.keyboard.press('Enter');
 
     // 投票后按钮消失（本轮结束或轮到别人）

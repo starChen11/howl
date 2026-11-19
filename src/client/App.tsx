@@ -65,7 +65,8 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
     view === null ? '' : `${view.view.phase}|${view.view.day}|${board?.speakingSeat ?? 'x'}`;
   useEffect(() => {
     if (view === null) return;
-    setAnnouncement(boardAnnouncement(view.view, 0));
+    // 播报里不放倒计时：它每秒都变，会把读屏刷屏。
+    setAnnouncement(boardAnnouncement(view.view));
   }, [announcementKey]);
 
   const lines: SpeechLine[] = useMemo(() => {
@@ -148,7 +149,10 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
         ) : null}
         {ctx.phase === 'DAY_VOTE' || ctx.phase === 'DAY_VOTE_RUNOFF' ? (
           <VoteInput
-            aliveSeats={ctx.aliveSeats.filter((seat) => seat !== ctx.self.seat)}
+            targets={ctx.legalTargets
+              .filter((target) => typeof target === 'number' && target !== ctx.self.seat)
+              .map((target) => Number(target))}
+            allowAbstain={ctx.phase === 'DAY_VOTE'}
             onVote={vote}
           />
         ) : null}

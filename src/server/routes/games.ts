@@ -12,6 +12,7 @@ import type { ProjectedContext } from '@shared/project';
 import type { PendingDecision } from '@shared/project';
 
 import { project } from '../project';
+import { pendingForPhase } from '../orchestrator';
 import { isWithinLimit, remainingSeconds } from '../speech';
 import { resolveSession } from '../session';
 import type { GameRegistry } from '../store/game-registry';
@@ -90,9 +91,11 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       if (!pendingParsed.success) {
         return reply.code(400).send(validationError('查询参数不合法'));
       }
-      const pending = (pendingParsed.data.pending ?? null) as PendingDecision;
-
       const state = registry.stateOf(record);
+      // 没显式指定时按阶段给默认值：投影要靠它算 `legalTargets`，
+      // 否则前端的投票/查验按钮会没有目标（RFC-012 C-127）。
+      const pending = (pendingParsed.data.pending ??
+        pendingForPhase(state.phase)) as PendingDecision | null;
       const view: ProjectedContext = project({
         state,
         events: record.events,

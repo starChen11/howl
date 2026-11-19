@@ -63,8 +63,13 @@ describe('AC-3（RFC-012 扩展）· 术语与解释来自 terms.ts', () => {
     for (const file of files) {
       for (const label of labels) {
         // 「投票」「刀」这类短词会在注释与普通叙述里出现，只拦组件里的**字符串字面量**
+        // 字符串字面量：'刀' / "刀" / `刀`
         const literal = new RegExp(`['"\`]\\s*${label}\\s*['"\`]`);
-        if (literal.test(file.source)) offenders.push(`${file.relativePath}: ${label}`);
+        // JSX 文本节点：<span>刀</span>
+        const jsxText = new RegExp(`>\\s*${label}\\s*<`);
+        if (literal.test(file.source) || jsxText.test(file.source)) {
+          offenders.push(`${file.relativePath}: ${label}`);
+        }
       }
     }
 

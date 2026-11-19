@@ -99,7 +99,7 @@ describe('AC-14 · 文字表达', () => {
       visibleTo: 'public',
       payload: { day: 2, diedLastNight: [], speechStartSeat: 2 },
     } as never;
-    const text = boardAnnouncement(ctx({ publicEvents: [started, speech(2, 2)] }), 30);
+    const text = boardAnnouncement(ctx({ publicEvents: [started, speech(2, 2)] }));
 
     expect(text).toContain('你是 1 号');
     expect(text).toContain('第 2 天');
@@ -107,8 +107,14 @@ describe('AC-14 · 文字表达', () => {
   });
 
   it('不是发言阶段时不提发言者', () => {
-    const text = boardAnnouncement(ctx({ phase: 'DAY_VOTE' }), 10);
+    const text = boardAnnouncement(ctx({ phase: 'DAY_VOTE' }));
     expect(text).not.toContain('轮到');
+  });
+
+  it('播报里不含倒计时，且重投用中文', () => {
+    const text = boardAnnouncement(ctx({ phase: 'DAY_VOTE_RUNOFF' }));
+    expect(text).not.toContain('秒');
+    expect(text).toContain('平票重投');
   });
 });
 

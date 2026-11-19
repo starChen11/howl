@@ -108,7 +108,7 @@ describe('AC-14 · 状态有文字，不只靠颜色', () => {
 
 describe('AC-15 · 读屏能读出身份、阶段与轮到谁', () => {
   it('公告文本包含三件事', () => {
-    const text = boardAnnouncement(ctx(), 30);
+    const text = boardAnnouncement(ctx());
     expect(text).toContain('1 号');
     expect(text).toContain('轮流发言');
     expect(text).toContain('轮到');

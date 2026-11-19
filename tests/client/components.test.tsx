@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -211,5 +211,24 @@ describe('C-123 · 身份卡有技能与目标', () => {
     expect(screen.getByText(/一瓶解药/)).toBeTruthy();
     expect(screen.getByText(/解药 1 次/)).toBeTruthy();
     expect(screen.getByText(/决定用不用解药/)).toBeTruthy();
+  });
+});
+
+describe('C-116 · 词汇表里的术语悬停/聚焦可见', () => {
+  it('hover 与 focus 都能打开解释', async () => {
+    const user = userEvent.setup();
+    render(<OnboardingHints role="seer" goal="查验" />);
+
+    const trigger = screen.getByRole('button', { name: '放逐' });
+    await user.hover(trigger);
+    expect(
+      screen.getAllByRole('tooltip').some((tip) => tip.textContent?.includes('白天投票出局')),
+    ).toBe(true);
+
+    // 悬停离开后关闭；再聚焦打开
+    await user.unhover(trigger);
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    trigger.focus();
+    await waitFor(() => expect(screen.getAllByRole('tooltip').length).toBeGreaterThan(0));
   });
 });

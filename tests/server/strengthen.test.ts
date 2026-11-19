@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildApp } from '@server/app';
 import { project } from '@server/project';
+import { pendingForPhase } from '@server/orchestrator';
 import { GameRegistry, KEEP_FULL_EVENTS } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 
@@ -62,11 +63,12 @@ describe('C-67 · AC-7：路由返回的就是 project() 的输出，逐字节�
     if (session === undefined) throw new Error('会话丢失');
     const record = await registry.getGame(gameId);
     if (record === undefined) throw new Error('对局丢失');
+    const expectedState = registry.stateOf(record);
     const expected = project({
-      state: registry.stateOf(record),
+      state: expectedState,
       events: record.events,
       observer: record.playerSeat,
-      pending: null,
+      pending: pendingForPhase(expectedState.phase),
     });
 
     // 多一个字段（比如 reviewer 探针塞的 allRoles）就会红

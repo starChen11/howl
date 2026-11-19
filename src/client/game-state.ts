@@ -92,10 +92,28 @@ export function countdownText(remaining: number): string {
 }
 
 /** 屏幕阅读器用的整局描述（AC-15）。 */
-export function boardAnnouncement(ctx: ProjectedContext, remaining: number): string {
+/** 阶段的中文名（RUNOFF 之类不能把原始枚举念给用户听）。 */
+export function phaseLabel(phase: string): string {
+  switch (phase) {
+    case 'DAY_SPEECH':
+      return '轮流发言';
+    case 'DAY_VOTE':
+      return '投票';
+    case 'DAY_VOTE_RUNOFF':
+      return '平票重投';
+    case 'DAY_ANNOUNCE':
+      return '公布昨夜结果';
+    case 'NIGHT':
+      return '夜晚';
+    default:
+      return phase;
+  }
+}
+
+/** 屏幕阅读器的整局描述（不含倒计时，避免每秒播报）。 */
+export function boardAnnouncement(ctx: ProjectedContext): string {
   const speaking = speakingSeat(ctx);
-  const phase = ctx.phase === 'DAY_SPEECH' ? '轮流发言' : ctx.phase;
-  return `你是 ${ctx.self.seat} 号，第 ${ctx.day} 天，${phase}${
+  return `你是 ${ctx.self.seat} 号，第 ${ctx.day} 天，${phaseLabel(ctx.phase)}${
     speaking === null ? '' : `，轮到 ${speaking} 号发言`
-  }，${countdownText(remaining)}。`;
+  }。`;
 }

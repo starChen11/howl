@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildApp } from '@server/app';
 import { project } from '@server/project';
+import { pendingForPhase } from '@server/orchestrator';
 import { GameRegistry, MAX_GAMES_PER_SESSION } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 
@@ -215,11 +216,12 @@ describe('C-74 / C-75 · 换存储实现后路由仍然工作；多个席位都�
     const record = await registry.getGame(gameId);
     if (record === undefined) throw new Error('对局丢失');
 
+    const expectedState = registry.stateOf(record);
     const expected = project({
-      state: registry.stateOf(record),
+      state: expectedState,
       events: record.events,
       observer: record.playerSeat,
-      pending: null,
+      pending: pendingForPhase(expectedState.phase),
     });
 
     expect(route.json<{ view: unknown }>().view).toEqual(expected);

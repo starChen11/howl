@@ -227,3 +227,21 @@ $ pnpm test:e2e → 7 passed
 $ pnpm test → 79 files / 678 tests
 $ pnpm test:e2e → 8 passed
 ```
+
+### 8.9 Round 3 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-127** 重投列全部席位、无锁 | `VoteInput` 用 `aliveSeats`；删 RUNOFF 分支仍全绿 | 改为只吃 `ctx.legalTargets`（重投只有并列者），`allowAbstain` 只在 `DAY_VOTE`；补「RUNOFF 只出现并列者、没有弃权」用例 |
+| **C-127** 投影没给 `pending` → 投票按钮没目标 | 前端拿到的 `legalTargets` 为空 | `GET /api/games/:id` 未显式指定 `pending` 时**按阶段给默认值**（`pendingForPhase`）；投票按钮因此出现 |
+| **C-119** e2e 用 `.focus()` 不是 Tab | 给按钮加 `tabIndex=-1` 仍绿 | 改成从页面**真的按 Tab** 直到投票按钮聚焦，再 Enter；`tabIndex=-1` 现在会红 |
+| **C-116** JSX 文本节点漏扫 | `<span>放逐</span>` 写进组件仍绿 | 扫描增加 `>\s*标签\s*<` 的 JSX 文本规则（探针会红） |
+| **C-116** 术语 hover/focus 没有测试 | 删 `onMouseEnter`/`onFocus` 仍绿 | 补词汇表的 hover 打开、移开关闭、focus 重新打开用例 |
+| **C-132** 读屏恒播「时间到」 | `boardAnnouncement(ctx, 0)` | 公告不再含倒计时；新增 `phaseLabel`（RUNOFF → 「平票重投」） |
+| **C-121/C-123** 身份卡与读屏区没有整页锁 | 删 `<IdCard>` 或 status 区组件测试仍绿 | 新增 `tests/client/app.test.tsx`（整页渲染 + 假客户端）：身份卡、读屏公告、RUNOFF 标签、草稿回调；删任一处会红 |
+| **C-120** App 的草稿接线没有锁 | 删 `onDraft` 仍绿 | 同上：整页用例断言输入后 `client.draft` 收到草稿 |
+
+```
+$ pnpm test → 80 files / 684 tests
+$ pnpm test:e2e → 8 passed
+```

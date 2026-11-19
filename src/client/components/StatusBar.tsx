@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { countdownText } from '../game-state';
+import { countdownText, phaseLabel } from '../game-state';
 
 /**
  * 顶部状态条（RFC-012 §2.1 / AC-1 / AC-14）。
@@ -40,7 +40,7 @@ export function StatusBar({
         </div>
         <div>
           <dt>阶段</dt>
-          <dd>{phase === 'DAY_SPEECH' ? '轮流发言' : phase}</dd>
+          <dd>{phaseLabel(phase)}</dd>
         </div>
         <div>
           <dt>存活</dt>
