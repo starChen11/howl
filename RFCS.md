@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.104 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.106 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -47,7 +47,7 @@
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
-| [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Implemented |
+| [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Changes requested |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
@@ -756,10 +756,25 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 5 后的状态**：C-107 的**通知顺序**与 C-108 关闭（有反向锁）；C-103 的 CR-010 迁移在 RFC-011 侧成立；**C-109 / C-110 / C-111 / C-112 / C-113 阻塞**（AC-9 正向与输出无锁、AC-6 / AC-7 无锁、AC-13 未验收、迁移接收侧缺失、双写），C-114 为非阻塞文档项。RFC-011 的 Status = **`Changes requested`**。
 
+### 8.36 RFC-011 Round 6 复核（2026-11-19）
+
+> 由 `/review-rfc 011` 登记；完整证据见 [`reviews/REVIEW-RFC-011.md`](reviews/REVIEW-RFC-011.md) Round 6。评审时 HEAD `30cf191`，工作树 clean；门禁 **75 files / 628 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0；`pnpm test:e2e` 跳过（`tests/e2e/` 为空）；`pnpm selfplay` exit 1 是 RFC-015 占位，按 RFC-011 范围记 N/A。本轮按用户指示只复核 **C-113 / C-109 / C-110 / C-111 / C-112**；已关闭项不重查。探针从 `/tmp/howl-rfc011-r6-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），三个源码文件 SHA-256 与探针前一致；临时探针测试已删除；没有 `git commit`。
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-109** | **AC-9 的「接受后通知」与 `SseOutputChannel.emit` 在 Round 5 都没有回归锁**：删掉接受分支的 `channels.submit` 全量 622 绿；`SseOutputChannel.emit` 改成空操作也全绿。 | **Round 6 复核通过。** 真实路由正向用例（`tests/server/channels.test.ts:320-467`）先推到 `DAY_SPEECH`、挂起 `read()` 再 POST，断言挂起 Promise 收到原话；P-R6-1 删掉通知后该用例 1 failed（5008ms 超时）。输出半边 `:295-307` 断言 `['delta','done']`；P-R6-2 改成空操作后 1 failed。 | **Closed（Round 6）** · `tests/server/channels.test.ts:295-307,320-467`、`src/server/routes/games.ts:204-211`、`src/server/channels/sse.ts:20-37`；`reviews/REVIEW-RFC-011.md` Round 6 · P-R6-1 / P-R6-2 |
+| **C-110** | **AC-6 的超时分支与 AC-7 的弃权事件仍没有编排层 / 事件流回归锁**：新增用例只在 `HttpInputChannel` 层（`tests/server/channels.test.ts:309-317`），与 `tests/server/speech.test.ts:61-67` 重复；没有用例喂 `runGame` 后断言 `SPEECH.payload.text` 或 `SPEECH_SKIPPED`。 | **仍 Open（阻塞）。** P-R6-3 把 `skip` 分支改成 `{ action: undefined }` → 全量 75/628 绿；P-R6-4 把超时当弃权 → 全量 628 绿。唯一喂给 `runGame` 的 `{kind:'skip'}` 在 `tests/server/orchestrator.test.ts:225-230`，但该局停在 `NIGHT_WOLF_CHAT` 且 `decide` 返回 `undefined`，`input.read` 不会被调用。**在编排层补「`skip` → `SPEECH_SKIPPED` 且进入下一阶段」与「`timeout` 文本进 `SPEECH`」两条。** | **仍 Open（阻塞）** · `src/server/orchestrator.ts:155-170`、`tests/server/channels.test.ts:309-317`、`tests/server/speech.test.ts:61-67`、`tests/server/orchestrator.test.ts:225-230`；`reviews/REVIEW-RFC-011.md` Round 6 · P-R6-3 / P-R6-4 |
+| **C-111** | **AC-13 的 `GET /timer` 端点行为与证据仍不成立**：唯一用例 `tests/server/speech.test.ts:71-96` 建一局夜里的对局（没有 `DAY_STARTED` / `SPEECH`），只断言 200 / `remainingSeconds >= 0` / `phase` 非空；P-R6-5 把剩余秒数改成常量 60 后仍 7/7 绿。起点查找（`src/server/routes/games.ts:139-141`）忽略 `SPEECH_SKIPPED`：P-R6-B 用 120 秒前的 `DAY_STARTED` + 刚刚的 `SPEECH_SKIP`，端点返回 `remainingSeconds:0`，下一个发言者的 60 秒才刚开始。已释放对局（`events: []`）会让 `stateOf` 抛错，端点返回 **500** 与内部错误「事件流为空…」，`GET /api/games/:id` / `POST /actions` 此时是 410。起点还取自客户端可提交的事件 `ts`，与 `HttpInputChannel` 的计时器是两个来源（P-R6-C：通道等 1.1 秒，端点返回 0）。 | **仍 Open（阻塞）。** 把 `SPEECH_SKIPPED` 纳入起点；`events.length === 0` 先返回 410；补「两次读取递减 / 刷新不回满」「跳过后的下一位剩约 60 秒」「释放局 410」三条用例；最好让端点消费 `HttpInputChannel` 的同一计时起点。 | **仍 Open（阻塞）** · `src/server/routes/games.ts:129-151,139-141`、`src/server/channels/http.ts:43-58`、`tests/server/speech.test.ts:71-96`；`reviews/REVIEW-RFC-011.md` Round 6 · P-R6-5 / P-R6-B / P-R6-C / P-R6-D |
+| **C-112** | **CR-010 的迁移只落在 RFC-011 侧，RFC-012 没有接收 AC / 交付物**：RFC-012 只有 `Depends on: RFC-011`，交付物与 AC 没有「整局循环入口 / `runGame` / `forGame`」。 | **Round 6 复核：核心通过。** RFC-012 已补 `:101`（整局入口）与 `:102`（不双写）；依赖 `:4` 与 `RFCS.md:76` 的 RFC-012 → RFC-011 行正确。**非阻塞残项**：两条 AC 都编号 `15.`（`:100` / `:101`）；交付物表 `:64-75` 未补 `forGame` / `runGame` / 输出通道归属；`TEST-STRATEGY.md:332-345` 没有整局入口 / 不双写的测试行（现有 `15` 只对应屏幕阅读器）；AC-16 括注的「编排层每轮重读记录」不是有效的单写者保证（C-113）。 | **Closed（Round 6，核心）** · `RFCs/RFC-012...:4,64-75,100-102`、`RFCS.md:76`、`TEST-STRATEGY.md:332-345`；`reviews/REVIEW-RFC-011.md` Round 6 |
+| **C-113** | **路由与编排层仍双写**：`runGame` 的每轮重读在 `await playerAction(...)` 之前（`src/server/orchestrator.ts:108-111` / `:137`），路由在等待期间写入并通知（`src/server/routes/games.ts:190-211`），唤醒后的 `registry.submit`（`orchestrator.ts:141`）仍用旧 `record` / `state.seq` 以同 `seq` 覆盖路由写入。新用例 `tests/server/orchestrator.test.ts:195-244` 没有路由写入：游戏停在 `NIGHT_WOLF_CHAT`、`decide` 返回 `undefined`，`input.read` 从未调用；P-R6-6 删掉重读后该文件仍 4/4 绿。 | **仍 Open（阻塞）。** 先决定单一写者：路由提交 + 通知后编排层发现已应用就不再 `submit`，或路由只回「已接收」由编排层重读后提交；补真实 `buildApp` + `runGame` 集成用例，断言路由 `ts` 仍在且只产生一条 `SPEECH`。P-R6-A：路由 `SPEECH ts=1`，最终同一条 `ts=1_800_000_000_000`（编排层注入的 `now`）。 | **仍 Open（阻塞）** · `src/server/orchestrator.ts:108-111,137-144`、`src/server/routes/games.ts:190-211`、`tests/server/orchestrator.test.ts:195-244`；`reviews/REVIEW-RFC-011.md` Round 6 · P-R6-A / P-R6-6 |
+
+> **Round 6 后的状态**：C-109 / C-112 关闭；**C-110 / C-111 / C-113 仍阻塞**（AC-6 / AC-7 无编排锁、AC-13 的 timer 忽略 `SPEECH_SKIPPED` / 释放局 500 / 用例无牙、路由写入仍被 `runGame` 覆盖）。RFC-011 的 Status = **`Changes requested`**。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.106 | RFC-011 Round 6 复核（Status → `Changes requested`）：C-109 / C-112 通过；C-110 / C-111 / C-113 仍阻塞——P-R6-3 / P-R6-4 / P-R6-5 / P-R6-6 全绿，P-R6-A 复现路由 `SPEECH ts=1` 被编排层 `ts=1_800_000_000_000` 覆盖，P-R6-B / P-R6-D 暴露 timer 忽略 `SPEECH_SKIPPED` 与释放局 500。门禁 75 files / 628 tests 全绿；探针从 `/tmp/howl-rfc011-r6-probes/backup/` 文件备份恢复、SHA-256 一致、临时测试删除、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-011.md`](reviews/REVIEW-RFC-011.md) Round 6 |
 | 2026-11-19 | v2.105 | RFC-011 Round 5 修复（Status → Implemented）：`runGame` 每轮重读；接受分支与输出通道正向锁；超时/弃权用例；`GET /timer`；RFC-012 承接整局入口 |
 | 2026-11-19 | v2.104 | RFC-011 Round 5 复核（Status → `Changes requested`）：C-107 通知顺序（P-R5-1 红）与 C-108 草稿 301 拒绝（P-R5-3 红）通过；迁移在 RFC-011 侧一致（AC-9 / §8.6 / 依赖表）。但 P-R5-2 删掉「接受后通知」后全量 **75/622 仍绿**、P-R5-14 把 `SseOutputChannel.emit` 改空操作后全量 622 绿、P-R5-4 / P-R5-5 的 AC-6/7 退化全量 622 绿——新增 **C-109**（AC-9 正向 / 输出无锁）、**C-110**（AC-6 / AC-7 无锁）、**C-111**（AC-13 未验收）、**C-112**（RFC-012 未接收迁移）、**C-113**（双写仍在）、**C-114**（文档漂移，非阻塞）；P-R5-7 复现路由写入被 `runGame` 同 seq 覆盖。门禁 75 files / 622 tests 全绿；探针从 `/tmp/howl-rfc011-r5-probes/backup/` 文件备份恢复、SHA-256 一致、临时测试删除、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-011.md`](reviews/REVIEW-RFC-011.md) Round 5 |
 | 2026-11-19 | v2.103 | RFC-011 按 CR-010 裁决：生产入口迁 RFC-012，AC-9 改写为「通道 + 兑现路径」；状态回 Implemented |

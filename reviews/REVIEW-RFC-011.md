@@ -867,3 +867,152 @@ C-107 与 C-108 的**指定部分**真修好了：P-R5-1 / P-R5-3 都会打红�
 **Non-blocking**：AC-1 只认五种角色 id，不认 `ROLE_LABELS` / 同角色他人（P-R4-4）；`otherRoles` 条件里的 `has` 是死代码；AC-2 的状态变体（非空查验史 / 药水 `used` / `canShoot` 两态）；AC-5 的 300 / emoji 路由级边界；AC-8 的端到端用例（planned `current-speech.test.ts`）；AC-11 的 `reads=0`（C-106）；AC-12 的内联 stub 与 `void input`；`ChannelRegistry` 无清理；`/input` 在无通道时仍返回 200；C-99 / C-104 未重查；README / RFCS 头部版本过期。
 
 **状态**：RFC-011 → `Changes requested`。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r5-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），七个源码文件 SHA-256 与探针前一致；临时探针测试已删除；探针恢复后（写评审文件前）全量 **75 files / 622 tests** 绿、`git status --porcelain` 为空。
+
+## Round 6 — 2026-11-19
+
+> 被评审提交：`30cf191 fix(rfc-011): 每轮重读、正向锁与 timer 端点（Round 5）`
+> 评审方式：全新上下文的 subagent，只读仓库文件后实跑；本会话没有写过 RFC-011 的实现代码。
+> 结论：**Changes requested**
+> 范围：按用户指示只复核 **C-113 / C-109 / C-110 / C-111 / C-112** 五项。已关闭项（C-99 ~ C-108 的通过项、C-114 的非阻塞项、AC-1/2/3/4/5/8/10/11/12/14）不重查；本轮未重查项沿用前判。AC-3 / AC-4 的界面顺延是用户批准的 D-5，不作为缺陷。
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · 评审开始时 HEAD `30cf191`，工作树 clean。
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+✓ 14 modules transformed (client) · built in 66ms
+✓ 46 modules transformed (server) · built in 15ms
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  75 passed (75)
+      Tests  628 passed (628)
+   Duration  22.62s
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+
+$ pnpm selfplay
+pnpm selfplay 未实现（RFC-015）
+SELFPLAY_EXIT=1
+```
+
+`pnpm selfplay` 的 exit 1 是 RFC-015 的占位，按 RFC-011 的范围记 **N/A**，不是本轮回归。
+
+### 1. 产品类型与跳过项
+
+`PRD.md` 的 **Product Type** 是 **game（主）+ web app（交付形态）**。本轮采用 game 的状态机 / 数据完整性检查，以及 web app 的服务端输入 / 路由检查。UI、无障碍与响应式检查随 AC-3 / AC-4 顺延到 RFC-012，**显式跳过**；`tests/e2e/` 为空，e2e 也显式跳过。本轮不冒充已检查。
+
+### 2. 用户列出的五项逐条复核
+
+| 用户声明 | 判定 | 一手证据 |
+|---|---|---|
+| **C-113**：`runGame` 每轮从存储重读记录，不再覆盖路由写入 | **FAIL（重读不在竞态窗口；新用例空转）** | 重读在 `src/server/orchestrator.ts:108-111`，发生在 `await playerAction(...)`（`:137`）**之前**；路由在 `await` 期间写入并通知（`src/server/routes/games.ts:190-211`），唤醒后 `registry.submit(session, record, ...)`（`:141`）仍用 `await` 前的 `record` / `state.seq`。P-R6-A 实测：路由响应 `SPEECH ts=1`，最终 store 里同一玩家 `SPEECH` 的 `ts=1_800_000_000_000`（注入的 `now`），路由写入被覆盖。新用例 `tests/server/orchestrator.test.ts:195-244` 没有路由写入：对局停在 `NIGHT_WOLF_CHAT`、`decide` 返回 `undefined`，`runGame` 在 `:139` 即 break，`input.read` 从未被调用；P-R6-6 删掉 `:108-111` 整段重读后该文件仍 **4/4 绿**。 |
+| **C-109**：接受分支补了真实路由正向用例；`SseOutputChannel` 补了 delta/done 断言 | **PASS** | 正向路由用例 `tests/server/channels.test.ts:320-467`：先把对局推到 `DAY_SPEECH`、挂起 `read()`，再真实 `POST /actions`；断言 200、响应含 `SPEECH`、挂起 Promise 收到 `{kind:'speak', text:'我觉得 2 号像狼'}`。P-R6-1 删掉 `routes/games.ts:204-211` 的通知后该用例 **1 failed / 16 skipped（5008ms 超时）**。输出半边 `tests/server/channels.test.ts:295-307` 断言总线收到 `['delta','done']`；P-R6-2 把 `SseOutputChannel.emit` 改成空操作后 **1 failed**（`expected [] to equal ['delta','done']`）。负向用例（夜间被 `REJECTED` 不通知）仍在 `:195-265`。 |
+| **C-110**：补了超时 / 弃权用例 | **FAIL（只测到通道层，没有编排层 / 事件流锁）** | 新增的 `tests/server/channels.test.ts:309-317` 与既有 `tests/server/speech.test.ts:61-67` 都只测 `HttpInputChannel` 的返回值；仓库没有一条 `runGame` / 事件流用例断言「超时文本进 `SPEECH.payload.text`」或「`skip` → `SPEECH_SKIPPED` → 进入下一阶段」。P-R6-3 把 `playerAction` 的 `skip` 分支改成 `{ action: undefined }` → **全量 75 files / 628 tests 绿**；P-R6-4 把 `if (input.kind === 'skip')` 改成 `if (input.kind !== 'speak')`（超时当弃权）→ **全量 628 绿**。仓库里唯一喂给 `runGame` 的 `{kind:'skip'}` 在 `tests/server/orchestrator.test.ts:225-230`，但该局停在 `NIGHT_WOLF_CHAT` 且 `decide` 返回 `undefined`，`input.read` 不会被调用。 |
+| **C-111**：新增 `GET /api/games/:id/timer`，起点来自事件流 | **FAIL（端点存在，但行为与证据都不成立）** | 端点 `src/server/routes/games.ts:129-151`；唯一用例 `tests/server/speech.test.ts:71-96` 建一局**夜里**的对局（没有 `DAY_STARTED` / `SPEECH`），只断言 200、`remainingSeconds >= 0`、`phase` 非空；P-R6-5 把剩余秒数改成常量 `60` 后 **7/7 绿**。行为问题：① `:139-141` 只认 `DAY_STARTED` / `SPEECH`，**忽略 `SPEECH_SKIPPED`**；P-R6-B 用 120 秒前的 `DAY_STARTED` + 刚刚的 `SPEECH_SKIP`，端点返回 `startedAt=旧 ts`、`remainingSeconds=0`，而下一个发言者的 60 秒才刚开始。② 对已释放（`events: []`）的对局，`stateOf(record)` 直接 `throw`，端点返回 **500** 与内部错误「事件流为空：replay 至少需要一个 GAME_STARTED」（`GET /api/games/:id` 与 `POST /actions` 此时返回 410）。③ 起点取自事件 `ts`，而 `SPEECH` 的 `ts` 是客户端提交的（`src/shared/schemas.ts:21` 只要求非负整数），与 `HttpInputChannel` 的真实计时器（`src/server/channels/http.ts:43-58`）是两个来源；P-R6-C 里通道实际等了约 1.1 秒，端点返回 0。 |
+| **C-112**：RFC-012 的验收标准补了「整局入口」与「不与 `POST /actions` 双写」两条 | **PASS（核心迁移落地；文档残项非阻塞）** | `RFCs/RFC-012-game-ui-onboarding-and-responsive.md:101`（整局入口）与 `:102`（不双写）已补；依赖 `:4` 仍是 RFC-011，`RFCS.md:76` 的 RFC-012 → RFC-011 行正确，C-112 行已互链。**非阻塞**：两条 AC 都编号 `15.`（`:100` / `:101`），交付物表 `:64-75` 没有 `forGame` / `runGame` / `SseOutputChannel` 的归属行；`TEST-STRATEGY.md:332-345` 没有整局入口 / 不双写的测试行（现有 `15` 只对应屏幕阅读器；C-104）；AC-16 括注的「编排层每轮重读记录」不是有效的单写者保证（C-113）。 |
+
+**小结**：C-109 / C-112 关闭；C-110 / C-111 / C-113 仍阻塞。
+
+### 3. 变异探针与临时集成探针
+
+所有探针从 `/tmp/howl-rfc011-r6-probes/backup/` 的**文件备份**恢复，**未使用 `git checkout` / `git restore`**。探针前的源码 SHA-256：
+
+```text
+1d29ec54a764132bbe41dd93ff120d3c0e558845d82a010279ee86e8711b7d49  src/server/orchestrator.ts
+efb315299a46ac51272ce4aa156d0e13e99f5dbd473cc6beeb4cee39250e1c4a  src/server/routes/games.ts
+f5b777b7b1f5fb0c2d82851c3eee83fadacdf28cceb2c92d5ec41e4a50ae1b1a  src/server/channels/sse.ts
+```
+
+每次探针后都 `cp` 回备份并用 `shasum -a 256 -c` / `diff -q` 验证；最后一次三个文件全部 `OK`。临时探针 `tests/server/__r6_probe.test.ts` / `__r6_timer_release.test.ts` / `__r6_timer_skip.test.ts` 已删除；探针恢复后（写评审文件前）全量 **75 files / 628 tests** 绿，`git status --porcelain` 为空，没有 `git commit`。
+
+| 探针 | 注入 / 场景 | 定向测试 | 结果 | 证明 |
+|---|---|---|---|---|
+| **P-R6-1** | `routes/games.ts:204-211` 删除 `channels.submit` 整段 | `tests/server/channels.test.ts -t '白天提交 SPEECH'` | **1 failed / 16 skipped**；5008ms 超时 | C-109 的真实路由正向锁有牙 |
+| **P-R6-2** | `SseOutputChannel.emit` 直接 `return`（空操作） | `tests/server/channels.test.ts -t 'SseOutputChannel'` | **1 failed**；`expected [] to equal ['delta','done']` | C-109 的输出通道锁有牙 |
+| **P-R6-3** | `playerAction` 的 `skip` 分支返回 `{ action: undefined }` | 全量 `pnpm test` | **75 files / 628 tests 仍全绿** | C-110 的弃权分支没有回归锁 |
+| **P-R6-4** | `if (input.kind === 'skip')` → `if (input.kind !== 'speak')`（超时被当弃权） | 全量 `pnpm test` | **75 / 628 仍全绿** | C-110 的超时分支没有回归锁 |
+| **P-R6-5** | `GET /timer` 的 `remainingSeconds` 改成常量 `60` | `tests/server/speech.test.ts` | **7/7 绿** | C-111 的端到端用例没有牙 |
+| **P-R6-6** | 删除 `orchestrator.ts:108-111` 的每轮重读 | `tests/server/orchestrator.test.ts` | **4/4 绿** | C-113 的提交用例没有牙（测试根本没有路由写入） |
+| **P-R6-A** | 真实 `buildApp` + `GameRegistry` + `ChannelRegistry`，玩家在白天等输入；真实 `POST /actions` 提交 `SPEECH ts=1` | 临时集成探针 | 路由 **200**，响应 `SPEECH ts=1`；`runGame` 结束后同一玩家 `SPEECH` 的 `ts=1_800_000_000_000` | C-113 双写仍在：编排层用读前的旧 record 覆盖路由写入 |
+| **P-R6-B** | `DAY_STARTED` 用 120 秒前的 ts，随后刚提交 `SPEECH_SKIP`，再 `GET /timer` | 临时集成探针 | `{"phase":"DAY_SPEECH","startedAt":1795074067231,"remainingSeconds":0}` | C-111 忽略 `SPEECH_SKIPPED`：下一个发言者刚开始就显示 0 秒 |
+| **P-R6-C** | 服务端真实 `read({timeoutMs:60000})` 等 1.1 秒，再 `GET /timer` | 临时集成探针 | 通道实际剩约 59 秒；端点返回 `0` | 端点的起点来自事件 ts，不是通道计时器（夹具 ts=1 放大了差异，但两者确为两个来源） |
+| **P-R6-D** | 先 `registry.release(gameId)`，再 `GET /timer` | 临时集成探针 | **500** `{"statusCode":500,...,"message":"事件流为空：replay 至少需要一个 GAME_STARTED"}` | C-111 新端点对已释放对局 500，`GET /api/games/:id` / `POST /actions` 为 410 |
+
+### 4. 验收标准（本轮范围）
+
+| AC | 判定 | 说明 |
+|---|---|---|
+| 6 | **FAIL** | 超时文本进入事件流的分支没有编排层 / 事件流用例；P-R6-4 把超时当弃权后全量 628 绿。 |
+| 7 | **FAIL** | `skip` → `SPEECH_SKIPPED` → 对局继续没有编排层 / 事件流用例；P-R6-3 把 skip 改成 `undefined` 后全量 628 绿。 |
+| 9 | **PASS** | 改写后的 AC 两半都有锁：P-R6-1（接受后通知）与 P-R6-2（输出通道）都会打红；静态断言与负向用例仍在。生产入口按 CR-010 归 RFC-012，不重开。 |
+| 13 | **FAIL** | 端点存在，但用例不验证刷新 / 递减 / 起点；P-R6-5 常量 60 全绿；P-R6-B / P-R6-D 还暴露忽略 `SPEECH_SKIPPED` 与释放局 500。 |
+| 3 / 4 | **DEFERRED（用户批准 D-5）** | 身份卡与输入框界面部件 / DOM 扫描归 RFC-012，不重开。 |
+| 其余 AC | **未重查（沿用前判）** | AC-1 / 2 PASS，AC-5 PASS，AC-8 PARTIAL，AC-10 / 14 PASS，AC-11 PARTIAL，AC-12 PARTIAL；本轮无相关改动。 |
+
+### 5. 五个维度
+
+#### 5.1 RFC ADHERENCE — **NEEDS WORK**
+
+C-109 与 C-112 的核心都成立：接受分支的正向锁与输出通道锁会打红，RFC-012 已有接收 AC。C-110 / C-111 / C-113 不成立：C-113 是数据完整性问题（真实路由写入被编排层覆盖），C-111 有「忽略 `SPEECH_SKIPPED`」「释放局 500」两个新缺陷，C-110 的回归锁仍只停在通道层。
+
+#### 5.2 RULES COMPLIANCE — **NEEDS WORK**
+
+- **TEST-1**：C-110、C-111、C-113 都没有能在行为退化时变红的测试；P-R6-3 / P-R6-4 / P-R6-5 / P-R6-6 是**全量 628 绿**的退化。
+- **DOC-1**：RFC §8.11（`RFCs/RFC-011...:245-249`）写「C-113 补用例断言编排层不会缩短或改写已有事件」「C-110 补超时/弃权用例」「C-111 补路由用例」——三处与仓库事实不符（C-113 的用例不做路由写入，C-110 只在通道层，C-111 只断言 200 / >=0）。`RFCS.md` 的 C-110 / C-111 / C-113 行写「已修复（Round 5）」，应改成按本轮证据的实际状态。
+- **ARCH-9 / SEC-5**：本轮没有新的投影泄漏；`ctxFor(observer)` 未动；`src/client/` 的静态检查未动。
+- **SEC-4**：C-108 的 301 字校验仍有效；本轮没有新增旁路。
+
+#### 5.3 SECURITY — **PASS（附数据完整性保留）**
+
+没有新的身份 / 投影泄漏或越权。C-113 是数据完整性（已接受事件被覆盖），不是保密性问题；C-111 的 500 会回显内部错误文本「事件流为空…」，不敏感，但应修掉。
+
+#### 5.4 PERFORMANCE — **N/A**
+
+没有新增数据库 / 网络热路径。`runGame` 每步多一次 `getGame` 是内存存储的线性读取，规模可忽略；而且它在竞态窗口之外，不能抵消 C-113。
+
+#### 5.5 MAINTAINABILITY — **NEEDS WORK**
+
+- `tests/server/orchestrator.test.ts:195-244` 的用例名 / 注释声称「路由先写入一条 SPEECH」，但测试里没有路由写入；`skip` 输入也从未被读取——这会误导下一轮评审。
+- `tests/server/channels.test.ts:281-293` 的用例名写「接受分支」，实际直接调 `channels.submit`，与 `:267-277` 重复；真正的路由用例在 `:320-467`。
+- `RFCs/RFC-012...:100-101` 有两个 `15.`；交付物与 `TEST-STRATEGY` 没有承接新的 AC-15 / AC-16。
+- `tests/server/speech.test.ts:71-96` 的用例名「返回剩余秒数与起点」没有断言起点，也没有第二次读取。
+
+### 6. 非阻塞建议
+
+1. **C-113 的单写者（对应 B-R6-1）**：二选一。① 路由提交 + 通知，编排层读到 `{kind:'speak'|'timeout'}` 后发现该玩家已经发过言就不再 `submit`；② 有挂起 `read` 时路由只返回「已接收」（202），由 `runGame` 重新读取当前 record 后提交。无论哪条，补一个真实 `buildApp` + `runGame` 的集成用例，断言路由写入的 `ts` 仍在、只产生一条 `SPEECH`（P-R6-A 的 ts 差异就是现成断言点）。
+2. **C-110 的两条编排用例（对应 B-R6-2）**：`input` 返回 `{kind:'skip'}` → 事件流出现 `SPEECH_SKIPPED` 且进入下一阶段；`input` 返回 `{kind:'timeout', text:'草稿'}` → 玩家席位 `SPEECH.payload.text === '草稿'`。放在 `orchestrator.test.ts`，不要再放通道层。
+3. **C-111 的修正（对应 B-R6-3）**：把 `SPEECH_SKIPPED` 纳入起点查找（`routes/games.ts:139-141`）；对 `events.length === 0` 先返回 410；补「两次读取剩余秒数递减 / 刷新不回满」「跳过后的下一个发言者剩余约 60 秒」「释放局 410」三条用例；最好让端点直接消费 `HttpInputChannel` 的同一计时起点，而不是事件 `ts`。
+4. **C-112 的文档残项**：把两个 `15.` 改成 `15.` / `16.`，在交付物表补一行「谁调用 `ChannelRegistry.forGame` / 谁启动 `runGame` / 输出通道归谁」，并在 `TEST-STRATEGY.md` 的 RFC-012 小节补 AC-15 / AC-16 的测试行。
+5. **C-109 的收尾**：SSE 断言可以再把 `text` / `id` 一起锁上；删掉或重命名 `channels.test.ts:281-293` 的重复单测。
+6. **文档**：`RFCs/RFC-011...:245-249` 与 `RFCS.md` 的「已修复」表述按本轮证据回写；`README` 的状态行（7 Reviewed / 0 Changes requested / 8 Not started）仍是过期信息（C-114 非阻塞，本轮未代改）。
+
+### 7. 结论
+
+**Overall Risk Level: High。**
+
+五项里 **C-109 与 C-112 真修好**：接受分支的正向路由锁、输出通道的 `delta` / `done` 锁都会打红；RFC-012 也补上了两条接收 AC。**C-110 / C-111 / C-113 仍阻塞**：C-110 的新用例仍停在 `HttpInputChannel`，P-R6-3 / P-R6-4 证明编排层退化全量 628 绿；C-111 的端点虽然存在，但用例在常量 60 下仍绿，且忽略 `SPEECH_SKIPPED`、对已释放对局 500；C-113 的重读在 `await` 之前，P-R6-A 复现路由写入被覆盖，新增的「回归用例」甚至不做路由写入（P-R6-6 删掉重读仍 4/4 绿）。
+
+**Blocking Issues**：
+
+- **B-R6-1（C-113 / AC-9 / 数据完整性，阻塞）**：`runGame` 每轮重读发生在 `await playerAction` 之前；路由在等待期间写入的 `SPEECH` 仍被编排层用旧 `record` / `state.seq` 以同 `seq` 覆盖（P-R6-A：路由 `ts=1` → 最终 `ts=1_800_000_000_000`）。**先决定单一写者并补真实集成用例；同时修掉 `orchestrator.test.ts:195-244` 的空转用例。**
+- **B-R6-2（C-110 / AC-6 / AC-7，阻塞）**：超时文本进事件流、`skip` → `SPEECH_SKIPPED` → 对局继续都没有编排层 / 事件流用例；P-R6-3 / P-R6-4 全量 628 绿。**在 `orchestrator.test.ts` 补两条。**
+- **B-R6-3（C-111 / AC-13，阻塞）**：`GET /timer` 的用例只断言 200 / >=0，P-R6-5 常量 60 全绿；起点来自事件 `ts`（客户端可提供），忽略 `SPEECH_SKIPPED`（P-R6-B 下一个发言者显示 0 秒），并对已释放对局 500（P-R6-D）。**修起点 / 410，并补递减、跳过、释放三条用例。**
+
+**Non-blocking**：C-112 的重复编号 `15.`、交付物 / TEST-STRATEGY 未补 AC-15/16；C-109 的重复通道单测与 SSE 只断言类型；RFC §8.11 / RFCS「已修复」表述；C-114 的 README 状态行（本轮未重查）。
+
+**状态**：RFC-011 → `Changes requested`。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r6-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），三个源码文件 SHA-256 与探针前一致；临时探针测试已删除；探针恢复后（写评审文件前）全量 **75 files / 628 tests** 绿、`git status --porcelain` 为空。
