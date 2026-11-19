@@ -253,3 +253,31 @@ describe('C-87 · attempt 抛错也必须被接住', () => {
     expect(result.degraded).toBe(true);
   });
 });
+
+describe('C-87 · 整体耗时不超过硬上限', () => {
+  it('两次各 40ms、上限 50ms：整体不超过 80ms，且最终降级', async () => {
+    const { runTurn } = await import('@server/llm/turn');
+    const started = Date.now();
+    let calls = 0;
+
+    const result = await runTurn({
+      seat: 1 as never,
+      attempt: async () => {
+        calls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        return { text: '', failed: true };
+      },
+      startedAt: started,
+      now: () => Date.now(),
+      limitMs: 50,
+      degradation: initialDegradation(),
+      sentenceIndex: 0,
+    });
+
+    const elapsed = Date.now() - started;
+    expect(result.degraded).toBe(true);
+    // 关键：不是 40 + 40 = 80ms，而是被剩余预算截断
+    expect(elapsed).toBeLessThan(75);
+    expect(calls).toBeGreaterThanOrEqual(1);
+  });
+});

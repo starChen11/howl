@@ -60,12 +60,18 @@ export class StreamBus {
     // C-96：同一条发言的多个 `delta` 共享 `id = seq`。如果断线发生在**发言中途**，
     // `id > lastEventId` 会把这条发言剩下的增量全过滤掉，客户端就永远等不到 done。
     // 所以把「id 等于断点、且还没结束的那段发言」的增量一并重放，从头补齐。
-    const trailingSpeech = channel.history.filter(
-      (message) =>
-        message.id === lastEventId && (message.type === 'delta' || message.type === 'thinking'),
-    );
+    // 断点处还能找到同 id 的消息 → 把**这一整段发言**从头重放（thinking → deltas → done）。
+    // 客户端看到同 id 的 `thinking` 会重置正文，所以重放不会产生重复内容；
+    // 而只补 delta 会让「断线期间发言已完成」的客户端永远收不到 done。
+    const hasSpeechAt = channel.history.some((message) => message.id === lastEventId);
+    if (hasSpeechAt) {
+      return [
+        ...channel.history.filter((message) => message.id === lastEventId),
+        ...channel.history.filter((message) => message.id > lastEventId),
+      ];
+    }
 
-    return [...trailingSpeech, ...channel.history.filter((message) => message.id > lastEventId)];
+    return channel.history.filter((message) => message.id > lastEventId);
   }
 
   subscribe(gameId: string, listener: (message: StreamMessage) => void): () => void {

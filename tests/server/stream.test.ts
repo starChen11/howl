@@ -324,3 +324,56 @@ describe('C-96 · 发言中途断线不丢增量', () => {
     expect(types[types.length - 1]).toBe('done');
   });
 });
+
+describe('C-96 / C-86 · 重连顺序与已完成发言', () => {
+  it('断线期间发言已完成：重连必须拿到整段（含 done）', async () => {
+    const { app, bus, session, record } = await setup();
+    const cookie = `session=${session.id}`;
+    const speechId = 700;
+
+    bus.publish(record.gameId, { type: 'thinking', id: speechId, seat: 3 });
+    bus.publish(record.gameId, { type: 'delta', id: speechId, seat: 3, text: '我' });
+    bus.publish(record.gameId, { type: 'done', id: speechId, seat: 3, text: '我说完了' });
+
+    const pending = app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/stream`,
+      headers: { cookie, 'last-event-id': String(speechId) },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    bus.end(record.gameId);
+
+    const body = (await pending).body;
+    const types = body
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => (JSON.parse(line.slice(6)) as { type: string }).type);
+
+    expect(types).toContain('done');
+    expect(types[types.length - 1]).toBe('done');
+  });
+
+  it('已提交事件与总线增量按 id 合并，不出现 done 在 thinking 之前', async () => {
+    const { app, bus, session, record } = await setup();
+    const cookie = `session=${session.id}`;
+
+    // 总线里放一条比最后一个已提交事件更早的增量（模拟重放乱序）
+    const firstEventSeq = record.events[0]?.seq ?? 1;
+    bus.publish(record.gameId, { type: 'thinking', id: firstEventSeq, seat: 3 });
+
+    const pending = app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/stream`,
+      headers: { cookie },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    bus.end(record.gameId);
+
+    const ids = (await pending).body
+      .split('\n')
+      .filter((line) => line.startsWith('id: '))
+      .map((line) => Number(line.slice(4)));
+
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
+  });
+});

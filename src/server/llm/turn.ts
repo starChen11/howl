@@ -49,6 +49,28 @@ export interface RunTurnResult {
   unstable: boolean;
 }
 
+/**
+ * 给一次尝试套上剩余预算。超预算就当作失败（不发请求的「假超时」），
+ * 这样整体耗时不会超过 `limitMs`。
+ */
+async function raceTimeout(
+  attempt: Promise<TurnAttempt>,
+  remainingMs: number,
+): Promise<TurnAttempt> {
+  if (remainingMs <= 0) return { text: '', failed: true };
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<TurnAttempt>((resolve) => {
+    timer = setTimeout(() => resolve({ text: '', failed: true }), remainingMs);
+  });
+
+  try {
+    return await Promise.race([attempt, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /** 连续失败后仍要尝试真实调用（AC-12）。挂在函数上，方便断言与替换。 */
 export function canAttempt(state: DegradationState): boolean {
   void state;
@@ -67,7 +89,9 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
     if (index > 0 && input.now() - input.startedAt >= input.limitMs) break;
     attempts += 1;
     try {
-      last = await input.attempt();
+      // 每次尝试都只给「剩余预算」：跑满两次就把 30s 上限拖成 40s（C-87）。
+      const remaining = input.limitMs - (input.now() - input.startedAt);
+      last = await raceTimeout(input.attempt(), remaining);
     } catch {
       last = { text: '', failed: true };
     }

@@ -78,12 +78,19 @@ export function registerStreamRoutes(app: FastifyInstance, options: StreamRoutes
       return reply.send(stream);
     }
 
-    // 先补已提交的事件（按 seq），再补总线里的增量，最后进入实时订阅。
-    const committed = committedMessages(record, registry.stateOf(record)).filter(
-      (message) => message.id > lastEventId,
+    // 已提交的事件与总线里的增量**按 id 合并排序**：分两批写会出现
+    // 「done 15 → thinking 15 → delta 15」这种顺序，客户端会退回 speaking。
+    // 同一段发言的多个增量共享一个 id，**不能按 id 去重**（那会把 delta 丢掉）。
+    // 以总线顺序为主干；已提交事件只在「该 id 还没有总线消息」时插入，保证
+    // 「刷新看到历史、实时看到增量」两路不重复、且整体按 id 递增。
+    const fromBus = [...replayable];
+    const busIds = new Set(fromBus.map((message) => message.id));
+    const extras = committedMessages(record, registry.stateOf(record)).filter(
+      (message) => message.id > lastEventId && !busIds.has(message.id),
     );
-    for (const message of committed) stream.write(encodeSseFrame(message));
-    for (const message of replayable) stream.write(encodeSseFrame(message));
+
+    const ordered = [...extras, ...fromBus].sort((a, b) => a.id - b.id);
+    for (const message of ordered) stream.write(encodeSseFrame(message));
 
     const unsubscribe = bus.subscribe(record.gameId, (message) => {
       stream.write(encodeSseFrame(message));
