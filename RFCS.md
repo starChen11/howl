@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.117 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.118 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -48,7 +48,7 @@
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
-| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Implemented |
+| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Changes requested |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
@@ -833,10 +833,34 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 1 后的状态**：C-116 ~ C-123 **阻塞**；C-124 ~ C-126 非阻塞。RFC-012 的 Status = **`Changes requested`**。AC-9、AC-12 的样式、AC-13 的调色板、AC-16 的单写者行为已有真实证据；AC-2/3/6/7/10/11/14/15 不成立或未验证。C-99（身份卡顺延未承接）仍 Open，并与 C-121 重叠。
 
+### 8.42 RFC-012 Round 2 评审（2026-11-19）
+
+> 由 `/review-rfc 012` 登记；完整证据见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 2。评审时 HEAD `3c26a27`，工作树 clean；门禁 **79 files / 674 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0；`pnpm test:e2e` **7/7 passed**（但见 C-123 / C-130 的假绿）。用户本轮按**内容**点名 Round 1 的八项（用户编号与 §8.41 的 C-116~C-123 不同，映射见评审文件 §0）。已关闭项不重查。探针从 `/tmp/howl-rfc012-r2-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），10 个源码文件 SHA-256 与探针前一致；没有 `git commit`。
+
+| # | 冲突 / 复核 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-116** | **AC-2 / AC-3 术语（Round 2 部分修复）**：`App` 已有 3 个 `TermHint`（投票/刀/悍跳），focus 能显示 tooltip；但 AC-2 的 8 个术语只有「刀」「悍跳」出现；可见 trigger 文字不是 `TERMS` 标签（`TERMS.vote.label='票'`）；扩展扫描只拦字符串字面量，`<span>放逐</span>` 仍 **3/3 绿**；无 `terms.spec.ts` / hover e2e。 | **阻塞（AC-2 / AC-3 / UI-2）**：补 8 个术语的悬停 + 键盘聚焦位置，扫描 JSX 文本/children，补 e2e。 | **仍 Open（阻塞，Round 2 部分修复）** · `src/client/App.tsx:147-152`、`tests/security/no-hardcoded-terms.test.ts:57-72`、`tests/client/a11y.test.tsx:149-156`；`reviews/REVIEW-RFC-012.md` Round 2 §1.3a |
+| **C-117** | **AC-6 / AC-7 跨天（实现已修）**：`spokenSeats` 已只算最近 `DAY_STARTED` 之后；探针第 2 天 `spoken=[]`、`speaking=1`。**但回归锁缺失**：把函数回退成旧实现后 client **40/40 仍绿**；无跨天纯函数用例、无渲染 `App` 用例。 | **阻塞（AC-6 / AC-7 / TEST-1）**：补跨天用例与 App 集成用例。 | **仍 Open（阻塞，测试）** · `src/client/game-state.ts:27-40`、`tests/client/game-state.test.ts:44-85`；`reviews/REVIEW-RFC-012.md` Round 2 §1.5 |
+| **C-118** | **AC-10 几何（实现已修，e2e 假绿）**：390×700 实测 `banner 12–162`、`main 174–396`、`footer 408–688`、`input 408–671.6`，无重叠、输入框命中 TEXTAREA。但 e2e 只比 `banner/footer`、`main/footer` 与输入框命中；把 `.input` 单独 `position:fixed;top:0` 后 e2e **1 passed**，实测盖住 banner 150px、timer 24px。 | **阻塞（AC-10 / F40 AC-3 / TEST-1）**：直接断言 `input` 与 `banner`、`timer` 的矩形不重叠。 | **仍 Open（阻塞，测试）** · `tests/e2e/game.spec.ts:49-94`、`src/client/styles/global.css:222-228`；`reviews/REVIEW-RFC-012.md` Round 2 §1.2 |
+| **C-119** | **AC-11 投票（Round 2 部分修复）**：`VoteInput` 与 `playerAction` 的 `DAY_VOTE` 分支已落地；真机 Tab×2 →「投 3 号」→ Enter 可推进。但 `DAY_VOTE_RUNOFF` 既不渲染也不走 `playerAction`（`orchestrator.ts:183` / `App.tsx:141` 只认 `DAY_VOTE`），平票重投由 AI 代打；删掉整个 `VoteInput` → **7/7 e2e 绿**；`tabIndex={-1}` → 键盘 e2e 仍绿；删掉 `DAY_VOTE` 分支 → channels **20/20**、game-loop **2/2** 绿。 | **阻塞（AC-11 / F30 AC-1 / PRD FR-6）**：接入 RUNOFF；补真正 Tab → 输入 → Enter → 投票 e2e；锁住投票分支。 | **仍 Open（阻塞，Round 2 部分修复）** · `src/server/orchestrator.ts:183-187`、`src/client/App.tsx:141-146`、`src/engine/phases/vote.ts:122-135`、`tests/e2e/game.spec.ts:155-168`；`reviews/REVIEW-RFC-012.md` Round 2 §1.3 / C-127 |
+| **C-120** | **UI-4 草稿（实现已修，测试缺失）**：真实 60 秒超时把「草稿超时测试：我怀疑7号。」写成 `SPEECH`；`/input` 返回 200。删掉 `SpeechInput` 的 `onDraft?.(...)` 后 client **40/40 仍绿**；无节流、`ApiClient.draft` 不检查 `response.ok`。 | **阻塞（UI-4 / F22 AC-3 / TEST-1）**：补可控时钟的草稿超时用例；加防抖并处理失败。 | **仍 Open（阻塞，测试）** · `src/client/App.tsx:53-59`、`src/client/components/SpeechInput.tsx:52-57`、`src/client/api.ts:61-71`；`reviews/REVIEW-RFC-012.md` Round 2 §1.6 |
+| **C-121** | **AC-15 / F21 / F24 身份卡（Round 2 部分修复）**：`IdCard` 已渲染，用 `ROLE_LABELS`，关闭引导后仍在；但只显示角色 + 查验史/药水/开枪/队友，**没有技能、目标、通用剩余次数**（F24 AC-1 / F21 AC-2）；`OnboardingHints` 仍渲染 `wolf`（UI-2）；status 区不含 role 且每秒播报；删掉 IdCard + status 区后 client **40/40 仍绿**。 | **阻塞（AC-15 / F21 / F24 / UI-2 / A11Y-3）**：补齐身份卡内容、中文化引导/阶段、status 复用节流并含 role；补 App 集成测试。 | **仍 Open（阻塞，Round 2 部分修复）** · `src/client/components/IdCard.tsx:14-46`、`src/client/components/OnboardingHints.tsx:25-27`、`src/client/App.tsx:134-136`、`src/server/view/id-card.ts:27-77`；`reviews/REVIEW-RFC-012.md` Round 2 §1.7 / C-128 / C-129 |
+| **C-122** | **AC-15 整局入口（Round 1 未修）**：`runGame` 接口加了 `gameId?:`（`orchestrator.ts:29`），`GameLoop` 也传了；但 `:148` 仍取 `session.gameIds[last]`，`deps.gameId` 从未读取。A/B 同 session 探针：`requested=A → advanced=B`。玩家夜间动作仍由 `decide` 代打。 | **阻塞（AC-15 整局入口）**：`deps.gameId ?? last`；补 A/B 同 session 端到端用例；生产 decider 按 `record.mode` 构造。 | **仍 Open（阻塞，Round 2 未修）** · `src/server/orchestrator.ts:145-150,183-187`、`src/server/game-loop.ts:59-68`、`tests/server/game-loop.test.ts`；`reviews/REVIEW-RFC-012.md` Round 2 §1.7（a） |
+| **C-123** | **e2e 证据链（Round 2 部分修复）**：AC-8 等 `.app` 后量宽度（重建后 min-width 探针 1 failed）、AC-13 对比度有牙（2.80 < 4.5）；但 AC-12 焦点 e2e 删掉 `:focus-visible` 后仍 1 passed（UA 默认 outline），AC-10/AC-11 见 C-118 / C-119；`pnpm test:e2e` 仍不构建（C-130）。 | **阻塞（TEST-1 / TEST-6）**：焦点 e2e 聚焦可交互元素并断言应用样式；AC-10 改输入框矩形；补六个 spec 或记录等价覆盖。 | **仍 Open（阻塞，Round 2 部分修复）** · `tests/e2e/game.spec.ts:96-112`、`scripts/test-e2e.mjs:42`、`TEST-STRATEGY.md:332-345`；`reviews/REVIEW-RFC-012.md` Round 2 §1.4 / §2 |
+| **C-127** | **新 · `DAY_VOTE_RUNOFF` 玩家缺口**：引擎支持重投（`vote.ts:122-135`，`targets.ts:28-29`），`nextActor` 也会选中玩家；但 `orchestrator.ts:183` 的 `playerPhase` 与 `App.tsx:141` 的 VoteInput 只认 `DAY_VOTE`。首轮平票后玩家没有投票 UI，重投票由 `decide`（LLM/脚本 AI）代打，违反 PRD FR-6 / AC-11。 | **阻塞。** 把 `DAY_VOTE_RUNOFF` 纳入 `playerPhase` 与 VoteInput（只列并列者、不可弃权）；补平票 → 重投用例。 | **Open（阻塞，Round 2 新登记）** · `src/server/orchestrator.ts:183`、`src/client/App.tsx:141`、`src/engine/phases/vote.ts:122-135`、`src/server/project/targets.ts:28-29`、`PRD.md` FR-6；`reviews/REVIEW-RFC-012.md` Round 2 §1.3 / C-127 |
+| **C-128** | **新 · 身份卡内容与 UI-2**：`IdCard.tsx:14-46` 只有角色 + 角色事实，无技能/目标/剩余次数；`OnboardingHints.tsx:26` 仍显示 `wolf`；`StatusBar` / `boardAnnouncement` 仍显示 `DAY_VOTE` / `FINISHED`。F24 AC-1 / F21 AC-2 / F24 AC-5 / UI-2 未满足。 | **阻塞。** 复用 shared 卡片内容（skills/goal/remaining）；用 `ROLE_LABELS` 与阶段中文映射替换原始枚举。 | **Open（阻塞，Round 2 新登记）** · `src/client/components/IdCard.tsx:14-46`、`src/client/components/OnboardingHints.tsx:26`、`src/client/components/StatusBar.tsx:44-50`、`src/client/game-state.ts:94-101`；`reviews/REVIEW-RFC-012.md` Round 2 §1.7（b） |
+| **C-129** | **新 · `role="status"` 每秒播报**：`App.tsx:134-136` 的 live region 使用 `remaining`，每秒变化；3.5s 内 4 次 MutationObserver 变化；文本只含「你是 N 号」不含 role。违反 RFC §4「不要每秒都播报」与 AC-15 身份要求。 | **阻塞（A11Y-1 / AC-15 / F30）**：复用 `StatusBar.announced`（每 10 秒或最后 10 秒），并把 role 写进公告。 | **Open（阻塞，Round 2 新登记）** · `src/client/App.tsx:134-136`、`src/client/game-state.ts:94-101`、`src/client/components/StatusBar.tsx:23-31`；`reviews/REVIEW-RFC-012.md` Round 2 §1.7（c） |
+| **C-130** | **新 · `pnpm test:e2e` 不构建**：`scripts/test-e2e.mjs:42` 直接 spawn Playwright；`scripts/e2e-server.ts` 只在 `dist/client` 存在时托管静态资源。源码 `.app{min-width:500px}` 不重建 → 360px 用例 **1 passed**；重建 → **1 failed（overflow=140）**。Round 1 E1a / B-8 原样复现。 | **阻塞（TEST-1 / TEST-6 证据链）。** `test:e2e` 先 `pnpm build`，或把缺失 `dist/client` 作为明确失败。 | **Open（阻塞，Round 2 新登记）** · `scripts/test-e2e.mjs:42`、`scripts/e2e-server.ts:28-33`、`playwright.config.ts:23-29`；`reviews/REVIEW-RFC-012.md` Round 2 §2.1 |
+| **C-131** | **新 · 测试计划 / 文档漂移（非阻塞）**：`TEST-STRATEGY.md:332-345` 的 RFC-012 六个 e2e 文件与 `tests/client/id-card.test.tsx` 仍全部 `proposed`；RFC §8.6 仍写「投票 UI 归 RFC-013」，§8.7 写「runGame 接受 gameId」「e2e 把投票纳进循环」，与实测不符；README 状态行未同步。 | **非阻塞（文档）。** 回填 `Exists?` 与实际文件，或记录等价覆盖；修正 §8.6/§8.7、README。 | **Open（非阻塞，Round 2 新登记）** · `TEST-STRATEGY.md:332-345`、`RFCs/RFC-012...:184-209`、`README.md:12-14`；`reviews/REVIEW-RFC-012.md` Round 2 §2.2 / §2.3 |
+
+> **Round 2 后的状态**：C-116 ~ C-123 **仍 Open（阻塞；其中 C-117 / C-118 / C-120 是实现已修、测试未锁，C-116 / C-119 / C-121 部分修复，C-122 未修，C-123 部分修复）**；新增 C-127 ~ C-130 阻塞、C-131 非阻塞。RFC-012 的 Status = **`Changes requested`**。已确认有牙的：AC-8 等待挂载 + min-width（重建后红）、AC-13 对比度（2.80 → 红）、超时草稿（真实 60 秒）、跨天推导（探针）、DAY_VOTE 投票 UI（真机 Tab+Enter）。未锁的：AC-2/3 术语、AC-6/7 跨天、AC-10 输入框几何、AC-11 RUNOFF/投票 e2e、AC-15 身份卡与读屏、`gameId`、e2e 构建。
+
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.118 | RFC-012 Round 2 复核（Status → `Changes requested`）：八项中「等 `.app` 再量宽度」「跨天过滤」「三段式布局」「草稿同步」的实现已修；但 `runGame` 仍忽略 `gameId`（A/B 探针 `requested=A → advanced=B`）、`DAY_VOTE_RUNOFF` 由 AI 代打、IdCard 缺技能/目标/剩余次数、`role="status"` 每秒播报、AC-10 输入框 e2e 假绿、AC-11 无 Tab→投票 e2e、跨天/草稿/IdCard 无回归锁、`pnpm test:e2e` 仍不构建。新增 C-127 ~ C-130 阻塞、C-131 非阻塞。门禁 79 files / 674 tests、7/7 e2e 全绿；探针从 `/tmp/howl-rfc012-r2-probes/backup/` 文件备份恢复、10 个文件 SHA-256 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 2 |
 | 2026-11-19 | v2.117 | RFC-012 Round 1 修复（Status → Implemented）：e2e 等挂载再量；三段式 grid 消除 42px 重叠；投票走输入通道 + VoteInput；真浏览器焦点/对比度用例；术语接进界面；跨天过滤；草稿同步；IdCard 与 `runGame(gameId)` |
 | 2026-11-19 | v2.116 | RFC-012 Round 1 评审（Status → `Changes requested`）：门禁 79 files / 671 tests、`pnpm test:e2e` 5/5 绿，但 AC-8/10/11 是假绿、AC-12/13 没有真浏览器用例；AC-2/3/6/7/10/11/14/15 不成立或未验证；新增 C-116 ~ C-123 阻塞（术语未接、跨天推导、手机 footer 遮挡、无投票/夜间输入、超时丢输入、身份卡/读屏、`runGame` 推进错局、e2e/jsdom 假绿）与 C-124 ~ C-126 非阻塞。探针从 `/tmp/howl-rfc012-probes/backup/` 文件备份恢复、六个文件 SHA-256 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 1 |
 | 2026-11-19 | v2.115 | RFC-012 实现完成（Status → Implemented）：整局入口（`GameLoop` + `POST /play`）、模型/脚本 decider、七个界面组件与响应式样式、jsdom 组件测试 + 5 条 Playwright 用例 |

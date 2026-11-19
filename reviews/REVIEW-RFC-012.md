@@ -418,3 +418,522 @@ AC-10 比较错了元素、AC-11 用程序聚焦绕过 Tab；AC-12/13 只有 CSS
 AC-12/13 只有 CSS 文本扫描；`pnpm test:e2e` 不构建；`runGame` 的 mode/seq；本地倒计时；
 重复 feed 行；页面自动滚走；`README` / `TEST-STRATEGY` / RFC §8.2/§8.4 文档漂移；
 M-3 / M-6 手工检查未记录。
+
+---
+
+## Round 2 -- 2026-11-19
+
+> 评审方式：全新上下文 subagent，只读仓库文件；本会话没有写过 RFC-012 的实现代码。
+> 被评审提交：`3c26a27 fix(rfc-012): 真浏览器几何/焦点/对比度、投票与术语接线（Round 1）`。
+> 评审开始时 HEAD `3c26a27`，工作树 clean。结论：**Changes requested**。
+>
+> 用户本轮点名的 C-116 ~ C-123 与 `RFCS.md` §8.41 的 C-116 ~ C-123 **编号不同**。本文按内容
+> 复核，编号对应如下，避免下一轮看错行：
+>
+> | 用户消息 | 实际内容 | `RFCS.md` §8.41 |
+> |---|---|---|
+> | C-116 | e2e 等 `.app` 挂载后再量宽度 | C-123 第 ① 项 |
+> | C-117 | 三段式 grid / 不重叠 / `elementFromPoint` | C-118 |
+> | C-118 | `VoteInput` + `playerAction` 投票分支 + Enter | C-119 |
+> | C-119 | e2e 焦点与对比度 | C-123 第 ②③ 项 |
+> | C-120 | `TermHint` 接入 + `TERMS` 静态扫描 | C-116 |
+> | C-121 | `spokenSeats` 只算最近 `DAY_STARTED` | C-117 |
+> | C-122 | `onDraft` → `POST /input` | C-120 |
+> | C-123 | `IdCard` / `boardAnnouncement` / `runGame(gameId)` | C-121 + C-122 |
+
+---
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · HEAD `3c26a27` · 评审开始时工作树 clean。
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  79 passed (79)
+      Tests  674 passed (674)
+    Duration  32.97s
+TEST_EXIT=0
+
+$ pnpm test:e2e
+Running 7 tests using 1 worker
+  ✓ 1 tests/e2e/game.spec.ts:12:3 › 主路径：能开一局、看到状态条与席位、发言区可达 (642ms)
+  ✓ 2 tests/e2e/game.spec.ts:22:3 › 360px 视口没有横向滚动 (718ms)
+  ✓ 3 tests/e2e/game.spec.ts:35:3 › 1024px 视口用桌面布局（席位在侧栏） (665ms)
+  ✓ 4 tests/e2e/game.spec.ts:49:3 › 手机视口下输入区不遮挡状态条 (288ms)
+  ✓ 5 tests/e2e/game.spec.ts:96:3 › 焦点可见：Tab 之后焦点元素有可见 outline (244ms)
+  ✓ 6 tests/e2e/game.spec.ts:114:3 › 对比度：正文与次要文字达到 AA (297ms)
+  ✓ 7 tests/e2e/game.spec.ts:155:3 › 键盘：Tab 能到发言区，Enter 能提交 (307ms)
+  7 passed (4.8s)
+E2E_EXIT=0
+```
+
+探针从 `/tmp/howl-rfc012-r2-probes/backup/` 的**文件备份**恢复（**未使用
+`git checkout` / `git restore`**）；10 个源码文件 SHA-256 与探针前一致，`git status --porcelain`
+为空；没有 `git commit`。恢复后最后一次全量重跑同为 79 files / 674 tests、7/7 e2e 全绿。
+
+**探针文件 SHA-256（恢复后）**
+
+```text
+801f88ca459eaea1545c835448579bd300a84120cb2e471881a188f60e634786  src/client/styles/global.css
+ad56b7504a2504376e73d8534606a3d4f4625e196154700ada056c1468a8a283  src/client/App.tsx
+eb1dbebadd2590475993d8667c53ea9fc6c30a4ae8b6590dfac6d174f42b0d62  src/client/game-state.ts
+9b27d20cc94937a98afb0bfc1e5cca4b9701f7eec3326f811a12fd5aa61a40b1  src/client/components/SpeechInput.tsx
+10df1394944a0568dc4fff602563ff595f665fb5caf924b92fadafd1c4a758ac  src/client/components/VoteInput.tsx
+6801e9e91c9ba74a47d3ba9ae784d43c2069caac83e44a563c29e04268bef531  src/client/components/IdCard.tsx
+e163cc6b4fa3a1bea595305cd34a24f9715f5597ecae7a26d3e1c393a3e882db  src/client/components/OnboardingHints.tsx
+1b1feb0e82013281424207b4ba7bb1467cedd4009daa3143dd3b622868920922  src/client/components/StatusBar.tsx
+fbe71228518407f56030a7effc41518da8495c8a5bb6b87e6b2772c6ec454119  src/server/orchestrator.ts
+6f6242b550ad02fdff821a8f3b67bb607e15068fa772bc0c9613865ae845916d  src/server/routes/games.ts
+```
+
+---
+
+### 1. 八项复核结论（先看这张表）
+
+| 用户项 | 本轮结论 | 一句话证据 |
+|---|---|---|
+| **C-116** e2e 等 `.app` | **Closed（测试有牙）** | 源码注入 `.app{min-width:500px}` 后**重建**再跑 360px：1 failed，`overflow=140`；不重建时仍绿，见 §2.1 的构建问题 |
+| **C-117** 三段式布局 | **实现 Closed；测试未闭合** | 真实 Chrome 390×700 三段矩形不重叠、输入框真可点（§1.2）；但输入框可被单独 `position:fixed` 到顶部而 e2e 仍 7/7 绿，实测盖住 timer 24px（§2.2） |
+| **C-118** 投票 | **Partial** | 真浏览器 Tab×2 → 「投 3 号」→ Enter 能完成投票（§1.3）；但 `DAY_VOTE_RUNOFF` 既不渲染也不走输入通道，玩家重投票由 AI 代打；删掉整个 `VoteInput` 后 7/7 e2e 仍绿 |
+| **C-119** 焦点/对比度 | **对比度 Closed；焦点锁无效** | 调低 `--muted` → 对比度 1 failed（2.80 < 4.5）；删掉 `:focus-visible` 后焦点 e2e 仍 1 passed（Chrome UA 默认 outline） |
+| **C-120** 术语 | **Partial** | 页面只有 3 个 trigger（投票/刀/悍跳），AC-2 要求 8 个术语里只有「刀」「悍跳」出现；把 `<span>放逐</span>` 写进组件，静态扫描仍 3/3 绿（§1.3a） |
+| **C-121** 跨天发言 | **实现 Closed；测试缺失** | 跨天探针：第 2 天 `spoken=[]`、`speaking=1`（§1.5）；把 `spokenSeats` 回退成旧实现，client 40/40 仍绿 |
+| **C-122** 草稿同步 | **实现 Closed；测试缺失** | 真实 60 秒超时把「草稿超时测试：我怀疑7号。」写成 `SPEECH`（§1.6）；删掉 `onDraft?.(...)` 后 client 40/40 仍绿 |
+| **C-123** 身份卡/读屏/`gameId` | **未闭合** | `runGame({gameId:A})` 实际推进 B（§1.7）；`IdCard` 没有技能/目标；`OnboardingHints` 仍渲染 `wolf`；`role="status"` 每秒更新；删掉 IdCard 与 status 后 client 40/40 仍绿 |
+
+### 1.1 C-116 / AC-8：等挂载的修复成立
+
+`tests/e2e/game.spec.ts:27` 在量 `scrollWidth` 前等待 `.app` 可见。反向探针：
+
+```text
+源码 .app{min-width:500px}，不重建 → pnpm exec playwright test -g "360px" → 1 passed
+执行 pnpm build 后再跑                  → 1 failed，overflow=140（期望 <= 0）
+```
+
+所以这条测试在 bundle 是当前源码时确实会红。**但它依赖人工先 build**：`scripts/test-e2e.mjs:42`
+仍然直接 `spawn(PLAYWRIGHT_BIN, ['test', ...])`，没有 `pnpm build`；源码改了不重建时，360px
+用例仍然 1 passed。这属于 §2.1 的证据链问题，不是 C-116 本身的挂载等待问题。
+
+### 1.2 C-117 / AC-10：布局实现正确，e2e 漏测输入框本身
+
+真浏览器（`channel:'chrome'`，390×700，玩家 1 号轮次，输入框可见，clean build）：
+
+```text
+banner  12    – 162
+main    174   – 396
+footer  408   – 688
+input   408   – 671.6      elementFromPoint(输入框中心) = TEXTAREA.input__box
+timer   126   – 150
+speaking 425.6– 467.6（被 main 的 overflow 裁剪，未绘制到 footer 之上）
+scrollWidth=390, clientWidth=390
+```
+
+三段矩形与输入框可点击都成立，Round 1 的 42px 重叠消失。**但测试只比较
+`banner/footer` 与 `main/footer`，以及输入框中心点是否命中输入框**；它没有比较输入框自身的
+矩形与 `banner` / `timer`。反向探针：
+
+```css
+.input { position: fixed; top: 0; left: 12px; right: 12px; z-index: 999; }
+```
+
+重建后 `-g "不遮挡"` → **1 passed**；同一页面实测：
+
+```text
+input 0 – 263.6，banner 12 – 162（重叠 150px），timer 126 – 150（重叠 24px）
+elementFromPoint(timer 中心) = input__box
+```
+
+即：输入框可以把倒计时整块盖住，而 AC-10 的 e2e 仍绿。建议直接断言
+`input`（不是 footer）与 `banner`、`timer` 的矩形不重叠，另保留 `elementFromPoint`。
+
+### 1.3 C-118 / AC-11：投票可用，但重投与自动化证据缺位
+
+**正向（真浏览器）**：在真实页面上等 `DAY_VOTE`，从 body 起按 Tab：
+
+```text
+Tab #1 → OL.feed__list（outline 3px）
+Tab #2 → BUTTON "投 3 号"（outline 3px）
+Enter  → phase 从 DAY_VOTE 推进到 FINISHED，无 app__error
+```
+
+点击「投 3 号」也走同一条路由并能推进。`playerAction` 的 `DAY_VOTE` 分支（`orchestrator.ts:233-244`）
+与路由的 `channels.submit`（`routes/games.ts:262-267`）都在；路由通知这条有牙：
+**删掉 `channels.submit(VOTE)` → `tests/server/channels.test.ts` B-R9-1 1 failed / 19 passed（5.0s 超时）**。
+
+**但有三条实质缺口：**
+
+1. **`DAY_VOTE_RUNOFF` 未接入玩家。** `App.tsx:141` 只判断 `ctx.phase === 'DAY_VOTE'`；
+   `orchestrator.ts:183` 只把 `DAY_SPEECH` / `DAY_VOTE` 当玩家相位。引擎的 `vote` handler 同时
+   支持 `DAY_VOTE_RUNOFF`（`src/engine/phases/vote.ts:122-135`），`legalTargets` 也为重投返回
+   并列者（`src/server/project/targets.ts:28-29`）。一旦首轮平票，`nextActor` 会选中玩家，但
+   `playerPhase` 为 false → 调用 `decide`（生产是 LLM/脚本 AI）替玩家投重投票，且界面没有
+   投票按钮。这是 AC-11 / PRD FR-6 的规则对等性缺陷。
+2. **没有 e2e 覆盖投票。** 删掉 `App.tsx` 的整个 `<VoteInput>` 并重建 → `pnpm exec playwright test`
+   **7 passed**；`game.spec.ts:155-168` 仍是 `box.focus()`，不是 Tab；给 textarea 加 `tabIndex={-1}`
+   并重建 → 键盘用例 **1 passed**（Round 1 的 E4 原样复现）。测试名「Tab 能到发言区」与实现不符。
+3. **玩家投票分支本身没有锁。** 把 `playerPhase` 改成只认 `DAY_SPEECH`（即删掉 `DAY_VOTE` 分支）后，
+   `tests/server/channels.test.ts` **20/20 passed**、`tests/server/game-loop.test.ts` **2/2 passed**。
+   整局仍能因路由直写 VOTE 而结束——测试证明不了「玩家投票走输入通道」，只能证明路由能写票。
+
+### 1.3a C-120 / AC-2、AC-3：术语接进了界面，但只接了 3 个，扫描也漏 JSX
+
+**正向**：`TermHint` 不再是死代码，`App.tsx:147-152` 在提示区渲染了 3 个 trigger；真实
+Chrome 里逐个 `focus()` 后 `aria-describedby` 与 tooltip 都出现：
+
+```text
+投票  → 票：投票，或指某人的得票
+刀    → 刀：狼人夜间击杀
+悍跳  → 悍跳：狼人冒充预言家
+```
+
+**但 AC-2 要求 8 个术语**（刀、验、放逐、悍跳、自曝、屠边、屠城、垫飞）。真实页面
+`.term__trigger` 只有 3 个，其中「投票」不是 `TERMS` 的标签（`TERMS.vote.label === '票'`）；
+8 个里实际出现的只有「刀」「悍跳」两个。发言流里的术语仍是纯文本，没有 hover/focus
+落点，也没有 `terms.spec.ts`。
+
+**AC-3 的扫描也有缺口**：`tests/security/no-hardcoded-terms.test.ts:57-72` 只匹配
+`['"\`]标签['"\`]` 这种**字符串字面量**。把 `<span>放逐</span>` 直接写进 `StatusBar.tsx` 的
+JSX 后：
+
+```text
+pnpm exec vitest run --project unit tests/security/no-hardcoded-terms.test.ts
+→ 3 passed
+```
+
+也就是 JSX 文本节点里的术语逃过了扫描；`a11y.test.tsx:149-156` 又只是读取 `App.tsx` 源码，
+断言「至少出现 `<TermHint` 且 termKey 是 knife|vote|fakeSeerClaim 之一」，删掉其中两个
+也不会红。AC-3「术语文本全部来自 `terms.ts`」目前只有 tooltip 的解释文本成立，trigger 的
+可见文字是 `App.tsx` 里硬编码的 children。
+
+**建议**：给 8 个术语一个明确的出现位置（术语表/发言流 inline 渲染），补 hover + 键盘聚焦
+的 e2e；把扫描扩展到 JSX 文本与 `TermHint` children，或让 `TermHint` 自己渲染
+`TERMS[termKey].label`，从结构上消除硬编码。
+
+### 1.4 C-119 / AC-12、AC-13：对比度有牙，焦点 e2e 测的是 UA 默认样式
+
+**AC-13（通过）**：把 `--muted` 改成 `#5b6670` 并重建：
+
+```text
+对比度用例 1 failed
+Expected: >= 4.5
+Received:    2.8019217884072734
+```
+
+**AC-12（实现通过，e2e 弱）**：删掉整个 `:focus-visible` 块并重建：
+
+```text
+焦点用例 1 passed
+```
+
+原因是 Tab #1 落在 `OL.feed__list`（Chrome 对可滚动容器给的默认焦点），UA 自带
+`outline: auto 1px`，不是应用自己的 3px `--accent`。这条 e2e 既没有聚焦 button/textarea，也
+不能发现「应用焦点样式被删」。AC-12 仍由 `tests/client/a11y.test.tsx:40-55` 的 CSS 文本扫描锁住
+（J4 会红），所以不是功能缺陷，但**不能把它当作真浏览器回归锁**。
+
+### 1.5 C-121 / AC-6、AC-7：跨天实现正确，测试为零
+
+用 `tsx` 直接调用纯函数，构造：
+
+```text
+第 1 天 DAY_STARTED + SPEECH 1/2/3
+第 2 天 DAY_STARTED（speechStartSeat=1，alive=[1,3]）
+```
+
+结果：
+
+```text
+spokenSeats = []
+speakingSeat = 1
+buildBoard  → 1 号 speaking、hasSpoken=false；3 号 hasSpoken=false
+```
+
+实现与 Round 1 的 P-MULTIDAY 期望一致。**但把 `spokenSeats` 回退成旧的全量过滤后，
+`pnpm exec vitest run --project client` 仍然 40/40 passed**：`tests/client/game-state.test.ts:44-85`
+没有跨天用例，也没有任何测试渲染 `App`。这条修复目前是「代码对、锁没有」。
+
+### 1.6 C-122 / UI-4：超时真的提交了草稿，但没有回归锁
+
+真实浏览器、390×700、seed 13、玩家 1 号轮次：
+
+```text
+输入「草稿超时测试：我怀疑7号。」，不按 Enter
+等待服务端 60 秒超时
+→ timer 显示「时间到」，phase 变 DAY_VOTE
+→ feed 出现「1 号 / 草稿超时测试：我怀疑7号。」
+```
+
+`/api/games/:id/input` 收到一次 200（`performance` 资源项）。**UI-4 的核心行为已兑现。**
+反向探针：删掉 `SpeechInput.tsx:52-57` 的 `onDraft?.(...)` → client **40/40 passed**；
+没有测试检查 `onDraft` 是否被调用、`POST /input` 是否发生、超时最终事件是否含文本。
+另有非阻塞问题：App 没有防抖，每次 `onChange` 都 `void client.draft(...)`；`ApiClient.draft`
+不检查 `response.ok`，失败静默。
+
+### 1.7 C-123 / AC-15：`gameId` 仍是类型参数，身份卡不完整，读屏区每秒播报
+
+**（a）`runGame` 仍忽略 `gameId`（阻塞，Round 1 C-122 原样复现）**
+
+`orchestrator.ts:29` 加了可选 `gameId`，`game-loop.ts:62` 也传了；但 `orchestrator.ts:148` 仍取：
+
+```ts
+session.gameIds[session.gameIds.length - 1]
+```
+
+`deps.gameId` 在函数体内**从未被读取**。真实探针：同 session 创建 A、B 两局后：
+
+```text
+requested=A，lastInSession=B，advanced=B
+aEvents=1，bEvents=1
+```
+
+即 `/play A` 仍推进 B。多标签页/刷新会不断追加 gameId，旧循环会推进最新一局；`GameLoop` 的
+`running` 以 gameId 为键，A、B 两个循环还会同时推进 B。这不是「参数未使用」的整洁问题，是
+Round 1 P-MULTIGAME 的功能缺陷未修。
+
+**（b）IdCard 不满足 F24 AC-1 / F21 AC-2**
+
+`IdCard.tsx:14-46` 只显示「N 号 · 角色名」+ 角色专属事实（查验史/药水/开枪/队友）。没有
+**技能**、没有**目标**、没有通用**剩余次数**；村民角色连事实列表都是空的。服务端
+`src/server/view/id-card.ts` 已有的 `skills` / `goal` / `remaining` 没有被客户端使用
+（客户端也无法直接 import，但应在 shared 层复用）。这与 RFC §2.2「身份卡说明：技能、目标、
+剩余次数（复用 RFC-011 的卡片）」不一致。
+
+同时 `OnboardingHints.tsx:26` 仍渲染原始 role id：
+
+```text
+你的身份是 wolf。先听一两轮，再决定信谁。
+```
+
+IdCard 显示「狼人」、引导显示「wolf」，UI-2（身份名只能来自 `terms.ts`）仍被违反；
+`StatusBar` 与 `boardAnnouncement` 对 `DAY_VOTE` / `FINISHED` 也直接显示枚举值，F24 AC-5
+「文案不出现未定义术语」同样未满足。
+
+**（c）`role="status"` 每秒更新，且公告不含身份**
+
+`App.tsx:134-136` 把 `boardAnnouncement(ctx, remaining)` 放进 `role="status" aria-live="polite"`；
+`remaining` 每秒减一，文本随之每秒变化。3.5 秒内 MutationObserver 记录到 **4 次**变化：
+
+```text
+你是 1 号，第 1 天，轮流发言，轮到 1 号发言，还剩 34 秒。
+你是 1 号，第 1 天，轮流发言，轮到 1 号发言，还剩 33 秒。
+……
+```
+
+RFC §4 明确要求「倒计时文字使用 aria-live，但不要每秒都播报——每 10 秒或最后 10 秒才更新」。
+`StatusBar` 有 `announced` 节流，但新加的 status 区没有。并且公告文本只有「你是 1 号」
+（席位），没有 role；`IdCard` 虽有 role，但动态播报本身不含身份。
+
+**（d）没有 App 集成测试**：删掉 `<IdCard>` 与整个 `role="status"` 段后，client 仍
+**40/40 passed**。AC-15 / F24 的界面证据仍只来自纯函数与源码文本扫描。
+
+---
+
+### 2. 证据链与流程问题
+
+#### 2.1 `pnpm test:e2e` 仍不构建
+
+`scripts/test-e2e.mjs:42` 只转交 Playwright；`scripts/e2e-server.ts` 在 `dist/client` 存在时托管
+静态资源。实测：
+
+```text
+源码 .app{min-width:500px}，不重建 → -g "360px" → 1 passed（跑的是旧 bundle）
+执行 pnpm build 后再跑              → 1 failed（overflow=140）
+```
+
+Round 1 的 E1a / B-8 没有关闭。干净检出时 `dist` 不存在，e2e 会 404（不是假绿），但只要
+本地有过一次构建，之后所有 e2e 都可能跑旧代码。建议：`test:e2e` 先 `pnpm build`，或把
+`dist/client` 缺失当作明确失败。
+
+#### 2.2 测试计划仍全部 `proposed`
+
+`TEST-STRATEGY.md:332-345` 的 RFC-012 小节仍然写 `tests/e2e/{terms,onboarding,order,responsive,
+keyboard,a11y}.spec.ts`，六个文件一个都不存在；`tests/client/id-card.test.tsx` 也不存在。
+`game.spec.ts` 确实合并了 responsive / keyboard / a11y 的一部分，但 terms、onboarding、order
+没有等价覆盖，也没有在 `## Implementation Notes` 记录「合并覆盖」。TEST-1 / TEST-6 未满足。
+
+#### 2.3 RFC 文档与实测不一致（DOC-1）
+
+- RFC §8.6 仍写「投票 UI | 目前只有发言输入；投票走 API | RFC-013」，但 VoteInput 已在本 RFC；
+- RFC §8.7 写「runGame 接受 gameId，同一 session 多局不再推进错局」——实测仍推进错局；
+- RFC §8.7 写「e2e 断言…把投票纳进循环」——e2e 没有投票；只有 `channels.test.ts` 有服务端投票循环；
+- §8.4 的 PASS 表没有回填本轮；`TEST-STRATEGY.md` 的 `Exists?` 没有回填；README 的训练数字
+  只更新了 674，状态行仍与 RFCS 不一致。
+
+#### 2.4 其他直接观察（非阻塞）
+
+- **重复 feed 行**：真实页面在玩家发言后出现同一条 SPEECH 两次（committed + live `done`），
+  Round 1 的 P-FEED 仍在；`App.tsx:63-76` 未按 seq 去重。
+- **本地倒计时**：`remaining` 仍从挂载起固定递减，不读 `GET /timer`，FINISHED 后仍显示
+  「时间到」；不是本轮八项，但会影响 UI-4 的观感。
+- **VoteInput 条件**：`ctx.legalTargets.includes(ctx.self.seat) === false` 对投票阶段恒真
+  （`legalTargetsOf` 明确排除 observer），所以只要 `DAY_VOTE` 就显示投票，包括已投票后、
+  已出局时；点击会得到 `ALREADY_VOTED` / `NOT_YOUR_TURN` 的 alert。
+- **`as never` 强转**：`App.vote` 的 `target` 与 `playerAction` 的 `target` 都用 `as never`
+  绕过了类型检查；`Action` 的 `VOTE` 联合类型本可表达 `'abstain' | SeatId`。
+- **草稿同步无节流**：每个字符一次 `POST /input`；`ApiClient.draft` 不检查响应。
+- **IdCard 注释**写「只读投影推导出来的卡片（buildIdCard）」，但客户端没有调用
+  `buildIdCard`，与服务端实现已经分叉。
+
+---
+
+### 3. 五个维度
+
+#### 3.1 RFC ADHERENCE — **FAIL**
+
+- 已成立：AC-1 结构、AC-5（持久化）、AC-8（等待挂载 + 有牙）、AC-9（已有）、AC-10 的**实现**
+  （390×700 无重叠）、AC-12 的 CSS、AC-13 的调色板与真浏览器对比度、AC-16 的单写者行为、
+  UI-4 的超时提交（实测）、AC-11 的 DAY_VOTE 投票路径（实测）。
+- 未成立/未锁：AC-2 只覆盖 2/8 个术语；AC-3 的 JSX 字面量扫描缺口；AC-6/AC-7 无跨天测试；
+  AC-10 的 e2e 不测输入框 vs timer；AC-11 的 RUNOFF 由 AI 代打且无 Tab→投票 e2e；
+  AC-14 的阵营与阶段文案；AC-15 的公告每秒播报、不含 role、无 App 集成测试；
+  AC-15 整局入口的 `gameId` 仍被忽略。
+- 未记录偏离：`IdCard` 没有复用 RFC-011 的 `buildIdCard` 内容；`OnboardingHints` 仍显示原始
+  role id；`boardAnnouncement` 的每秒播报没有在 §8.2 记录。
+
+#### 3.2 RULES COMPLIANCE — **FAIL**
+
+- **UI-1 / SEC-5**：通过。IdCard / SeatGrid / Feed 只消费投影；`VoteInput` 只提交 action。
+- **UI-2**：**违反**。`OnboardingHints.tsx:26` 渲染 `wolf`；`StatusBar` / `boardAnnouncement`
+  渲染 `DAY_VOTE` / `FINISHED`；术语 trigger 的可见文字（「投票」）不是 `TERMS` 标签。
+- **UI-3**：通过（流式逐字；重复行是数据拼接问题，不是流式）。
+- **UI-4**：实现通过（真实 60 秒探针），但无回归测试。
+- **A11Y-1**：部分。Tab → 投票按钮在真实页面成立；RUNOFF 没有投票 UI；退役的 `SeatGrid`
+  按钮仍全部 disabled（`onSelect` 未传），不影响投票但席位不可交互。
+- **A11Y-2**：通过（静态扫描 + 真实 3px outline）；e2e 锁不敏感（见 §1.4）。
+- **A11Y-3**：部分。倒计时/存活有文字；阵营仍无显式文字；`DAY_VOTE` / `FINISHED` 未本地化。
+- **A11Y-4**：通过（`main` / `ul` / `ol` / `button`）。
+- **TEST-1 / TEST-6**：**不通过**。`game.spec.ts` 没有 terms/onboarding/order 覆盖；跨天、草稿、
+  IdCard、公告、RUNOFF、投票 UI 没有回归锁；`pnpm test:e2e` 不构建。
+- **DOC-1**：**不通过**。§8.6 / §8.7 的不实陈述见 §2.3。
+- **SEC-1 / SEC-4 / SEC-5**：通过。`/input` 仍然校验 300 字；`POST /actions` 校验席位；
+  客户端只拿投影。`as never` 是类型问题，不是注入面。
+
+#### 3.3 SECURITY — **PASS（非阻塞建议）**
+
+- 对局视图仍由 `project(state, observer)` 生成；VoteInput 只提交自己的 seat；路由仍拒绝
+  他人席位；`/input` 有 300 字上限。
+- 非阻塞：`POST /play` 仍无频率限制；IdCard 的 `role`/知识来自投影，已按 SEC-5 裁剪；
+  `console.error` 仍打印错误对象（未见密钥）。
+
+#### 3.4 PERFORMANCE — **NEEDS WORK**
+
+- `App` 每秒全量 `GET /api/games/:id` + `project()` 重放全部事件，与 SSE 并存（Round 1 C-126）。
+- 草稿同步没有节流：每次按键一次 `POST /input`；建议 200–300ms debounce，并在 `ApiClient.draft`
+  检查 `response.ok`。
+- `SpeechFeed` 仍用 `scrollIntoView`（虽然现在最近的滚动容器多半是 `.app__main`）。
+
+#### 3.5 MAINTAINABILITY — **NEEDS WORK**
+
+- **没有 App 集成测试**：0 个测试渲染 `App`；TermHint、IdCard、status 区、投票 UI 的接线都
+  只靠源码字符串扫描。
+- **IdCard 重复实现**：服务端 `buildIdCard` 与客户端 `IdCard` 两套字段；客户端缺 skills/goal。
+- **VoteInput 条件恒真**、dead/已投票仍显示；`as never` 绕过类型。
+- **live region 文本**每秒变化；应复用 StatusBar 的 `announced`。
+- **文档/测试计划**：RFC §8.6/§8.7、TEST-STRATEGY `Exists?`、README 与实现不一致。
+
+---
+
+### 4. 验收标准逐条（Round 2）
+
+| AC | 判定 | 一手证据 |
+|---|---|---|
+| 1 三块区域、阶段与天数 | **PASS（证据 PARTIAL）** | `App.tsx:119-137`；真实 Chrome heading/status；e2e 主路径不验天数/阶段值（非阻塞） |
+| 2 8 个术语悬停/聚焦 | **PARTIAL / OPEN** | 3 个 trigger（投票/刀/悍跳），8 个里只有 2 个；focus 可显示 tooltip；无 terms.spec |
+| 3 术语来自 terms.ts、扫描 client | **PARTIAL / OPEN** | `no-hardcoded-terms.test.ts:57-72` 只拦字符串字面量；`<span>放逐</span>` 仍 3/3 绿；trigger 可见文字不经 TERMS |
+| 4 发言提示不代填 | **PASS** | `SpeechInput.tsx:44-50`；`a11y.test.tsx:133-147` 新增了提示与 aria-describedby 的锁 |
+| 5 引导可关闭、刷新不再出现 | **PASS（实现）** | localStorage + unmount/remount；e2e 仍未做真正刷新（非阻塞） |
+| 6 三项发言状态 | **PASS（实现）** | 跨天探针（§1.5）；无跨天测试（OPEN） |
+| 7 当前发言者由事件流推导 | **PASS（实现）** | 同上；`speakingSeat` 按最近 DAY_STARTED 起算 |
+| 8 360px 无横向滚动 | **PASS** | e2e 等 `.app`；min-width 探针重建后 1 failed（140px） |
+| 9 ≥1024px 桌面布局 | **PASS** | e2e `gridTemplateColumns` ≥2；仍只断言列数（非阻塞） |
+| 10 输入不遮挡轮次/倒计时/当前发言 | **PASS（实现）/ OPEN（测试）** | 390×700 无重叠；fixed 输入框探针 e2e 仍绿且盖 timer 24px（§1.2） |
+| 11 纯键盘「发言 → 投票」 | **PARTIAL / OPEN** | 真实 Chrome Tab×2 → 投 3 号 → Enter 可完成；e2e 仍 `.focus()`、无投票；RUNOFF 由 AI 代打 |
+| 12 焦点可见 | **PASS** | CSS 3px + 真实 Chrome outline；e2e 对删 CSS 不敏感（§1.4） |
+| 13 对比度 AA | **PASS** | 低 `--muted` 探针 2.80 → 1 failed |
+| 14 倒计时/阵营/存活有文字 | **PARTIAL** | 倒计时/存活有；阵营无显式文字；`DAY_VOTE` / `FINISHED` 原始枚举 |
+| 15 读屏身份/阶段/轮到谁 | **PARTIAL / OPEN** | IdCard 有 role；status 区有阶段/轮到谁但无 role、每秒播报；无 App 集成测试 |
+| 15（整局入口） | **PARTIAL / OPEN** | `game-loop.test.ts` 能到 FINISHED；`runGame` 忽略 `gameId`（A/B 探针）；玩家夜间动作仍由 AI 代打；投票分支无锁 |
+| 16 不双写 | **PASS（行为）** | `channels.test.ts` B-R9-1 无 REJECTED、单条 SPEECH；RFC §8.4 引用的 `game-loop.test.ts` 仍无此断言（非阻塞文档） |
+
+---
+
+### 5. 结论
+
+**Overall Risk Level: High。**
+
+本轮确实修好了几件真问题：AC-8 的等待挂载与 min-width 探针、AC-10 的三段式布局实现、
+AC-13 的真浏览器对比度、超时草稿提交（真实 60 秒）、跨天发言推导、以及 DAY_VOTE 的投票
+UI。这些都有真实浏览器/真实超时的正向证据。
+
+但八项里仍有 **一项功能完全未修（`runGame` 的 `gameId`）、一项规则缺口（`DAY_VOTE_RUNOFF`
+由 AI 替玩家投）、一项 Must 功能不完整（IdCard 无技能/目标、Onboarding 仍是 `wolf`）**；
+其余多项是「代码修了、测试没锁」：跨天、草稿、投票 e2e、IdCard/公告。更严重的是两条新的
+假绿——**输入框单独 `fixed` 盖住 timer 而 AC-10 e2e 仍绿**、**删掉整个 VoteInput 而 7/7 e2e
+仍绿**——说明本轮新增的真浏览器用例还没有覆盖它们声称覆盖的行为。`pnpm test:e2e` 仍不构建，
+使这些绿灯在源码变更后不可信。
+
+**Blocking Issues（必须修复后才能合并）**
+
+1. **C-122（Round 1 未修）· `runGame` 忽略显式 `gameId`。** A/B 同 session 探针
+   `requested=A → advanced=B`；`orchestrator.ts:29` 只加了参数，`:148` 仍取
+   `session.gameIds[last]`。多标签页/刷新/`/play A` 都会推进错的局。必须改成
+   `deps.gameId ?? session.gameIds[last]`，并补 A/B 同 session 回归用例。
+2. **C-127（新）· `DAY_VOTE_RUNOFF` 未接入玩家。** `orchestrator.ts:183` 与 `App.tsx:141`
+   都只认 `DAY_VOTE`；首轮平票时玩家重投票由 `decide`（LLM/脚本 AI）代打，且没有投票 UI。
+   必须把 `DAY_VOTE_RUNOFF` 纳入 `playerPhase` 与 VoteInput（只列 runoff 并列者、不可弃权），
+   并补平票 → 重投的用例。
+3. **C-118（Round 1 未闭合）· AC-10 的 e2e 不测输入框本身。** 反向探针：
+   `.input{position:fixed;top:0;...}` 后 e2e 仍 1 passed，实测盖住 banner 150px、timer 24px。
+   断言应改为 `input` 与 `banner`、`timer` 的矩形不重叠（并保留 `elementFromPoint`）。
+4. **C-119（Round 1 未闭合）· AC-11 没有 Tab→投票 e2e，投票 UI 无回归锁。**
+   删掉 `<VoteInput>` → 7/7 e2e 绿；`tabIndex={-1}` → 键盘用例仍绿；删掉 `DAY_VOTE`
+   的 `playerPhase` → channels 20/20 + game-loop 2/2 绿。补一条真正 Tab → 输入 → Enter →
+   投票的 Playwright 用例，并覆盖「发言后输入框消失、投票按钮出现」。
+5. **C-116（Round 1 未闭合）· AC-2 / AC-3 的术语覆盖不足。** 页面只有 3 个 trigger，
+   8 个术语里只有「刀」「悍跳」；`<span>放逐</span>` 这类 JSX 字面量逃过静态扫描。
+   补全部 8 个术语的悬停 + 键盘聚焦覆盖，并把扫描扩展到 JSX 文本/children。
+6. **C-117（Round 1 未闭合）· 跨天发言没有回归锁。** `spokenSeats` 回退成旧实现后 client
+   40/40 仍绿。补第 1 天发言 + 第 2 天 DAY_STARTED 的纯函数用例与渲染 `App` 的用例。
+7. **C-120（Round 1 未闭合）· 草稿同步没有回归锁。** 删掉 `onDraft` 后 client 40/40 仍绿。
+   补「输入 → `/input` 调用 → 60 秒超时 → 事件含草稿文本」的可控时钟用例；同时加防抖。
+8. **C-121 / C-123（Round 1 未闭合）· 身份卡与读屏证据不完整。** IdCard 缺技能/目标/
+   剩余次数（F24 AC-1 / F21 AC-2）；`OnboardingHints` 仍显示 `wolf`；status 区每秒播报且
+   不含 role；删掉 IdCard + status 区后 client 40/40 仍绿。补 App 集成测试与上述内容。
+9. **C-130（新，证据链）· `pnpm test:e2e` 不构建。** Round 1 E1a 原样复现：源码
+   `min-width:500px` 不重建仍 1 passed，重建后 1 failed。必须先 `pnpm build`（或把缺失
+   `dist/client` 当失败），否则本轮所有 e2e 结论都可能是旧 bundle。
+
+**Improvement Suggestions（非阻塞）**
+
+1. `VoteInput` 只在玩家是当前投票者/未投票/存活时显示；把
+   `ctx.legalTargets.includes(ctx.self.seat) === false` 换成明确的我的回合判定。
+2. 去掉 `as never`：`VOTE` 的 `target` 用 `SeatId | 'abstain'` 类型，让编译器校验。
+3. 草稿同步加 200–300ms debounce；`ApiClient.draft` 检查 `response.ok`；把失败暴露到
+   `app__error`。
+4. `role="status"` 复用 `StatusBar` 的 `announced`，并把 role 写进 `boardAnnouncement`。
+5. 用 `ROLE_LABELS` / 阶段中文映射替换 `OnboardingHints`、`StatusBar` 的原始枚举。
+6. 按 seq 去重 committed 与 live 行；`SpeechFeed` 只改自己的 `scrollTop`。
+7. `remaining` 改为服务端 `/timer` 的派生值，按玩家轮次重置；FINISHED 后隐藏。
+8. 补 `tests/client/id-card.test.tsx` 与一个渲染 `App` 的集成测试（假 ApiClient）。
+9. 把 `TEST-STRATEGY.md:332-345` 的六个计划文件回填为实际文件，或在 Implementation Notes
+   记录合并后的等价覆盖；同步 RFC §8.6/§8.7 与 README。
+10. 记录 M-3（VoiceOver 实听）与 M-6（移动端真机）结果；当前 Implementation Notes 没有。
+
+**状态**：RFC-012 → **`Changes requested`**。
+
+本轮没有 `git commit`。所有探针源码已从 `/tmp/howl-rfc012-r2-probes/backup/` 的文件备份恢复
+（**未使用 `git checkout` / `git restore`**），10 个文件 SHA-256 与探针前一致；
+`git status --porcelain` 为空；临时探针脚本在 `/tmp`，仓库内无残留；最终
+`pnpm test` 79 files / 674 tests、`pnpm test:e2e` 7/7、五条命令 exit 0。
