@@ -200,3 +200,18 @@ $ coverage（引擎）→ 行 96.96% / 分支 92.85%
 $ pnpm test → 87 files / 743 tests
 $ pnpm test:e2e → 10 passed
 ```
+
+### 8.8 Round 2 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-171** 释放局 App 仍崩 | `ApiClient.game` 对 410 不抛错——上一轮我声称改了，实际改到了别处（又一次静默替换） | 这次真的在 `game()` 里对非 2xx 抛错；补 410 用例与「game 失败 → 回落到 replay → 渲染复盘页」的 App 级用例。删掉抛错会红 |
+| **C-176** 终局快照漏最后一条推理 | `submit` 先建快照，`runGame` 之后才追加 `AI_THOUGHT` | `appendEvents` 在 `finished` 记录上**重建快照**；补「追加后快照与新事件都在」用例（`appendEvents` 不重建会红） |
+| **C-157** 用量接线没有生产锁 | 只手工调 sink | `createLlmAgent` 加测试缝 `decideFn`；用例断言 agent 传给 `decide` 的 deps 里有 `metaLog`，删掉注入会红 |
+| **C-160 / AC-10** 只看条数 | 改文本仍绿 | 断言筛选前后**逐条文本完全相等**；给时间线文本加"·MUT"的探针会红 |
+| **C-163 / AC-2/5/6** 同义反复 | 断言自己构造的对象 | 真实对局快照逐席与 `state` 比对（角色/人格/存活），`result`/`winCondition` 与 `GAME_ENDED` 比对，并断言角色种类 > 1 |
+
+```
+$ pnpm test → 87 files / 748 tests
+$ pnpm test:e2e → 10 passed
+```

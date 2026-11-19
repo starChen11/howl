@@ -320,3 +320,44 @@ describe('AC-9 · 真相区渲染动作与出局记录', () => {
     expect(screen.getByText(/第 2 天，wolf/)).toBeTruthy();
   });
 });
+
+describe('C-171 · 对局已释放时仍能看到复盘', () => {
+  it('game() 抛错后回落到 replay 并渲染复盘页', async () => {
+    const snapshot = {
+      gameId: 'g',
+      seed: 1,
+      finishedAt: 0,
+      result: 'good' as const,
+      winCondition: '狼人全部出局',
+      timeline: [{ seq: 1, day: 1, phase: 'DAY_SPEECH', text: '身份分配完成' }],
+      seats: [
+        {
+          seat: 1,
+          role: 'villager',
+          roleLabel: '村民',
+          personaId: null,
+          personaLabel: null,
+          alive: true,
+        },
+      ],
+      thoughts: [{ seq: 2, seat: 1, kind: 'speech' as const, reason: '释放后仍可读', chose: '' }],
+      degraded: [],
+    };
+
+    const client = {
+      game: async () => {
+        throw new Error('读取对局失败：410');
+      },
+      replay: async () => snapshot,
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async () => ({ ok: true as const }),
+      truth: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: '复盘' })).toBeTruthy());
+    expect(screen.getByText(/释放后仍可读/)).toBeTruthy();
+  });
+});

@@ -379,3 +379,134 @@ describe('AC-3 · 事件流里真的存在 AI_THOUGHT', () => {
     expect(snapshot.thoughts.length).toBe(fromEvents);
   });
 });
+
+describe('C-176 · 终局后追加的推理也要进快照', () => {
+  it('appendEvents 在 finished 记录上重建快照', async () => {
+    const store = new InMemoryMetaStore();
+    const { registry, record } = await finishedGame(store);
+    const before = (record.snapshot as { thoughts: unknown[] }).thoughts.length;
+
+    const updated = await registry.appendEvents(record, [
+      {
+        gameId: record.gameId,
+        seq: record.events.length + 1,
+        ts: 0,
+        type: 'AI_THOUGHT',
+        visibleTo: 'self:2',
+        payload: { reason: '最后一轮的理由', decisionSeq: record.events.length, seat: 2 },
+      } as never,
+    ]);
+
+    const snapshot = updated.snapshot as { thoughts: { reason: string }[] };
+    expect(snapshot.thoughts).toHaveLength(before + 1);
+    expect(snapshot.thoughts.at(-1)?.reason).toBe('最后一轮的理由');
+
+    const persisted = await registry.getGame(record.gameId);
+    expect(
+      (persisted?.snapshot as { thoughts: { reason: string }[] }).thoughts.at(-1)?.reason,
+    ).toBe('最后一轮的理由');
+  });
+});
+
+describe('C-157 · 生产接线真的把 metaLog 传给了 decide', () => {
+  it('createLlmAgent 调 decide 时带上 usageMetaLog，调用会被计入', async () => {
+    const { createLlmAgent } = await import('@server/ai/agent');
+    const { usageOf, resetUsage } = await import('@server/llm/usage');
+    resetUsage();
+    const previousKey = process.env['DEEPSEEK_API_KEY'];
+    process.env['DEEPSEEK_API_KEY'] = 'test-key';
+
+    const agent = createLlmAgent({
+      gameId: 'wired',
+      seq: () => 1,
+      mode: 'slaughter-side',
+      decideFn: (async (deps: { metaLog?: { record(meta: never): void } }) => {
+        deps.metaLog?.record({
+          gameId: 'wired',
+          seat: 1,
+          seq: 1,
+          day: 1,
+          phase: 'DAY_SPEECH',
+          model: 'm',
+          thinking: false,
+          attempt: 1,
+          latencyMs: 1,
+          ok: true,
+          inputTokens: 7,
+          outputTokens: 3,
+          cachedTokens: 0,
+        } as never);
+
+        return {
+          decision: { action: 'SPEECH_SKIP', reason: '测试' },
+          meta: {
+            gameId: 'wired',
+            seat: 1,
+            seq: 1,
+            day: 1,
+            phase: 'DAY_SPEECH',
+            model: 'm',
+            thinking: false,
+            attempt: 1,
+            latencyMs: 1,
+            ok: true,
+            inputTokens: 7,
+            outputTokens: 3,
+            cachedTokens: 0,
+          },
+        } as never;
+      }) as never,
+    });
+
+    const ctx = {
+      self: { seat: 1, role: 'villager', alive: true, personaId: null },
+      phase: 'DAY_SPEECH',
+      day: 1,
+      aliveSeats: [1, 2],
+      deadSeats: [],
+      publicEvents: [],
+      privateEvents: [],
+      knowledge: {
+        teammates: [],
+        checks: [],
+        potions: { heal: 'used', poison: 'used' },
+        canShoot: false,
+        knownKillTarget: null,
+      },
+      legalTargets: [2],
+      pending: 'speak',
+    } as never;
+
+    await agent({ seat: 1, ctx, phase: 'DAY_SPEECH' });
+
+    expect(usageOf('wired').calls).toBe(1);
+    expect(usageOf('wired').inputTokens).toBe(7);
+
+    if (previousKey === undefined) delete process.env['DEEPSEEK_API_KEY'];
+    else process.env['DEEPSEEK_API_KEY'] = previousKey;
+  });
+});
+
+describe('C-163 · 快照的身份 / 人格 / 结果与对局一致', () => {
+  it('逐席与 state 比对，result 与 GAME_ENDED 一致', async () => {
+    const { registry, record } = await finishedGame();
+    const snapshot = record.snapshot as ReturnType<typeof buildReplaySnapshot>;
+    const state = registry.stateOf(record);
+
+    for (const seat of state.seats) {
+      const fromSnapshot = snapshot.seats.find((candidate) => candidate.seat === seat.seat);
+      expect(fromSnapshot?.role).toBe(seat.role);
+      expect(fromSnapshot?.personaId ?? null).toBe(seat.personaId ?? null);
+      expect(fromSnapshot?.alive).toBe(seat.alive);
+    }
+
+    const ended = record.events.find((event) => event.type === 'GAME_ENDED');
+    const payload = ended?.payload as { result: 'wolf' | 'good'; condition: string } | undefined;
+    expect(snapshot.result).toBe(payload?.result);
+    expect(snapshot.winCondition).toBe(payload?.condition);
+
+    // 角色分布必须是 3 狼 / 4 民 / 3 神这类真实配置，而不是全同一角色
+    const roles = new Set(snapshot.seats.map((seat) => seat.role));
+    expect(roles.size).toBeGreaterThan(1);
+  });
+});

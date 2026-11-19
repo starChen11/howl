@@ -42,6 +42,10 @@ export class ApiClient {
     const response = await this.fetchImpl(`${this.baseUrl}/api/games/${gameId}${query}`, {
       credentials: 'same-origin',
     });
+    if (!response.ok) {
+      // 410（已释放）必须抛错，调用方才能退到复盘；把错误体当视图会在渲染层崩。
+      throw new Error(`读取对局失败：${response.status}`);
+    }
     return (await response.json()) as GameViewResponse;
   }
 

@@ -70,15 +70,19 @@ describe('AC-9 ~ AC-11 · 视角筛选', () => {
     const user = userEvent.setup();
     render(<ReplayPage snapshot={snapshot} onRestart={() => undefined} />);
 
-    const before = within(screen.getByLabelText('复盘时间线')).getAllByRole('listitem').length;
+    const timelineItems = () =>
+      within(screen.getByLabelText('复盘时间线'))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent);
+    const before = timelineItems();
 
     await user.click(screen.getByRole('button', { name: '1 号' }));
 
     expect(screen.getByText(/我要悍跳预言家/)).toBeTruthy();
     expect(screen.queryByText(/3 号发言太急/)).toBeNull();
 
-    const after = within(screen.getByLabelText('复盘时间线')).getAllByRole('listitem').length;
-    expect(after).toBe(before);
+    // 条数一样不够：文本必须逐条完全一致（C-160）
+    expect(timelineItems()).toEqual(before);
   });
 
   it('切回「全部」恢复所有推理', async () => {

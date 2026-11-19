@@ -73,13 +73,16 @@ export function createLlmAgent(input: {
   gameId: string;
   seq: () => number;
   mode: 'slaughter-side' | 'slaughter-all';
+  /** 测试缝：生产不传，走真实 `decide`。 */
+  decideFn?: typeof decide;
 }): Decider {
   return async ({ seat, ctx, phase }) => {
     const { loadLlmConfig } = await import('../llm/config');
     const config = loadLlmConfig(process.env);
     const personaId = ctx.self.personaId ?? null;
 
-    const outcome = await decide(
+    const runDecide = input.decideFn ?? decide;
+    const outcome = await runDecide(
       { config, metaLog: usageMetaLog as never },
       { gameId: input.gameId, seq: input.seq(), ctx, mode: input.mode, personaId },
     );

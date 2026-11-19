@@ -238,6 +238,17 @@ export class GameRegistry {
    */
   async appendEvents(record: GameRecord, events: EventEnvelope[]): Promise<GameRecord> {
     const updated: GameRecord = { ...record, events: [...record.events, ...events] };
+
+    // 终局之后还可能追加事件（例如最后一条 AI_THOUGHT，C-176）：快照必须跟着重建，
+    // 否则复盘会少掉最后那一轮的推理。
+    if (updated.status === 'finished') {
+      updated.snapshot = buildReplaySnapshot(this.stateOf(updated), updated.events, {
+        gameId: updated.gameId,
+        seed: updated.seed,
+        finishedAt: updated.finishedAt ?? Date.now(),
+      });
+    }
+
     await this.store.set(gameKey(record.gameId), updated);
     return updated;
   }

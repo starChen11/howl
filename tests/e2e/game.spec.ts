@@ -228,25 +228,24 @@ test.describe('整局界面', () => {
 
 test.describe('复盘（RFC-014）', () => {
   test('打完后出现复盘：时间线、身份与推理，360px 无横滚', async ({ page }) => {
+    test.setTimeout(120_000);
     await page.setViewportSize({ width: 360, height: 720 });
     await page.goto('/?seed=13');
+    await expect(page.locator('.app')).toBeVisible();
 
-    // 脚本 AI + 玩家弃权：一局应该能在合理时间内结束
-    for (let round = 0; round < 60; round += 1) {
-      const isOver = await page.getByRole('heading', { name: '复盘' }).count();
-      if (isOver > 0) break;
-
+    // 玩家一旦轮到就过/弃权；循环到复盘出现为止。
+    for (let step = 0; step < 80; step += 1) {
+      if ((await page.getByRole('heading', { name: '复盘' }).count()) > 0) break;
       const skip = page.getByRole('button', { name: '过' });
-      if ((await skip.count()) > 0) await skip.click().catch(() => undefined);
-      const vote = page.getByRole('button', { name: '弃权' });
-      if ((await vote.count()) > 0) await vote.click().catch(() => undefined);
-      await page.waitForTimeout(500);
+      if ((await skip.count()) > 0) await skip.click({ timeout: 1000 }).catch(() => undefined);
+      const abstain = page.getByRole('button', { name: '弃权' });
+      if ((await abstain.count()) > 0) {
+        await abstain.click({ timeout: 1000 }).catch(() => undefined);
+      }
+      await page.waitForTimeout(250);
     }
 
-    const replayHeading = page.getByRole('heading', { name: '复盘' });
-    await expect(replayHeading).toBeVisible({ timeout: 60_000 });
-
-    // 身份区揭示全部席位
+    await expect(page.getByRole('heading', { name: '复盘' })).toBeVisible();
     for (const seat of [1, 5, 9]) {
       await expect(page.getByText(new RegExp(`${seat} 号：`)).first()).toBeVisible();
     }
@@ -257,8 +256,9 @@ test.describe('复盘（RFC-014）', () => {
     );
     expect(overflow).toBeLessThanOrEqual(0);
 
-    // 再来一局：回到对局界面
+    // 再来一局：回到对局界面（新一局可能立刻进入发言/投票，所以等的是 .app 里的输入区）
     await page.getByRole('button', { name: '再来一局' }).click();
-    await expect(page.getByRole('heading', { name: 'Howl' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.app')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: '复盘' })).toHaveCount(0);
   });
 });

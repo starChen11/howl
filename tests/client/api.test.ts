@@ -40,3 +40,13 @@ describe('truth 响应校验', () => {
     expect(await client.truth('g')).toBeNull();
   });
 });
+
+describe('C-171 · 非 2xx 必须抛错，不能把错误体当视图', () => {
+  it('game() 对 410 抛出', async () => {
+    const client = new ApiClient({
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ error: 'GAME_EXPIRED' }), { status: 410 })) as never,
+    });
+    await expect(client.game('g')).rejects.toThrow(/410/);
+  });
+});
