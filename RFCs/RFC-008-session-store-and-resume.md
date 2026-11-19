@@ -253,3 +253,18 @@ $ pnpm test → 59 files / 490 tests
 | 7 天清理未实现 | `SESSION_TTL_MS` 只用于 cookie 的 `Max-Age`；存储里的记录不会到期删除 | 后续（需要定时任务） |
 | `applied` 数组无限增长 | 每局一个动作记一条；释放对局时不清 | 后续 |
 | 无 `seat` 的 `START` 仍可经公开路由提交 | 会被引擎判 `PHASE_MISMATCH` 并推进 `version`，不能重置对局，但能刷版本 | 可接受（无副作用） |
+
+### 8.10 Round 3 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-71** AC-3 没有 HTTP 覆盖 | 测试直接调 `registry.createGame`；把 `POST /api/games` 的 mode 强写成 `slaughter-side` 也照样绿 | 补 HTTP 用例：传 `slaughter-all` 创建后，读回记录的 `GAME_STARTED.payload.mode` 必须是 `slaughter-all`。反向探针（路由里强写 mode）会红 |
+| **C-72** AC-8 不检查「被接受」 | `REJECTED` 也是 200 + 非空 + 无 server 事件，所以恒真 | 断言响应里**没有** `REJECTED`，且 `version` 前进。反向探针（把 `WITCH_ACT(none)` 改成恒拒绝）会红 |
+| **C-73** AC-13 没测 FINISHED | 只测了普通记录；给 finished 记录加缓存也照样绿；`store.test.ts` 仍在断言「释放后抛错」，与 AC 语义相反 | 补「终局记录两次 `stateOf` 深度相等、改返回值不影响下一次」；把 `store.test.ts` 那条用例改名，明确它测的是「事件流被释放后无法重建」，不是 AC-13 |
+| **C-74 / C-75**（非阻塞） | AC-7 只对默认席位做深度比较；AC-11 只在 registry 层换实现 | 补 `playerSeat = 2` 的深度比较；补「`buildApp` 注入另一个实现后创建/读取仍正常」 |
+
+```
+$ pnpm test → 59 files / 495 tests
+```
+
+> 说明：AC-13 的原文「释放后再取该局，内部重新 `replay` 得到同一状态」与 §2.5 的释放语义（清空 `events`）相互矛盾——事件流没了就不可能重建。本 RFC 按「**终局但未释放**的记录不缓存状态」实现与测试，并在 §8.9 记录了释放后的行为。
