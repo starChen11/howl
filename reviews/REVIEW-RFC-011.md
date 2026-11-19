@@ -413,3 +413,153 @@ Round 1 的五项修复中，只有 **AC-5 后端拒绝**闭环（C-100 可关�
 **Non-blocking**：C-99（AC-3/4 已获用户批准顺延；RFC-012 / TEST-STRATEGY 仍未承接，记文档项）、C-104（TEST-STRATEGY 回填）、AC-5 边界用例、RFC §8.6 旧描述 / README 状态数。
 
 **状态**：RFC-011 → `Changes requested`。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r2-probes/backup/` 的文件备份恢复，四个文件的 SHA-256 与探针前一致，临时探针测试已删除，探针后全量 **74 files / 616 tests** 绿。
+
+---
+
+## Round 3 — 2026-11-19
+
+> 被评审提交：`3670036 fix(rfc-011): 每个席位用自己的投影、整局可达终局（Round 2）`
+> 评审方式：全新上下文的 subagent，只读仓库文件后实跑；本会话没有写过 RFC-011 的实现代码。
+> 结论：**Changes requested**
+> 范围：按用户指示只复核 **SEC-5 / AC-11 / AC-1·AC-2 / AC-6** 四项。AC-3 / AC-4 的用户批准顺延不重开；AC-10 / AC-14 在 Round 1 已 PASS，本轮不重查；C-100 已 Closed，不重查。AC-7 / AC-8 / AC-9 / AC-12 / AC-13 等 Round 1/2 未关闭项沿用原判并注明未重查；其中 C-103（AC-9 / AC-12）在 RFCS 仍是 Open，仍独立阻止 `Reviewed`。
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · 评审开始时 HEAD `3670036`，工作树 clean。
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+✓ 14 modules transformed (client)· built in 61ms
+✓ 43 modules transformed (server)· built in 14ms
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  75 passed (75)
+      Tests  619 passed (619)
+   Duration  21.08s
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+```
+
+`pnpm selfplay` 仍以退出码 1 结束并提示 RFC-015，按 RFC-011 的范围记 **N/A**（RFC-015 的占位），不是本轮回归。
+
+### 1. 产品类型与跳过项
+
+`PRD.md` 的 **Product Type** 是 **game（主）+ web app（交付形态）**。本轮采用 game 的状态机 / 视野 / 跨 RFC 契约检查，以及 web app 的服务端输入校验检查。UI、无障碍与响应式检查随 AC-3 / AC-4 顺延到 RFC-012，**显式跳过**；本轮不冒充已检查。
+
+### 2. 用户列出的四项逐条复核
+
+| 用户声明 | 判定 | 一手证据 |
+|---|---|---|
+| **SEC-5**：`ctxFor(observer)`，每个席位看自己的投影；补「`decide` 收到的 `ctx.self.seat` 恒等于被问席位」用例；反向探针会红 | **PASS** | `src/server/orchestrator.ts:118-124` 按 `observer` 调用 `project()`；`tests/server/orchestrator-full.test.ts:95-127` 收集 `mismatches` 并断言 `[]`。P-R3-1 把 observer 改回 `record.playerSeat`：`pnpm exec vitest run tests/server/orchestrator-full.test.ts` → **1 failed / 1 passed**，SEC-5 用例报出 39 个 `{asked:2,self:1}…`；AC-11 用例仍绿。说明反向锁有牙，且它只锁投影的 observer，不靠 AC-11 兜底。 |
+| **AC-11**：新增 `nextActor(state)`（夜间按角色、白天投票按未投者），脚本化 AI 能打到 `FINISHED` | **PASS（终局）/ 证据有缺口** | `nextActor` 在 `src/server/orchestrator.ts:50-77`，覆盖 `NIGHT_WOLF_CHAT` / `NIGHT_WOLVES` / `NIGHT_SEER` / `NIGHT_WITCH` / `DAY_VOTE` / `DAY_VOTE_RUNOFF`；`tests/server/orchestrator-full.test.ts:22-50` 断言 `result.record.status === 'finished'` 且 seq 连续。P-R3-2 去掉 `?? nextActor(state)` 后同一文件 **2 failed**（`status=active`、`asked=0`），终局回归锁有牙。**但整局没有消费 stub 输入通道**：P-R3-8 临时探针得到 `status=finished, steps=40, asked=40, reads=0, seqLast=68`，玩家 1（预言家）在 `seq=11` 首夜死亡；`ctx.pending` 在全部 `NIGHT_*` / `DAY_VOTE` 都是 `null`、`legalTargets` 都是空数组，脚本 AI 实际用 `registry.stateOf(record)` 读引擎真值来选目标。见 §4。 |
+| **AC-1/2**：身份卡测试按种子扫五种角色；`goal` 置空会红 | **AC-2 PASS；AC-1 PARTIAL** | `tests/server/id-card.test.ts:18-33` 的 `ctxOfRole` 扫 seed 1..200 × 9 席；`:54-61` 遍历五种角色断言技能与 `goal` 非空；P-R3-3 把 `card.goal` 置空 → **1 failed / 6 passed**；P-R3-4 让非预言家直接返回空卡 → **4 failed / 3 passed**（五角色、女巫、狼、猎人）。**但 AC-1 仍是** `tests/server/id-card.test.ts:36-52` 的 `JSON.stringify(ctx).match(/"role":/g)` 只数 `"role":`；P-R3-5 在 `project()` 返回值加 `leakedRoles: state.seats.map(s => ({ seat: s.seat, roleId: s.role }))`，`id-card.test.ts` + `project.test.ts` **22/22 绿**——全员身份换一个 key 泄漏时测试不红。 |
+| **AC-6**：玩家发言原文有断言 | **FAIL（声明与仓库不符）** | `tests/server/orchestrator.test.ts:92-187` 的输入文本是 `我过关。`（`:162`），但唯一断言是 `reads > 0`（`:183`）和「事件流里有任意 `SPEECH`」（`:184-186`）。`git diff HEAD~1 HEAD -- tests/server/orchestrator.test.ts` **为空**；新提交只新增 `orchestrator-full.test.ts`，其中 `input` 从未被读（P-R3-8 `reads=0`）。P-R3-6 让 `playerAction` 对 `speak` 也返回 `SPEECH_SKIP` → `orchestrator.test` + `orchestrator-full.test` **5/5 绿**；P-R3-7 把 `input.text` 换成 `'错误文本'` → 仍 **5/5 绿**。因此 `RFCs/RFC-011...:206` 的「改为断言玩家通过通道输入的那句话原样进入事件流」与 `RFCS.md` v2.98 的「玩家发言原文有断言」**不成立**。 |
+
+### 3. 变异探针与临时集成探针
+
+所有探针从 `/tmp/howl-rfc011-r3-probes/backup/` 的**文件备份**恢复，**未使用 `git checkout` / `git restore`**。探针前三个源码文件的 SHA-256：
+
+```text
+a671a65e...  src/server/orchestrator.ts
+f4f8a60e...  src/server/view/id-card.ts
+efddae1f...  src/server/project/index.ts
+```
+
+每次探针后都 `cp` 回备份并 `sha256sum -c`，最后一次三个文件全部 `OK`；临时探针 `tests/server/__r3_probe.test.ts` 已删除；探针后 `git status --porcelain` 为空，全量 **75 files / 619 tests** 绿。
+
+| 探针 | 注入 / 场景 | 定向测试 | 结果 | 证明 |
+|---|---|---|---|---|
+| **P-R3-1** | `orchestrator.ts` 的 `ctxFor` 改回 `observer: record.playerSeat`（模拟 Round 2 的 SEC-5 违规） | `tests/server/orchestrator-full.test.ts` | **1 failed / 1 passed**；SEC-5 用例 `mismatches` 39 条，AC-11 仍绿 | SEC-5 反向锁有牙；且它不依赖 AC-11 |
+| **P-R3-2** | `const seat = seatToSpeak(state) ?? nextActor(state)` → 去掉 `?? nextActor(state)` | 同上 | **2 failed**；AC-11 `expected 'active' to be 'finished'`，SEC-5 `asked=0` | AC-11 的 FINISHED 证据确实依赖 `nextActor` |
+| **P-R3-3** | `id-card.ts` 的 `card.goal = goalOf(role, ctx)` → `card.goal = ''` | `tests/server/id-card.test.ts` | **1 failed / 6 passed**；失败在「五种角色都有技能与目标」`goal.length > 0` | `goal` 有真实断言 |
+| **P-R3-4** | `buildIdCard` 在 `switch` 前对非 seer 直接 `return card`（空卡） | 同上 | **4 failed / 3 passed**；五角色、女巫、狼、猎人四条红 | 角色分支不是死代码 |
+| **P-R3-5** | `project()` 返回值增加 `leakedRoles: [{ seat, roleId: role }]`（含全员真实身份） | `tests/server/id-card.test.ts` + `tests/server/project/project.test.ts` | **22/22 绿** | AC-1 的 `"role":` 计数拦不住换 key 的身份泄漏 |
+| **P-R3-6** | `playerAction` 对 `kind === 'speak'` 也返回 `SPEECH_SKIP` | `tests/server/orchestrator.test.ts` + `orchestrator-full.test.ts` | **5/5 绿** | AC-6 没有锁住「玩家输入原样进入 SPEECH」 |
+| **P-R3-7** | `playerAction` 的 `text: input.text` 改成 `text: '错误文本'`；`speech` 同步改 | 同上 | **5/5 绿** | 同上；连文本被替换也不会红 |
+| **P-R3-8** | 临时整局探针：`playerSeat=1`、`seed=20261117`，计数 `InputChannel.read` 与 `decide` 收到的 `pending` / `legalTargets` | 临时 `tests/server/__r3_probe.test.ts` | `status=finished, steps=40, reads=0, asked=40, seqLast=68`；玩家 1 是 seer，`diedSeq=11`；`NIGHT_*:null:targets=0`、`DAY_VOTE:null:targets=0`、`DAY_SPEECH:speak:targets=0` | AC-11 的整局没有玩家输入；AI 夜间 / 投票拿不到 pending 与合法目标，脚本 AI 读 `registry.stateOf(record)` 才能行动 |
+
+> P-R3-8 是**正向行为探针**：它证明 `runGame` 能把这一局推到 `FINISHED`，同时暴露这个「完整局」并没有消费 stub 通道，也没有给 AI 一个可用的夜间 / 投票上下文。它不是对 AC-11 终局断言的否定，而是对「用 stub 通道（预置输入序列）」与「AI 由投影驱动」两件事的证据缺口。
+
+### 4. 验收标准（本轮范围）
+
+| AC | 判定 | 说明 |
+|---|---|---|
+| 1 | **PARTIAL / NEEDS WORK** | 9 个席位的循环与 `ctx.self.seat === seat` 成立；但「角色字段只有观察者自己的」仍靠数 `"role":`，P-R3-5 证明 `roleId` 形式的泄漏不红。这是 Round 1 P-1 / C-102 的原问题，未闭环。 |
+| 2 | **PASS（附非阻塞缺口）** | 五角色扫描、`goal`、女巫两瓶药、狼队友、猎人开枪文案都有可红断言（P-R3-3 / P-R3-4）。未见「预言家非空查验史」「女巫 `used` 状态」「猎人 `canShoot === true`」的用例；这些是 AC-2 的状态变体，不阻塞本轮，但建议补。 |
+| 6 | **FAIL** | 没有断言玩家通过通道输入的原话进入 `SPEECH.payload.text`；P-R3-6 / P-R3-7 全绿。代码当前确实把 `input.text` 写进 action，但没有回归锁，且 RFC §8.8 / RFCS v2.98 的声明与仓库不符。 |
+| 7 | **未重查（沿用 Round 2：PARTIAL）** | `normalizeInput` 与 `HttpInputChannel` 的 `skip` 有单测；没有「超时为空 → `SPEECH_SKIPPED` → 对局继续」的编排 / 事件流回归锁。本轮无相关提交，未重查。 |
+| 9 | **未重查（沿用 Round 2：FAIL）** | `grep -rn "runGame\\|HttpInputChannel\\|SseOutputChannel" src` 仍只有定义：生产 `POST /api/games/:id/actions` 直接 `registry.submit`（`src/server/routes/games.ts:139`），`runGame` / 两个通道实现在 `src/` 没有调用者。C-103 仍 Open。 |
+| 11 | **PASS（终局）/ PARTIAL（stub 输入）** | `orchestrator-full.test.ts` 到 `FINISHED` 且 P-R3-2 会红；但该局玩家首夜死亡、`reads=0`，没有用 stub 输入序列驱动任何玩家回合；`NIGHT_*` / `DAY_VOTE` 的 `ctx.pending` 为 `null`、`legalTargets` 为空，脚本 AI 读 registry 状态。 |
+| 12 | **未重查（沿用 Round 2：FAIL）** | 仍没有「新增 `src/server/channels/*` 实现不改 engine/shared」的生产调用证明；`channels.test.ts:113` 的 `void input` 仍在。C-103 仍 Open。 |
+| 13 | **未重查（沿用 Round 2：FAIL / NOT PROVEN）** | 仍只有 `remainingSeconds` 纯函数与 `HttpInputChannel` 单测；`elapsed()` / `remainingSeconds()` 在 `src/` 无调用者，没有刷新 / 服务端起点集成证据。本轮无相关提交，未重查。 |
+
+### 5. 五个维度
+
+#### 5.1 RFC ADHERENCE — **FAIL**
+
+四项中 SEC-5、AC-2 通过；AC-11 的终局部分通过但 stub 输入与 AI 投影证据不完整；**AC-6 没有任何提交的原文断言，AC-1 的泄漏断言仍空转**。此外 C-103 / AC-9 / AC-12 仍无生产调用者，AC-7 / AC-13 仍没有事件流 / 刷新集成锁（沿用前判）。因此不能以「四项已修」进入 `Reviewed`。
+
+#### 5.2 RULES COMPLIANCE — **NEEDS WORK**
+
+- **SEC-5**：已修且反向锁有牙（P-R3-1），这是本轮最重要的正面变化。
+- **TEST-1**：AC-1 与 AC-6 仍缺可打红的回归锁；AC-7 / AC-13 沿用前判。
+- **DOC-1**：RFC §8.4 的 AC-1 仍写「9 个席位的投影里 `"role":` 只出现一次」（`:154`），§8.8 的 AC-6 写「断言原样进入事件流」（`:206`），RFCS v2.98 的变更行也写「玩家发言原文有断言」；三处都与仓库事实不符。§8.4 的 AC-8 还写「玩家发言原样进入事件流（`SPEECH` 事件）」（`:161`），但 `tests/server/channels.test.ts` 只断言 `chunks.length > 0` 与 seq，没有断言玩家发言文本或他人投影；AC-8 沿用 Round 1 的 PARTIAL，本轮未重查。§8.6 还留着「`HttpInputChannel` 超时时交出空文本」（`:182`），与当前 `setDraft` 实现相反。
+- **ARCH-9 / 编排**：SEC-5 的按席位投影成立；但 `ctxFor` 只在 `DAY_SPEECH` 给 `'speak'`（`src/server/orchestrator.ts:123`），夜间 / 投票的 `pending` 仍是 `null`，AI 的 `legalTargets` 为空（P-R3-8）；`nextActor` 也没有覆盖 `NIGHT_HUNTER_SHOOT` / `DAY_HUNTER_SHOOT`，猎人开枪局会让 `runGame` 在 `seat === undefined` 处停下。
+- **STYLE-2 / 命名**：未发现新问题。
+
+#### 5.3 SECURITY — **PASS**
+
+`ctxFor(observer)` 与 `project()` 的组合正确；P-R3-1 证明一旦退回玩家投影，SEC-5 用例会红。未发现新的输入 / 投影泄漏。P-R3-8 里脚本 AI 直接读 `registry.stateOf(record)` 是**测试代码**的行为，不是生产路径；但它掩盖了「AI 只能从投影拿信息」这一层的验证，应在测试里改成只用 `ctx`。
+
+#### 5.4 PERFORMANCE — **N/A**
+
+没有新增数据库、网络热路径或 N+1；`nextActor` 每次线性扫 9 个席位与少量事件，规模可忽略。`runGame` 每步一次投影，不构成实际瓶颈。
+
+#### 5.5 MAINTAINABILITY — **NEEDS WORK**
+
+- `tests/server/orchestrator.test.ts:46-68` 的用例名仍写「从开局推进到 FINISHED」，唯一断言是 `steps >= 0`（恒真），且 `decide` 恒返回 `undefined`；新的 `orchestrator-full.test.ts` 虽然补了真正的终局用例，但旧的误导性用例没有删 / 没改名。
+- `runGame` 的 `output` 只 `flush()`，从不 `emit`（`src/server/orchestrator.ts:145`）；`SseOutputChannel` 的生产消费仍未发生。
+- `nextActor` 缺 `NIGHT_HUNTER_SHOOT` / `DAY_HUNTER_SHOOT`；`seatToSpeak(state) ?? nextActor(state)` 遇到这两个阶段会 break，而不是问猎人开枪。
+- `tests/server/channels.test.ts:113` 仍有 `void input`；`TEST-STRATEGY.md` 的 RFC-011 小节仍全部 `proposed`，计划文件 `tests/client/id-card.test.tsx` / `speech-input.test.tsx` / `tests/server/inject/current-speech.test.ts` 仍不存在，实际落地的测试文件没有登记（C-104）。
+- `src/client/api.ts` 仍无测试、无 import；`SseOutputChannel` 的 `bus.publish` 行为仍无断言。
+
+### 6. 非阻塞建议
+
+1. **AC-6 回归锁（对应阻塞项 B-R3-1）**：在 `orchestrator.test.ts` 的 C-101 用例里，拿到玩家席位对应的 `SPEECH` 事件并断言 `payload.text === '我过关。'`；再补一个「输入返回 `skip` → 事件流是 `SPEECH_SKIPPED` 且阶段继续」的用例（同时覆盖 AC-7）。
+2. **AC-1 结构检查（对应阻塞项 B-R3-2）**：递归扫描投影中所有键名匹配 `/role/i` 的值，断言除 `self.role` 外没有其他角色值；或至少同时断言没有 `roleId` / 其他角色的 `ROLE_LABELS`。保留 9 席位循环与 `ctx.self.seat` 断言。
+3. **AC-11 证据**：换一个「玩家活到白天」的 seed / `playerSeat`（或在测试里预置玩家存活），让 `reads > 0`；把 `scriptFor` 改成只读 `ctx`（先给 `ctxFor` 按阶段填 `kill` / `check` / `witch` / `vote` / `shoot` 的 `pending`），不要用 `registry.stateOf(record)` 读引擎真值。否则「stub 通道跑完整局」只证明了引擎能跑，不证明通道能跑。
+4. **猎人开枪**：给 `nextActor` 补 `NIGHT_HUNTER_SHOOT` / `DAY_HUNTER_SHOOT`，并在脚本里返回 `HUNTER_SHOOT`；否则「完整局」在猎人开枪局会停在中间。
+5. **AC-2 状态变体**：补非空查验史、女巫 `used` / `available` 的具体值、猎人 `canShoot` 两态；这些是从 P-R3-4 之后剩下的非阻塞覆盖缺口。
+6. **文档**：修正 RFC §8.4 的 AC-1 证据、§8.8 的 AC-6 声明、§8.6 的旧「超时交空文本」；同步 RFCS v2.98 的变更行与 `TEST-STRATEGY.md` 的 RFC-011 小节（C-104）。C-103 的生产接线若继续留到 RFC-012，请在 RFC §8.6 / RFCS 里写成**用户批准的顺延**，而不是继续把 AC-9 / AC-12 标 PASS。
+7. **旧用例**：删除或重命名 `tests/server/orchestrator.test.ts:46-68` 的「从开局推进到 FINISHED」，它的 `steps >= 0` 不构成任何断言。
+8. **README 状态行**：`README.md:11` 仍写「7 个 `Reviewed`、0 个 `Changes requested`、8 个 `Not started`」；RFC-011 改回 `Changes requested` 后该行已过期，下一次 docs 提交应改为 7 / 1 / 8（或按 RFCS 的 Status 列重新计数）。
+
+### 7. 结论
+
+**Overall Risk Level: High。**
+
+用户列出的四项里，**SEC-5 与 AC-2 真修好了，AC-11 的终局锁也成立**；但 **AC-6 的「玩家发言原文有断言」不成立**（P-R3-6 / P-R3-7 全绿，提交根本没改 `orchestrator.test.ts`），**AC-1 的 `roleId` 泄漏探针仍绿**（P-R3-5），并且 **AC-11 的完整局没有消费 stub 通道、夜间 / 投票的 AI 上下文仍是空 `pending` / 空 `legalTargets`**。C-103（AC-9 / AC-12）在 RFCS 仍是 Open，生产路由仍直接 `registry.submit`。因此本轮仍是 **Changes requested**，不是 `Reviewed`。
+
+**Blocking Issues**：
+
+- **B-R3-1（AC-6 / TEST-1 / DOC-1）**：没有提交的「玩家发言原文进入事件流」断言；P-R3-6 让玩家轮恒 `SPEECH_SKIP`、P-R3-7 把文本换掉，`orchestrator.test` + `orchestrator-full.test` 仍 5/5 绿。RFC §8.8 / RFCS v2.98 的声明不成立。
+- **B-R3-2（AC-1 / C-102）**：AC-1 仍只数 `"role":`；P-R3-5 在投影里加 `leakedRoles[].roleId` 后 22/22 绿，全员身份可通过另一个 key 泄漏。
+- **B-R3-3（C-103 / AC-9 / AC-12，沿用前判、本轮未重查）**：`runGame` / `HttpInputChannel` / `SseOutputChannel` 在 `src/` 仍无生产调用者；生产 `POST /actions` 仍 `registry.submit`；`runGame` 只 `flush()`、不 `emit`。RFCS 仍标 Open；若要把接线留到 RFC-012，需按 `/manage-changes` 或用户明确批准记录，不能把 AC-9 / AC-12 标 PASS。
+
+**Non-blocking**：AC-11 的 stub 输入 / `pending` 证据缺口；`nextActor` 缺猎人开枪阶段；AC-2 的状态变体（非空查验史 / 药水 used / `canShoot` 两态）；旧 `orchestrator.test` 的误导性用例；C-99（AC-3/4 已获用户批准顺延，但 RFC-012 / TEST-STRATEGY 仍未承接）；C-104（TEST-STRATEGY 回填）；RFC §8.6 旧描述。
+
+**状态**：RFC-011 → `Changes requested`。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r3-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），三个源码文件 SHA-256 与探针前一致；临时探针测试已删除；探针恢复后（写评审文件前）`git status --porcelain` 为空，之后只改了 `RFCS.md` 与本评审文件，没有代码改动。
