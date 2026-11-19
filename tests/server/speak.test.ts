@@ -292,3 +292,62 @@ describe('C-97 · 最后一位席位降级时也要推进相位', () => {
     expect(seqs).toEqual(seqs.map((_seq, position) => position + 1));
   });
 });
+
+describe('C-98 · 降级消息的 id 必须等于 DEGRADED 事件的 seq', () => {
+  it('普通席位：done = SPEECH.seq，degraded = DEGRADED.seq', async () => {
+    const { registry, session, record, bus, seen } = await setup();
+    const result = await speak({
+      registry,
+      bus,
+      session,
+      record,
+      seat: currentSpeaker(registry.stateOf(record)) as never,
+      attempt: async () => ({ text: '', failed: true }),
+      limitMs: 5_000,
+    });
+    if (!result.ok) throw new Error('发言被拒');
+
+    const speech = result.record.events.find((event) => event.type === 'SPEECH');
+    const degraded = result.record.events.find((event) => event.type === 'DEGRADED');
+    const done = seen.find((message) => message.type === 'done');
+    const degradedMessage = seen.find((message) => message.type === 'degraded');
+
+    expect(done?.id).toBe(speech?.seq);
+    expect(degradedMessage?.id).toBe(degraded?.seq);
+  });
+
+  it('最后一位降级：PHASE_CHANGED 占号后 degraded 仍指向 DEGRADED 事件', async () => {
+    const { registry, session, record, bus, seen } = await setup();
+    let current = record;
+
+    // 把当天所有席位都说完，最后一位走降级
+    for (let guard = 0; guard < 20; guard += 1) {
+      const state = registry.stateOf(current);
+      if (state.phase !== 'DAY_SPEECH') break;
+      const speaker = currentSpeaker(state);
+      if (speaker === undefined) break;
+      const alive = state.seats.filter((seat) => seat.alive).length;
+      const spoken = state.speech?.spoken.length ?? 0;
+      const isLast = spoken === alive - 1;
+
+      const result = await speak({
+        registry,
+        bus,
+        session,
+        record: current,
+        seat: speaker,
+        attempt: async () =>
+          isLast ? { text: '', failed: true } : { text: '我过了。', failed: false },
+        limitMs: 5_000,
+      });
+      if (!result.ok) throw new Error('发言被拒');
+      current = result.record;
+    }
+
+    const degraded = current.events.find((event) => event.type === 'DEGRADED');
+    const degradedMessage = seen.filter((message) => message.type === 'degraded').pop();
+
+    expect(degraded).toBeDefined();
+    expect(degradedMessage?.id).toBe(degraded?.seq);
+  });
+});

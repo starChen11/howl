@@ -269,3 +269,14 @@ $ pnpm test → 69 files / 581 tests
 ```
 $ pnpm test → 69 files / 583 tests
 ```
+
+### 8.15 Round 9 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-98** 最后一位降级时 id 仍差 1 | `submit` 会先产出一条 `PHASE_CHANGED` 占掉 `nextSeq + 1`，`degraded` 还用 `nextSeq + 1` 就指向了相位事件 | 不再推算：append 之后从 `record.events` 回读最后一条（就是那条 `DEGRADED`）的 `seq`。补两条用例：普通席位与**最后一位**降级，`degraded.id` 都必须等于 `DEGRADED.seq` |
+| 缺刷新终态用例 | 没有断言「刷新后短句还在」 | 补 reducer 级用例：`done(短句)` → `degraded` 之后 `text` 仍为短句、`lastId` 指向 `DEGRADED` |
+
+```
+$ pnpm test → 69 files / 586 tests
+```

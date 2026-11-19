@@ -465,3 +465,56 @@ describe('C-86 · 已提交的 DEGRADED 必须映射成 degraded，不是空 don
     expect(types[types.length - 1]).toBe('done');
   });
 });
+
+describe('C-98 · 降级轮的刷新与重连终态', () => {
+  it('刷新（无 Last-Event-ID）时看到短句，且不因 degraded 清空正文', async () => {
+    const { app, bus, session, record } = await setup();
+    const cookie = `session=${session.id}`;
+    const { streamReducer, initialStreamState } = await import('@client/use-stream');
+
+    // 构造一条降级轮：SPEECH 后跟 DEGRADED（真实事件顺序）
+    const speechEvent = {
+      gameId: record.gameId,
+      seq: record.events.length + 1,
+      ts: 0,
+      type: 'SPEECH',
+      visibleTo: 'public',
+      payload: { seat: 1, text: '我先过。' },
+    };
+    const degradedEvent = {
+      gameId: record.gameId,
+      seq: record.events.length + 2,
+      ts: 0,
+      type: 'DEGRADED',
+      visibleTo: 'public',
+      payload: { seat: 1 },
+    };
+
+    bus.publish(record.gameId, {
+      type: 'done',
+      id: speechEvent.seq,
+      seat: 1 as never,
+      text: '我先过。',
+    });
+    bus.publish(record.gameId, { type: 'degraded', id: degradedEvent.seq, seat: 1 as never });
+
+    const pending = app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/stream`,
+      headers: { cookie },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    bus.end(record.gameId);
+
+    const frames = (await pending).body
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice(6)) as never);
+
+    let state = initialStreamState;
+    for (const frame of frames) state = streamReducer(state, frame);
+
+    expect(state.text).toBe('我先过。');
+    expect(state.lastId).toBe(degradedEvent.seq);
+  });
+});
