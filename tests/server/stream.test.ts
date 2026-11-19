@@ -399,3 +399,69 @@ describe('C-96 / C-86 · 重连顺序与已完成发言', () => {
     expect(ids).toEqual([...ids].sort((a, b) => a - b));
   });
 });
+
+describe('C-86 · 已提交的 DEGRADED 必须映射成 degraded，不是空 done', () => {
+  it('历史路径里 DEGRADED + SPEECH → [degraded, done]', async () => {
+    const { committedMessages } = await import('@server/routes/stream');
+    const { GameRegistry } = await import('@server/store/game-registry');
+    const { InMemoryMetaStore } = await import('@server/store/meta-store');
+
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, { mode: 'slaughter-side' });
+
+    const withDegraded = {
+      ...record,
+      events: [
+        ...record.events,
+        {
+          gameId: record.gameId,
+          seq: record.events.length + 1,
+          ts: 0,
+          type: 'DEGRADED',
+          visibleTo: 'public',
+          payload: { seat: 2 },
+        },
+        {
+          gameId: record.gameId,
+          seq: record.events.length + 2,
+          ts: 0,
+          type: 'SPEECH',
+          visibleTo: 'public',
+          payload: { seat: 2, text: '我先过。' },
+        },
+      ],
+    };
+
+    const messages = committedMessages(withDegraded as never, registry.stateOf(record));
+    expect(messages.map((message) => message.type)).toEqual(['degraded', 'done']);
+    expect((messages[1] as { text?: string }).text).toBe('我先过。');
+  });
+
+  it('同 id 的增量与 committed done 合并后，done 在最后', async () => {
+    const { app, bus, session, record } = await setup();
+    const cookie = `session=${session.id}`;
+
+    const speech = record.events.find((event) => event.type === 'SPEECH');
+    if (speech === undefined) throw new Error('没有 SPEECH');
+    const speechId = speech.seq;
+
+    bus.publish(record.gameId, { type: 'thinking', id: speechId, seat: 3 });
+    bus.publish(record.gameId, { type: 'delta', id: speechId, seat: 3, text: '我' });
+
+    const pending = app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/stream`,
+      headers: { cookie },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    bus.end(record.gameId);
+
+    const types = (await pending).body
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => (JSON.parse(line.slice(6)) as { type: string }).type);
+
+    expect(types[types.length - 1]).toBe('done');
+  });
+});

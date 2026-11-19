@@ -234,3 +234,15 @@ $ pnpm test → 68 files / 571 tests
 ```
 $ pnpm test → 69 files / 575 tests
 ```
+
+### 8.12 Round 6 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-86** committed `done` 被排到增量之前 | `[...extras, ...fromBus]` 在同 id 时把 committed `done` 排在 `thinking`/`delta` 前面，客户端最终停在 `speaking` 半句 | 改为 `[...fromBus, ...extras]`：同 id 时增量在前、`done` 在最后。补用例：同 id 的 thinking/delta 与 committed done 合并后，最后一条必须是 `done` |
+| **C-86** 类型映射没有回归锁 | 把 `DEGRADED` 改回空 `done` 全量仍绿 | 补用例：历史路径 `DEGRADED + SPEECH` → `[degraded, done]`，且 `done` 带正文。反向探针会红 |
+| **C-97**（新）`speak` 绕过引擎 | 直接 `appendEvents` 写 `SPEECH`：夜晚会写出非法的 `SPEECH`（replay 抛错），白天说完一圈也不会切到投票（永久卡住） | `speak` 改为**走 `registry.submit(SPEECH)`**：引擎负责推进发言 cursor 与相位。降级路径先 `appendEvents` 补 `DEGRADED` 标记，再走同一条通道写短句。补用例：8 个席位说完后相位必须离开 `DAY_SPEECH`；反向探针（改回直接写事件）会红 |
+
+```
+$ pnpm test → 69 files / 578 tests
+```

@@ -4,6 +4,7 @@ import { GameRegistry } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 import { StreamBus } from '@server/stream/bus';
 import { speak } from '@server/llm/speak';
+import { currentSpeaker } from '@engine/phases/day';
 import type { StreamMessage } from '@shared/stream';
 
 /**
@@ -21,18 +22,71 @@ async function setup() {
   const seen: StreamMessage[] = [];
   bus.subscribe(record.gameId, (message) => seen.push(message));
 
-  return { registry, record, bus, seen };
+  // 发言只能发生在白天：先把这一夜走完。
+  let current = record;
+  const stateOf = () => registry.stateOf(current);
+  while (stateOf().phase === 'NIGHT_WOLF_CHAT') {
+    const state = stateOf();
+    const speaker = state.seats.find(
+      (seat) =>
+        seat.alive &&
+        seat.role === 'wolf' &&
+        !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+    )?.seat;
+    if (speaker === undefined) break;
+    const result = await registry.submit(
+      session,
+      current,
+      { type: 'WOLF_CHAT', ts: 1, seat: speaker, text: '' } as never,
+      state.seq,
+    );
+    if (!result.ok) throw new Error('夜聊失败');
+    current = result.record;
+  }
+  for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
+    const state = stateOf();
+    if (
+      state.phase !== 'NIGHT_WOLVES' &&
+      state.phase !== 'NIGHT_SEER' &&
+      state.phase !== 'NIGHT_WITCH'
+    )
+      break;
+    const actor =
+      type === 'WOLF_KILL'
+        ? state.seats.find((s) => s.alive && s.role === 'wolf')?.seat
+        : type === 'SEER_CHECK'
+          ? state.seats.find((s) => s.alive && s.role === 'seer')?.seat
+          : state.seats.find((s) => s.alive && s.role === 'witch')?.seat;
+    if (actor === undefined) break;
+    const action =
+      type === 'WITCH_ACT'
+        ? { type, ts: 1, seat: actor, potion: 'none' }
+        : {
+            type,
+            ts: 1,
+            seat: actor,
+            target: state.seats.find((s) => s.alive && s.seat !== actor)?.seat,
+          };
+    const result = await registry.submit(session, current, action as never, state.seq);
+    if (!result.ok) break;
+    current = result.record;
+  }
+
+  const speaker = currentSpeaker(registry.stateOf(current));
+  if (speaker === undefined) throw new Error('没有当前发言者');
+  return { registry, session, record: current, bus, seen, speaker };
 }
 
 describe('AC-10 / 11 · 正常发言：thinking → delta → 落盘 SPEECH → done', () => {
   it('事件流里多出一条 SPEECH，总线上有增量与 done', async () => {
-    const { registry, record, bus, seen } = await setup();
+    const { registry, session, record, bus, seen, speaker } = await setup();
 
     const result = await speak({
       registry,
       bus,
+      session,
       record,
-      seat: 3 as never,
+      seat: speaker,
       attempt: async () => ({ text: '我觉得 2 号像狼', failed: false }),
       limitMs: 5_000,
     });
@@ -47,13 +101,14 @@ describe('AC-10 / 11 · 正常发言：thinking → delta → 落盘 SPEECH → 
 
 describe('AC-7 / 9 · 降级：DEGRADED + 短句落盘，bus 推 degraded', () => {
   it('两次失败 → 短句 ≤ 10 字、事件流里有 DEGRADED 与 SPEECH', async () => {
-    const { registry, record, bus, seen } = await setup();
+    const { registry, session, record, bus, seen, speaker } = await setup();
 
     const result = await speak({
       registry,
       bus,
+      session,
       record,
-      seat: 2 as never,
+      seat: speaker,
       attempt: async () => ({ text: '', failed: true }),
       limitMs: 5_000,
     });
@@ -71,7 +126,7 @@ describe('AC-7 / 9 · 降级：DEGRADED + 短句落盘，bus 推 degraded', () =
 
 describe('AC-12 · 连续 3 次降级后仍尝试真实调用', () => {
   it('第 4 次仍然调用 attempt（不是全跳过）', async () => {
-    const { registry, record, bus } = await setup();
+    const { registry, session, record, bus, speaker } = await setup();
     let calls = 0;
     let current = record;
     let degradation;
@@ -80,8 +135,9 @@ describe('AC-12 · 连续 3 次降级后仍尝试真实调用', () => {
       const result = await speak({
         registry,
         bus,
+        session,
         record: current,
-        seat: 2 as never,
+        seat: speaker,
         attempt: async () => {
           calls += 1;
           return { text: '', failed: true };
@@ -95,5 +151,31 @@ describe('AC-12 · 连续 3 次降级后仍尝试真实调用', () => {
 
     expect(calls).toBe(8); // 每轮重试一次
     expect(degradation?.total).toBe(4);
+  });
+});
+
+describe('C-97 · 发言必须走引擎，不能绕过相位推进', () => {
+  it('8 个席位都说完后，相位从 DAY_SPEECH 前进（不会卡住）', async () => {
+    const { registry, session, record, bus } = await setup();
+    let current = record;
+    let guard = 0;
+
+    while (registry.stateOf(current).phase === 'DAY_SPEECH' && guard < 12) {
+      guard += 1;
+      const speaker = currentSpeaker(registry.stateOf(current));
+      if (speaker === undefined) break;
+      const result = await speak({
+        registry,
+        bus,
+        session,
+        record: current,
+        seat: speaker,
+        attempt: async () => ({ text: '我过了。', failed: false }),
+        limitMs: 5_000,
+      });
+      current = result.record;
+    }
+
+    expect(registry.stateOf(current).phase).not.toBe('DAY_SPEECH');
   });
 });

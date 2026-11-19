@@ -109,7 +109,9 @@ export function registerStreamRoutes(app: FastifyInstance, options: StreamRoutes
       );
     });
 
-    const ordered = [...extras, ...fromBus].sort((a, b) => a.id - b.id);
+    // 同 id 时**总线的增量在前、committed 的 done 在后**：反过来会出现
+    // `done → thinking → delta`，客户端最终停在 speaking 半句（C-86）。
+    const ordered = [...fromBus, ...extras].sort((a, b) => a.id - b.id);
     for (const message of ordered) stream.write(encodeSseFrame(message));
 
     const unsubscribe = bus.subscribe(record.gameId, (message) => {
