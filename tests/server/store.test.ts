@@ -70,7 +70,7 @@ describe('AC-12 · 不自建存储', () => {
   });
 });
 
-describe('AC-13 · 释放后按需重建', () => {
+describe('释放语义 · 事件流被清空后无法重建（AC-13 的 no-cache 见 finished-game.test.ts）', () => {
   it('释放 events 后再取状态会抛错（无事件流）；重新放回事件则语义恢复', async () => {
     const registry = new GameRegistry(new InMemoryMetaStore());
     const session = await registry.createSession();

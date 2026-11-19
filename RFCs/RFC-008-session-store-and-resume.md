@@ -268,3 +268,16 @@ $ pnpm test → 59 files / 495 tests
 ```
 
 > 说明：AC-13 的原文「释放后再取该局，内部重新 `replay` 得到同一状态」与 §2.5 的释放语义（清空 `events`）相互矛盾——事件流没了就不可能重建。本 RFC 按「**终局但未释放**的记录不缓存状态」实现与测试，并在 §8.9 记录了释放后的行为。
+
+### 8.11 Round 4 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-73** 仍未闭合 | 我声称「把 `store.test.ts` 那条改名」，但 `git diff` 显示该文件 0 行改动——又一次「声称改了但没改」。新用例只把副本的 `status` 翻成 `finished`，既没真的走到 FINISHED，也没走 release | 新增 `tests/server/finished-game.test.ts`：**真的用脚本打到 FINISHED**（400 次内），再断言两次 `stateOf` 深度相等、改返回值不影响下一次；另有一条断言释放后无法重建。同时真的把 `store.test.ts` 的 describe 改名（`grep` 已确认）。反向探针：给终局记录加缓存 → 释放用例变红 |
+| **C-76**（非阻塞） | `strengthen.test.ts` 涨到 485 行，超过 `STYLE-6` 的 400 行上限 | 按主题拆成两个文件：`strengthen.test.ts`（289 行，事件来源/投影一致性/retention）与 `release-and-entry.test.ts`（218 行，释放语义与 HTTP 入口） |
+| **N-R4-1** | AC-8 只断言「非 REJECTED + version 前进」，动作被接受但空转也能满足 | 追加断言：这一夜必须产出 `DAY_STARTED`（女巫选 none → 结算 → 天亮）。反向探针（把 `none` 改成恒拒绝）会红 |
+| **N-R4-2 / C-75** | 注入存储的用例用空子类，且「创建 + 读取 + 提交」正文没有提交；`buildApp` 忽略注入也照样绿 | 用**同一个注入实例**建注册表读回记录；忽略注入时该用例变红 |
+
+```
+$ pnpm test → 61 files / 497 tests
+```
