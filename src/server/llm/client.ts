@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import type { ProjectedContext } from '@shared/project';
 
 import type { LlmConfig } from './config';
+import { styleOf } from '@engine/personas';
 import { DecisionLog, type DecisionKey } from './decision-log';
 import { CallMetaLog, type CallMeta } from './meta';
 import { DecisionSchema, type Decision } from './schema';
@@ -49,9 +50,10 @@ export interface DecideInput {
   gameId: string;
   seq: number;
   ctx: ProjectedContext;
+  /** 人格 id（RFC-009）：决定风格段与 `maxOutputTokens`。 */
+  personaId?: string | null;
   /** 对局模式决定胜利条件的措辞，不能写死。 */
   mode: 'slaughter-side' | 'slaughter-all';
-  persona?: string | null;
 }
 
 export interface DecideResult {
@@ -95,7 +97,7 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
   }[] = [
     {
       role: 'system',
-      content: buildSystemPrompt({ persona: input.persona ?? null, mode: input.mode }),
+      content: buildSystemPrompt({ personaId: input.personaId ?? null, mode: input.mode }),
     },
     { role: 'user', content: buildUserMessage(input.ctx) },
   ];
@@ -121,7 +123,9 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
           model: config.model,
           messages,
           temperature: config.temperature,
-          max_tokens: config.maxOutputTokens,
+          // RFC-009 §4：人格的 verbosity 影响输出上限（话多的人给更多 token），
+          // 但不改变超时阈值——超时是网络问题，与性格无关。
+          max_tokens: maxTokensFor(config, input.personaId ?? null),
         },
         { signal: AbortSignal.timeout(config.timeoutMs) },
       );
@@ -183,6 +187,18 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
   }
 
   throw lastError ?? new LlmError('UNKNOWN', '调用失败且没有错误信息');
+}
+
+/**
+ * 输出上限：以配置为基线，按人格的 `verbosity` 缩放。
+ *
+ * 没有性格（玩家席位 / 未分配）时用配置值。
+ */
+function maxTokensFor(config: LlmConfig, personaId: string | null): number {
+  if (personaId === null) return config.maxOutputTokens;
+  const style = styleOf(personaId);
+  const factor = style.targetSentences / 2; // 1 档 → 0.5，2 档 → 1，3 档 → 1.5
+  return Math.max(120, Math.round(config.maxOutputTokens * factor));
 }
 
 /** 解析 JSON；解析失败当作格式错误（由 schema 再兜一层）。 */

@@ -62,28 +62,41 @@ describe('AC-11 · 同种子可复现', () => {
   });
 });
 
-describe('AC-3 · 人格与身份正交', () => {
-  it('200 局里「人格 × 是否狼」的交叉表没有极端集中', () => {
-    // 不做完整的卡方检验（那要正态分位表），改用可断言的界：每个格子的计数必须落在
-    // 「期望值 ± 4 倍标准差」内。任何让人格与阵营相关的实现都会越界。
-    const counts = new Map<string, { wolf: number; good: number }>();
+describe('AC-3 · 人格与身份正交（卡方检验）', () => {
+  it('1000 局、12×2 交叉表：卡方统计量小于 df=11 的 0.01 临界值 24.725', () => {
+    // 用真卡方，而不是「狼数少于好人数」这种单边界：后者抓不到「某人格永不当狼」，
+    // 也抓不到中等偏置（C-83）。
+    const personas = PERSONAS.map((persona) => persona.id);
+    const cell = new Map<string, { wolf: number; good: number }>();
+    for (const id of personas) cell.set(id, { wolf: 0, good: 0 });
 
-    for (const seed of SEEDS) {
-      const state = lobbyState({ seed });
+    const games = 1000;
+    for (let index = 0; index < games; index += 1) {
+      const state = lobbyState({ seed: 5_000 + index * 13 });
       for (const seat of state.seats) {
         if (seat.personaId === undefined) continue;
-        const entry = counts.get(seat.personaId) ?? { wolf: 0, good: 0 };
+        const entry = cell.get(seat.personaId);
+        if (entry === undefined) throw new Error(`未知人格 ${seat.personaId}`);
         if (seat.role === 'wolf') entry.wolf += 1;
         else entry.good += 1;
-        counts.set(seat.personaId, entry);
       }
     }
 
-    // 200 局 × 8 席 = 1600 次分配；每个格子期望约 1600/12 ≈ 133，狼占 3/9。
-    for (const [id, entry] of counts) {
-      expect(entry.wolf + entry.good, `${id} 未被分配到`).toBeGreaterThan(0);
-      expect(entry.wolf, `${id} 的狼比例异常`).toBeLessThan(entry.good + 1);
+    const total = games * 8;
+    const wolfTotal = [...cell.values()].reduce((sum, entry) => sum + entry.wolf, 0);
+    const goodTotal = total - wolfTotal;
+
+    let statistic = 0;
+    for (const entry of cell.values()) {
+      const rowTotal = entry.wolf + entry.good;
+      statistic +=
+        (entry.wolf - (rowTotal * wolfTotal) / total) ** 2 / ((rowTotal * wolfTotal) / total);
+      statistic +=
+        (entry.good - (rowTotal * goodTotal) / total) ** 2 / ((rowTotal * goodTotal) / total);
     }
+
+    // df = (12-1)(2-1) = 11，p=0.01 的临界值
+    expect(statistic).toBeLessThan(24.725);
   });
 });
 

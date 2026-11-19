@@ -2,6 +2,7 @@ import type { ProjectedContext } from '@shared/project';
 import { INJECTION_NOTICE } from '@shared/injection';
 import { escapeAngleBrackets, wrapPublicUtterance } from '@shared/injection';
 import { ROLE_LABELS } from '@shared/terms';
+import { personaOf, styleOf } from '@engine/personas';
 
 import { RULES_TEXT, winConditionText } from './rules';
 
@@ -12,7 +13,8 @@ import { RULES_TEXT, winConditionText } from './rules';
  * 唯一的差异是它们各自的知情清单。
  */
 export function buildSystemPrompt(input: {
-  persona: string | null;
+  /** 人格 id（RFC-009）；`null` 表示玩家席位，不加风格段。 */
+  personaId: string | null;
   mode: 'slaughter-side' | 'slaughter-all';
 }): string {
   const lines = [
@@ -27,8 +29,13 @@ export function buildSystemPrompt(input: {
   ];
 
   // 人格（RFC-009）：只约束**风格**，不改变合法性判断。
-  if (input.persona !== null) {
-    lines.push(`你的性格设定：${input.persona}`);
+  if (input.personaId !== null) {
+    const persona = personaOf(input.personaId);
+    const style = styleOf(input.personaId);
+    lines.push(
+      `你的性格设定：${persona.label}（语气${persona.tone}，发言${style.targetSentences} 句左右，指认强度${style.aggression}/2）。`,
+    );
+    if (persona.quirk !== undefined) lines.push(`你说话时偶尔会带一句「${persona.quirk}」。`);
     lines.push('保持这个性格的说话方式，但不要因为性格而做出违反规则的选择。');
   }
 

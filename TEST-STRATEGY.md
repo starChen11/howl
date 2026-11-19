@@ -29,8 +29,8 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  63 passed (63)     # unit 56 个 + meta 7 个
-      Tests  519 passed (519)
+ Test Files  65 passed (65)     # unit 58 个 + meta 7 个
+      Tests  528 passed (528)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -287,13 +287,13 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2、11 | `tests/engine/personas.test.ts`：断言整局人格 id 不变、同局不重复、同 seed 分配可复现 | unit | proposed | Must |
-| 3、4 | 同上：1000 局统计「人格 × 阵营」交叉表断言无显著相关（固定种子集合，不用随机失败阈值）；同局内至少 3 个 AI 的句长或攻击性比例极差超阈值 | integration | proposed | Must |
-| 5 | `tests/engine/annotate.test.ts`：复盘数据中人格标签与席位一一对应 | unit | proposed | Must |
-| 6、7 | 同上：构造满足/不满足条件的决策各一组，断言悍跳与狼查杀狼判定为真/假 | unit | proposed | Must |
-| 8 | 同上：替换 `speech` 措辞（含/不含「预言家」字样）后判定结果不变 | unit | proposed | Must |
-| 9 | `tests/engine/scenarios/advanced-play.test.ts`：固定种子 + 预置决策序列，断言三类事件各触发 ≥3 次 | integration | proposed | Must |
-| 10 | `tests/engine/personas.test.ts`：改变人格后非法 action 仍非法 | unit | proposed | Must |
+| 1、2、11 | `tests/engine/personas.test.ts`：断言整局人格 id 不变、同局不重复、同 seed 分配可复现 | unit | existing: tests/engine/{personas,personas-start,annotate}.test.ts | Must |
+| 3、4 | 同上：1000 局统计「人格 × 阵营」交叉表断言无显著相关（固定种子集合，不用随机失败阈值）；同局内至少 3 个 AI 的句长或攻击性比例极差超阈值 | integration | existing: tests/engine/{personas,personas-start,annotate}.test.ts | Must |
+| 5 | `tests/engine/annotate.test.ts`：复盘数据中人格标签与席位一一对应 | unit | existing: tests/engine/{personas,personas-start,annotate}.test.ts | Must |
+| 6、7 | 同上：构造满足/不满足条件的决策各一组，断言悍跳与狼查杀狼判定为真/假 | unit | existing: tests/engine/{personas,personas-start,annotate}.test.ts | Must |
+| 8 | 同上：替换 `speech` 措辞（含/不含「预言家」字样）后判定结果不变 | unit | existing: tests/engine/{personas,personas-start,annotate}.test.ts | Must |
+| 9 | `tests/engine/scenarios/advanced-play.test.ts`：固定种子 + 预置决策序列，断言三类事件各触发 ≥3 次 | integration | existing: tests/engine/{personas,personas-start,annotate}.test.ts | Must |
+| 10 | `tests/engine/personas.test.ts`：改变人格后非法 action 仍非法 | unit | existing: tests/engine/{personas,personas-start,annotate}.test.ts | Must |
 
 **需人工**：人格差异的「好不好玩」无法自动判定。**手工检查**：连看 3 局，确认 8 个 AI 的发言能被人类一眼区分出至少 4 种语气。
 

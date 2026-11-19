@@ -41,15 +41,20 @@ export function isFakeSeerClaim(input: { speakerRole: string; claim: Claim | und
 
 /** 判定「狼指认同伴是狼」。 */
 export function isWolfAccusesWolf(input: {
+  speaker: SeatId;
   speakerRole: string;
   claim: Claim | undefined;
   roleOf: (seat: SeatId) => string;
 }): boolean {
-  const { speakerRole, claim, roleOf } = input;
+  const { speaker, speakerRole, claim, roleOf } = input;
   if (speakerRole !== 'wolf') return false;
 
   return (claim?.accuses ?? []).some(
-    (accusation) => accusation.as === 'wolf' && roleOf(accusation.target) === 'wolf',
+    (accusation) =>
+      // 自己指认自己不算「狼查杀狼」——RFC §2.3 要求的是「另一名狼」。
+      accusation.target !== speaker &&
+      accusation.as === 'wolf' &&
+      roleOf(accusation.target) === 'wolf',
   );
 }
 
@@ -94,7 +99,7 @@ export function annotate(input: AnnotateInput): AdvancedPlayMark[] {
     if (isFakeSeerClaim({ speakerRole, claim })) {
       marks.push({ kind: 'fake-seer-claim', seat: speaker, seq: event.seq });
     }
-    if (isWolfAccusesWolf({ speakerRole, claim, roleOf })) {
+    if (isWolfAccusesWolf({ speaker, speakerRole, claim, roleOf })) {
       marks.push({ kind: 'wolf-accuses-wolf', seat: speaker, seq: event.seq });
     }
   }
@@ -105,9 +110,19 @@ export function annotate(input: AnnotateInput): AdvancedPlayMark[] {
 /** 标注是否「只读结构化字段」：把文本内容抹掉，结果必须不变。 */
 export function annotateWithoutText(input: AnnotateInput): AdvancedPlayMark[] {
   const stripped = input.events.map((event) => {
-    if (event.type !== 'SPEECH' && event.type !== 'WOLF_CHAT_POSTED') return event;
     const payload = event.payload as Record<string, unknown>;
-    return { ...event, payload: { ...payload, text: '' } } as EventEnvelope;
+    // 抹掉所有自然语言：`speech.text`、夜聊的 `text`，以及 AI 自述的 `reason`。
+    if (
+      event.type === 'SPEECH' ||
+      event.type === 'WOLF_CHAT_POSTED' ||
+      event.type === 'AI_THOUGHT'
+    ) {
+      const next = { ...payload };
+      if ('text' in next) next['text'] = '';
+      if ('reason' in next) next['reason'] = '';
+      return { ...event, payload: next } as EventEnvelope;
+    }
+    return event;
   });
 
   return annotate({ ...input, events: stripped });

@@ -35,8 +35,8 @@ const CTX: ProjectedContext = {
 
 describe('AC-11 · 系统提示不含扮演类措辞', () => {
   it('5 个禁词都不出现（有人格与无人格两种）', () => {
-    for (const persona of [null, '谨慎、话少']) {
-      const prompt = buildSystemPrompt({ persona, mode: 'slaughter-side' });
+    for (const persona of [null, 'careful']) {
+      const prompt = buildSystemPrompt({ personaId: persona, mode: 'slaughter-side' });
       for (const banned of BANNED) {
         expect(prompt, `persona=${String(persona)} 含 ${banned}`).not.toContain(banned);
       }
@@ -44,7 +44,7 @@ describe('AC-11 · 系统提示不含扮演类措辞', () => {
   });
 
   it('系统提示包含规则书与注入声明', () => {
-    const prompt = buildSystemPrompt({ persona: null, mode: 'slaughter-side' });
+    const prompt = buildSystemPrompt({ personaId: null, mode: 'slaughter-side' });
 
     expect(prompt).toContain(ROLE_LABELS.wolf);
     expect(prompt).toContain('public_utterance');
@@ -70,17 +70,17 @@ describe('用户消息 · 反映知情清单', () => {
 
 describe('RFC-009 · 人格进入提示且只约束风格', () => {
   it('传入人格时，提示里出现性格与「不要因性格违反规则」', () => {
-    const prompt = buildSystemPrompt({
-      persona: '直来直去（说话短、指认强）',
-      mode: 'slaughter-side',
-    });
+    const prompt = buildSystemPrompt({ personaId: 'blunt', mode: 'slaughter-side' });
 
+    // 具体内容必须来自人格库：换成固定常量就红
     expect(prompt).toContain('性格设定');
+    expect(prompt).toContain('直来直去');
+    expect(prompt).toContain('指认强度2/2');
     expect(prompt).toContain('不要因为性格而做出违反规则的选择');
   });
 
   it('不传人格时不出现这个段落', () => {
-    const prompt = buildSystemPrompt({ persona: null, mode: 'slaughter-side' });
+    const prompt = buildSystemPrompt({ personaId: null, mode: 'slaughter-side' });
 
     expect(prompt).not.toContain('性格设定');
   });
@@ -157,8 +157,8 @@ describe('B3 · 用户消息要带上对局内容，而不只是事件类型', (
 
 describe('B3 · 胜利条件按模式生成', () => {
   it('屠边与屠城的措辞不同', () => {
-    const side = buildSystemPrompt({ persona: null, mode: 'slaughter-side' });
-    const all = buildSystemPrompt({ persona: null, mode: 'slaughter-all' });
+    const side = buildSystemPrompt({ personaId: null, mode: 'slaughter-side' });
+    const all = buildSystemPrompt({ personaId: null, mode: 'slaughter-all' });
 
     expect(side).toContain('神职全部出局');
     expect(all).toContain('所有好人全部出局');

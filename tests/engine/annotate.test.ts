@@ -62,6 +62,7 @@ describe('AC-7 · 狼查杀狼判定', () => {
     // FIXTURE_ROLES：1/2/3 是 wolf
     expect(
       isWolfAccusesWolf({
+        speaker: 1 as SeatId,
         speakerRole: 'wolf',
         claim: { accuses: [{ target: 2 as SeatId, as: 'wolf' }] },
         roleOf,
@@ -72,8 +73,20 @@ describe('AC-7 · 狼查杀狼判定', () => {
   it('狼指认好人是狼 → 假', () => {
     expect(
       isWolfAccusesWolf({
+        speaker: 1 as SeatId,
         speakerRole: 'wolf',
         claim: { accuses: [{ target: 4 as SeatId, as: 'wolf' }] },
+        roleOf,
+      }),
+    ).toBe(false);
+  });
+
+  it('狼指认自己 → 假（RFC 要求「另一名狼」）', () => {
+    expect(
+      isWolfAccusesWolf({
+        speaker: 1 as SeatId,
+        speakerRole: 'wolf',
+        claim: { accuses: [{ target: 1 as SeatId, as: 'wolf' }] },
         roleOf,
       }),
     ).toBe(false);
@@ -82,6 +95,7 @@ describe('AC-7 · 狼查杀狼判定', () => {
   it('好人指认同伴是狼 → 假（不是「狼查杀狼」）', () => {
     expect(
       isWolfAccusesWolf({
+        speaker: 4 as SeatId,
         speakerRole: 'seer',
         claim: { accuses: [{ target: 2 as SeatId, as: 'wolf' }] },
         roleOf,
@@ -171,5 +185,27 @@ describe('AC-9 · 定向对局里三类打法各能触发', () => {
     expect(count('fake-seer-claim')).toBeGreaterThanOrEqual(3);
     expect(count('wolf-accuses-wolf')).toBeGreaterThanOrEqual(3);
     expect(count('self-expose')).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('C-82 · 判定只看 speakerOf，不看 visibleTo', () => {
+  it('visibleTo 指向 9 号、但 speakerOf 说是 1 号时，标注落在 1 号', () => {
+    const event = {
+      gameId: state.gameId,
+      seq: 2,
+      ts: 0,
+      type: 'AI_THOUGHT',
+      visibleTo: 'self:9',
+      payload: {
+        reason: '跳预言家',
+        claim: { role: 'seer', checks: [{ target: 4, result: 'not-wolf' }] },
+        decisionSeq: 1,
+      },
+    } as unknown as EventEnvelope;
+
+    const marks = annotate({ events: [event], state, speakerOf: () => 1 as SeatId });
+
+    expect(marks).toHaveLength(1);
+    expect(marks[0]?.seat).toBe(1);
   });
 });

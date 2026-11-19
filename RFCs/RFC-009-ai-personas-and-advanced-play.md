@@ -126,8 +126,8 @@ claim?: {
 | **D-2** | 人格给 8 个 AI 席位，**玩家席位没有人格** | `personaId` 为 `undefined` 而不是空串：空串会在提示里被当成一个人格 id |
 | **D-3** | `annotate` 需要调用方提供 `speakerOf(event)`，**不从 `visibleTo` 反解席位** | CR-003 C2 的教训：拿可见性字段当数据用，规则一改就静默错位（RFC-005 确实改过可见性） |
 | **D-4** | `annotateWithoutText` 把 `speech` / `text` 抹掉后重新标注，用于证明「判定不依赖自然语言」 | AC-8 要的不是「换个措辞也测一遍」，而是「文本完全不参与判定」 |
-| **D-5** | AC-3 不做完整卡方检验，改用「每个格子的狼数必须少于好人数 + 1」的界 | 200 局样本下，这种界对「人格与阵营相关」的实现在统计上够敏感，且不需要正态分位表。若将来要严格卡方，可换成正态近似实现 |
-| **D-6** | AC-4 的「平均句长/攻击性词汇比例」用**风格画像**（`styleOf`）替代 | 真正的句长要等模型生成（RFC-010/011）。本 RFC 能保证的是「提示里会被要求用不同风格」，生成侧的可测性留给后续 RFC |
+| **D-5（Round 1 修订）** | ~~用单边界代替卡方~~ → **改成真卡方**：1000 局、12×2 交叉表，df=11 的 0.01 临界值 24.725 | 评审实跑证明单边界抓不到「某人格永不当狼」与中等偏置（P-R12 的卡方 88.87 仍全绿）。实现者选择，未逐条征询 |
+| **D-6（Round 1 修订）** | AC-4 的「平均句长/攻击性词汇比例」用**风格画像**（`styleOf`）+ 提示里逐字渲染的人格段替代 | 真正的句长要等模型生成（RFC-010/011）。Round 1 指出 `styleOf` 当时在 `src/server` 零消费者，已把 `personaOf`/`styleOf` 接进 `buildSystemPrompt`；提示测试断言人格库里的具体 label 与指认强度，换成固定常量会红。实现者选择，未逐条征询 |
 
 ### 8.3 文件清单（FILES CHANGED）
 
@@ -170,3 +170,20 @@ $ coverage → 行 97.12% / 分支 92.95%
 | 生成文本的风格差异未测 | AC-4 只验证「目标风格不同」；真实句长要等模型生成 | RFC-010 / 011 |
 | 标注结果未进快照 | `annotate` 是纯函数，快照由 RFC-014 生成 | RFC-014 |
 | 卡方检验 | 用界代替（D-5） | 可选改进 |
+
+### 8.7 Round 1 回应（Changes requested · High）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-77** `verbosity` 没影响 `maxOutputTokens` | §4 要求它影响输出上限，代码固定用全局 800 | `maxTokensFor(config, personaId)`：以配置为基线按 `verbosity` 缩放（0.5 / 1 / 1.5），下限 120。补断言 |
+| **C-78** 人格没接到提示 | `personaOf` / `styleOf` 在 `src/server` 零消费者，`buildSystemPrompt` 接的是自由字符串 | 签名改成 `personaId`，内部用 `personaOf` 渲染 label / 语气 / 句数 / 指认强度与口癖；提示测试断言**具体 label**（`直来直去`）与 `指认强度2/2`——换成固定常量会红 |
+| **C-79** 开局路径没测 | 所有用例停在 `LOBBY`；把 `GAME_STARTED.personas` 全改 `null` 也全绿 | 新增 `personas-start.test.ts`：`step` 之后逐位比较 `seats.personaId` 与 payload、`replay` 不丢、`personaOf` 能解析。反向探针（personas 全 null）会红 |
+| **C-80** AC-5 / 9 / 10 缺失 | label 全改 `'X'` 仍绿；AC-9 是手工拼事件流；AC-10 无测试 | 补：label 唯一非空；`tests/engine/scenarios/advanced-play.test.ts` 用真实 `step` 触发自曝再标注；AC-10 用「同一非法 action 在三种人格下都被拒」 |
+| **C-81** 狼指认自己 | `isWolfAccusesWolf` 返回 `true` | 加 `accusation.target !== speaker`，补用例 |
+| **C-82** `speakerOf` 没被锁 | 把实现改成优先读 `visibleTo` 仍绿 | 补用例：事件的 `visibleTo` 指向 9 号、`speakerOf` 返回 1 号时，标注必须落在 1 号。`annotateWithoutText` 也抹掉 `reason` |
+| **C-83** 卡方 | 单边界抓不到「某人格永不当狼」 | 改成真卡方（见 D-5 修订） |
+| **C-84** 文档 | TEST-STRATEGY 仍 `proposed`、README 数字过期、§8.3 声称已更新 | 已同步 |
+
+```
+$ pnpm test → 65 files / 528 tests
+```
