@@ -50,7 +50,7 @@
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Reviewed |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
-| [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Implemented |
+| [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Not started |
 
@@ -1064,10 +1064,30 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 2 后的状态**：C-156 / C-158 / C-159 / C-161 / C-162 / C-166 关闭；C-157 / C-160 / C-163 / C-171 / C-176 为阻塞；C-177 ~ C-180 为非阻塞。C-164 / C-165 / C-167 ~ C-170 / C-172 ~ C-175 未重查，沿用 Round 1。RFC-014 的 Status = **`Changes requested`**。
 
+### 8.53 RFC-014 Round 3 评审（2026-11-19）
+
+> 由 `/review-rfc 014` 复核；完整证据见 [`reviews/REVIEW-RFC-014.md`](reviews/REVIEW-RFC-014.md) Round 3。评审时 HEAD `123133c`，工作树 clean；门禁 **87 files / 748 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0、`pnpm test:e2e` **10/10 passed**、引擎覆盖率行 96.96% / 分支 92.85%。用户点名复核 **C-171 / C-176 / C-157 / AC-10 / AC-2、5、6**；Round 1/2 已关闭项未重查。结论：**Reviewed**（无阻塞项）。探针从 `/tmp/howl-rfc014-r3/backup/` 文件备份恢复（**未用 `git checkout` / `git restore`**），6 个源码文件 SHA-256 全部 `OK`；临时探针测试已删除；工作树 clean；没有 `git commit`。
+
+| # | 复核 | 状态与痕迹 |
+|---|---|---|
+| **C-157** | `createLlmAgent` 把 `metaLog: usageMetaLog` 注入 `decide`；测试缝 `decideFn` 的用例在 fake decide 里经 `deps.metaLog` 写入并读 `usageOf` | **Closed** · `src/server/ai/agent.ts:84-87`、`tests/server/replay.test.ts:411-488`；M3-D 删注入 → 1 failed |
+| **C-160**（AC-10） | 时间线 `textContent` 数组筛选前后逐项 deep equal | **Closed** · `tests/client/replay.test.tsx:73-85`；M3-E 追加 `·MUT` → 1 failed |
+| **C-163**（AC-2/5/6） | 真实完成局逐席与 `state` 比对 `role` / `personaId` / `alive`，`result` / `winCondition` 与 `GAME_ENDED.payload` 比对 | **Closed（核心字段）** · `tests/server/replay.test.ts:490-511`；M3-F2 打红；残余 C-181 / C-182（非阻塞） |
+| **C-171** | `ApiClient.game` 对非 2xx 抛错；`App.refresh` 捕获后走 `client.replay`，无 view 有快照时渲染复盘；补 410 单测与 App 回录用例 | **Closed** · `src/client/api.ts:45-48`、`src/client/App.tsx:39-49,142-147`、`tests/client/api.test.ts:44-51`、`tests/client/spectator.test.tsx:324-362`；M3-A / M3-B 打红；P-R3-2 真实 `ApiClient` + App 通过 |
+| **C-176** | `appendEvents` 在 finished 记录上用 `stateOf(updated)` + 新事件重建快照；补「追加后快照与新事件都在」用例 | **Closed** · `src/server/store/game-registry.ts:242-250`、`tests/server/replay.test.ts:383-409`；M3-C 打红；P-R3-1 真实 `runGame` 40 条推理 / 40 条快照、最后一条在 `GAME_ENDED` 后 |
+| **C-181** | 快照 `roleLabel` / `personaLabel` 未与 `ROLE_LABELS` / `personaOf(personaId).label` 比对；只改这两个派生标签时 `replay.test.ts` 16/16 仍绿 | **Open（非阻塞，Round 3 新登记）** · `src/server/replay/snapshot.ts:37-39`、`tests/server/replay.test.ts:55-56,498-500`；`reviews/REVIEW-RFC-014.md` Round 3 §2.5 / M3-F1 |
+| **C-182** | `snapshot.timeline` 的 `GAME_ENDED` 条目未断言；删掉 `buildTimeline` 的该分支时 `replay.test.ts` 16/16 仍绿 | **Open（非阻塞，Round 3 新登记）** · `src/server/replay/snapshot.ts:151-158`、`tests/server/replay.test.ts:503-506`；`reviews/REVIEW-RFC-014.md` Round 3 §2.5 / M3-F3 |
+| **C-183** | `App.refresh` 设置 `error`，但 `view` 与 `replay` 都为空时只渲染「正在载入对局…」，错误态不显示；无快照失败会永久 loading | **Open（非阻塞，Round 3 新登记）** · `src/client/App.tsx:142-147`；P-R3-3 |
+| **C-177 ~ C-180** | Round 2 登记的非阻塞项（API-1 回归锁、cached token、`toThought` 复用、死测试/0=0 空真） | **未重查** · 沿用 Round 2 §6 |
+| **C-167 ~ C-170、C-172 ~ C-175** | Round 1 登记的非阻塞项（文档漂移、AC-12/14 证据、AC-1 口径、轮询/seed 等） | **未重查** · 沿用 Round 1 §5 |
+
+> **Round 3 后的状态**：C-157 / C-160 / C-163（核心）/ C-171 / C-176 关闭；C-181 / C-182 / C-183 为非阻塞；C-177 ~ C-180、C-167 ~ C-175 未重查。RFC-014 的 Status = **`Reviewed`**。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.140 | RFC-014 Round 3 复核（Status → Reviewed）：C-157 / C-160 / C-163（核心）/ C-171 / C-176 关闭；M3-A ~ M3-D 打红，P-R3-1 / P-R3-2 全链路通过；新增非阻塞 C-181（派生标签未比对）、C-182（`GAME_ENDED` 时间线条目未断言）、C-183（无快照失败时 App 永久 loading）。门禁 87 files / 748 tests、10/10 e2e；探针从 `/tmp/howl-rfc014-r3/backup/` 文件备份恢复、6 个源码文件 SHA-256 全 `OK`、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-014.md`](reviews/REVIEW-RFC-014.md) Round 3 |
 | 2026-11-19 | v2.139 | RFC-014 Round 2 修复（Status → Implemented）：`game()` 非 2xx 抛错并回落复盘、终局后追加事件重建快照、用量接线测试缝、时间线逐条相等、身份/人格/结果与状态比对 |
 | 2026-11-19 | v2.138 | RFC-014 Round 2 复核（Status 仍 `Changes requested`）：C-158 / C-159 / C-161 / C-162 / C-166 关闭，C-156 生产产出成立但终局快照漏最后一条（新 C-176）；C-157 / C-160 / C-163 / C-171 仍为阻塞（用量接线与 AC-10 / AC-2/5/6 的官方用例仍无牙；`ApiClient.game` 对 410 不抛错，App 仍在 `App.tsx:61` 抛 `TypeError`）；非阻塞新增 C-177 ~ C-180。门禁 87 files / 743 tests、10/10 e2e；探针从 `/tmp/howl-rfc014-r2/backup/` 文件备份恢复、6 个源码文件 SHA-256 全 `OK`、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-014.md`](reviews/REVIEW-RFC-014.md) Round 2 |
 | 2026-11-19 | v2.137 | RFC-014 Round 1 修复（Status → Implemented）：真实产出 `AI_THOUGHT`、用量含失败调用、视角路由级 3×3 用例、释放局退到复盘、双端 schema 校验、用量展示 |
