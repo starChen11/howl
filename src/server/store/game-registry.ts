@@ -123,8 +123,16 @@ export class GameRegistry {
     if (session.gameIds.length > MAX_GAMES_PER_SESSION) {
       // 超限**不删记录**：删掉会让旧局从会话里消失、`GET` 变成 404，而 §2.5 的语义是
       // 「仍列出全部对局、已释放的返回 410」。所以只清事件流，记录留着。
-      const evicted = session.gameIds[0];
-      if (evicted !== undefined) await this.release(evicted);
+      //
+      // 挑「最旧的、**还持有事件流**的那一局」：一直取 gameIds[0] 会反复释放同一局，
+      // 列表却不缩短——第 22 局之后第 2 局仍然留着事件（C-66）。
+      for (const gameId of session.gameIds) {
+        const candidate = await this.store.get<GameRecord>(gameKey(gameId));
+        if (candidate !== undefined && candidate.events.length > 0) {
+          await this.release(gameId);
+          break;
+        }
+      }
     }
     await this.store.set(sessionKey(session.id), session);
 

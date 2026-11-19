@@ -225,9 +225,31 @@ $ pnpm test → Test Files 58 passed (58) · Tests 477 passed (477)
 | **B1 / C-59** 动作响应泄漏 | `POST /actions` 直接返回 `step` 的全部事件，含 `visibleTo: 'server'` 的 `PLAYER_DIED`（带死因）与夜间相位——等于把 RFC-007 的 C-28 从 HTTP 又漏一遍 | 新增 `GameRegistry.visibleEventsOf(record, seat)`：按序折叠后逐条 `isVisibleTo` 过滤。响应只回该席位可见的事件；单测用一整夜的真实事件流锁定（去掉过滤即红） |
 | **B2 / C-60** 不绑定席位 | `playerSeat = 1` 的女巫可以提交 `WOLF_KILL seat: 3`、`SEER_CHECK seat: 7`，并读到对方的私有事件 | 路由增加席位校验：`action.seat` 必须等于本局 `playerSeat`，否则 `403 NOT_YOUR_SEAT`。反向探针会红。**这条同时让 B1 的复现路径失效**——那条复现正是靠代别人行动才拿到的私有事件 |
 | **B3 / C-63** 生产 cookie 缺 `Secure` | `src/server/index.ts` 没传 `production` | 生产入口按 `NODE_ENV === 'production'` 传 `production: true`；补用例断言 `Secure` 出现 |
-| **B4** 多条 AC 不会红 | AC-2 / AC-3 / AC-7 / AC-8 / AC-13 的断言太弱 | 本轮补强了 B1 / B2 / B3 与释放语义（B5）的用例；AC-2 / AC-7 的加强留给 Round 2 前的收尾（见 §8.8） |
+| **B4** 多条 AC 不会红 | AC-2 / AC-3 / AC-7 / AC-8 / AC-13 的断言太弱 | 本轮补强了 B1 / B2 / B3 与释放语义（B5）的用例；AC-2 / AC-7 的加强留给 Round 2 前的收尾（见 §8.8（已知缺口）） |
 | **B5 / C-62** 释放语义不一致 | 超限时把对局从会话里删掉 → `GET` 变 404；`enforceRetention` 扫全局 `game:`，会清掉**别的会话**的对局 | 超限只清事件流、保留记录（`GET` 返回 410）；`enforceRetention(session)` 只在本会话范围内保留最近 3 局 |
 
 ```
 $ pnpm test → 58 files / 482 tests
 ```
+
+### 8.8 Round 2 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-65** B1 的 HTTP 用例是空心的 | 它只提交首条 `WOLF_CHAT`，而那个动作**永远不产出 `server` 事件**，断言恒真；把路由改回 `result.events` 也照样绿 | 新用例用 seed 15（座位 1 是 witch）把局面推进到 `NIGHT_WITCH`，再由**玩家自己的席位**经路由提交 `WITCH_ACT` —— 这一夜确实有 `PLAYER_DIED`（server）与夜间相位。反向探针把路由改回 `result.events` → 该用例红 |
+| **C-66** 超限只反复释放第 1 局 | 列表不缩短，所以每来一局都把同一个最旧局再释放一次；第 22 局之后第 2 局仍留着事件 | 超限时挑「最旧的、**仍持有事件流**的那一局」。补用例：开到上限 +2 局后，持有事件的局数不超过上限；反向探针（改回只释放第 1 局）会红 |
+| **C-67** 多条 AC 断言太弱 | AC-2 / 3 / 7 / 8 / 13 / 14 / 15 的判据是「能跑通」而不是「改坏会红」 | 新增 `strengthen.test.ts`：AC-2/3 直接比对 `GAME_STARTED.payload`；AC-7 与 `project()` 输出**深度相等**（多一个字段就红）；AC-8 用上面那条真实夜间动作；AC-13 改为「两次 `stateOf` 深度相等且改返回值不影响下一次」——原测试断言「释放后抛错」，与 AC 的语义相反；AC-14 真的开 100 局；AC-15 同时断言状态码与错误码 |
+| **C-68**（非阻塞） | 跨会话 retention 无回归测试 | 补用例：会话 B 打 5 局后，会话 A 那局的事件仍在 |
+| §8.7 引用了不存在的 §8.8 | 文档漂移 | 本节即 §8.8，引用已指向具体内容 |
+
+```
+$ pnpm test → 59 files / 490 tests
+```
+
+### 8.9 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| 7 天清理未实现 | `SESSION_TTL_MS` 只用于 cookie 的 `Max-Age`；存储里的记录不会到期删除 | 后续（需要定时任务） |
+| `applied` 数组无限增长 | 每局一个动作记一条；释放对局时不清 | 后续 |
+| 无 `seat` 的 `START` 仍可经公开路由提交 | 会被引擎判 `PHASE_MISMATCH` 并推进 `version`，不能重置对局，但能刷版本 | 可接受（无副作用） |
