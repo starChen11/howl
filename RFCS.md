@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.80 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.81 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -46,7 +46,7 @@
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
-| [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Implemented |
+| [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Changes requested |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
@@ -633,10 +633,20 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 4 后的冲突状态**：C-89 关闭；**C-96 / C-86 / C-87 仍阻塞 RFC-010**；C-90 ~ C-95 为非阻塞开放项（本轮未重查，C-92 的文档漂移仍待回写）。RFC-010 的 Status 为 **`Changes requested`**。
 
+**Round 5 复核（2026-11-19，HEAD `ac5cbd4`，证据见 [`reviews/REVIEW-RFC-010.md`](reviews/REVIEW-RFC-010.md) Round 5）**：
+
+- **C-96 服务端关闭、客户端锁缺失**：断点整段重放成立（P1 `[thinking, delta, done]`、P2 不退回 speaking），M2 删掉整段重放后 2 red；但 M5 改坏「同 id thinking 重置」后全量 571 仍绿，缺一条 reducer 回归用例。§2.2 / AC-5 / D-3 仍是旧口径，下一次 docs 提交同步。
+- **C-86 仍 Open（阻塞）**：合并顺序已修（M3 1 red），但 P3（真实已提交 SPEECH + 同 id 增量）仍只发 `thinking` / `delta`、committed `done` 被 `busIds` 滤掉，最终 `speaking` / 半句；「无正文事件不进发言流」未实现（P4 / P5：`DEGRADED` → 空 `done`，AC-9 历史路径失败），且非发言事件的空 `done` 会把 `lastId` 推过在途发言，实时 `done` 被丢（P7）；`bus.publish` / `runTurn` / `degradeEvents` 仍无生产调用者，§8.6 仍归 RFC-012，RFCS §3 无 RFC-011 后继。
+- **C-87 预算关闭、整体仍 Open（阻塞）**：`raceTimeout` 让每次尝试只拿剩余预算（P6：41ms / 1 次 / 降级），M1 恢复旧实现后 1 red（82ms > 75）；但 `GameRegistry` 仍无追加原始事件入口，`runTurn` / `degradeEvents` 仍无调用者，§8.4 的 AC-10 / 11 / 12 仍写 PASS，§8.6 无 RFC-011 交接。
+- **门禁**：`typecheck` / `lint` / `format:check` / `build` 全 exit 0；`pnpm test` **68 files / 571 tests**；`pnpm test:e2e` 跳过；覆盖率行 96.96% / 分支 92.85%。探针从 `/tmp/howl-rfc010-r5-backup/` 文件备份恢复（**未用 `git checkout`**），四处 `md5` 一致，临时探针已删除，工作树 clean；没有 `git commit`。
+
+> **Round 5 后的冲突状态**：**C-96 / C-86 / C-87 仍阻塞 RFC-010**（C-96 只差客户端回归锁；C-86 两项未闭合；C-87 只修了预算）；C-90 ~ C-95 为非阻塞开放项（本轮未重查，C-92 文档漂移仍待回写）。RFC-010 的 Status 为 **`Changes requested`**。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.81 | RFC-010 Round 5 复核（Status → `Changes requested`）：C-96 整段重放 / C-87 尝试级预算成立（M2 / M1 红）；C-86 合并顺序有锁（M3 红）但 committed `done` 仍丢（P3），无正文过滤未实现（P4 / P5 / P7），C-96 客户端重置无锁（M5 全绿），C-87 写回 / 调用者 / RFC-011 交接未动。门禁 68/571 全绿、覆盖率 96.96 / 92.85；探针从 `/tmp/howl-rfc010-r5-backup/` 文件备份恢复、`md5` 一致、临时探针已删除、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-010.md`](reviews/REVIEW-RFC-010.md) Round 5 |
 | 2026-11-19 | v2.80 | RFC-010 Round 4 修复（Status → Implemented）：断点整段重放；合并按 id 排序且同 id 不去重；无正文事件不进发言流；尝试级预算 |
 | 2026-11-19 | v2.79 | RFC-010 Round 4 复核（Status → `Changes requested`）：C-89 关闭（done 分支按段重置，M2 红）；C-96 / C-86 / C-87 仍阻塞——历史 `done` 不重放 / 已完成发言重连退回 speaking（P-R4-1 / 2）、committed 与总线顺序错（P-R4-3）、全事件映射 done（P-R4-4）、20s+20s 仍 40s 且无回归锁（P-R4-6 / M6）。门禁 68/568 全绿、覆盖率 96.96 / 92.85；探针从 `/tmp/howl-rfc010-r4-backup/` 文件备份恢复、`md5` 一致、临时探针已删除、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-010.md`](reviews/REVIEW-RFC-010.md) Round 4 |
 | 2026-11-19 | v2.78 | RFC-010 Round 3 修复（Status → Implemented）：发言中途断线重放增量（C-96）；空文本 done 不抹正文；done 按段重置；重试前检查预算 |
