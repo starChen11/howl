@@ -10,6 +10,7 @@ import { createEmptyState, createInitialState } from '@engine/init';
 import { replay } from '@engine/replay';
 import { createEngine } from '@engine/step';
 import { isVisibleTo } from '@shared/visibility';
+import { buildReplaySnapshot } from '../replay/snapshot';
 import { DEFAULT_APPLIERS, DEFAULT_HANDLERS } from '@engine/step';
 import { DEFAULT_TRANSITIONS } from '@engine/transitions';
 
@@ -215,6 +216,12 @@ export class GameRegistry {
     if (result.state.phase === 'FINISHED') {
       updated.status = 'finished';
       updated.finishedAt = Date.now();
+      // 终局快照：状态释放（事件流被清）之后复盘仍然可读（RFC-014 AC-13）。
+      updated.snapshot = buildReplaySnapshot(result.state, updated.events, {
+        gameId: updated.gameId,
+        seed: updated.seed,
+        finishedAt: updated.finishedAt,
+      });
     }
 
     await this.store.set(gameKey(record.gameId), updated);

@@ -436,3 +436,101 @@ body {
   margin: 0;
   padding-left: 18px;
 }
+
+/* 复盘 */
+.replay {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  max-width: 100%;
+}
+
+.replay__header,
+.replay__seats,
+.perspective,
+.replay-timeline,
+.replay__thoughts {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px;
+  min-width: 0;
+}
+
+.replay-timeline__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 45dvh;
+  overflow-y: auto;
+}
+
+.replay-timeline__item {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.replay-timeline__item--highlight {
+  outline: 2px solid var(--accent);
+}
+
+.replay-timeline__day {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.replay-timeline__degraded {
+  color: var(--danger);
+}
+
+.replay-timeline__text {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.perspective__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.thought {
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.thought__jump {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.thought__header {
+  display: flex;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.thought__reason {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.thought__claim {
+  margin: 4px 0 0;
+  color: var(--muted);
+}

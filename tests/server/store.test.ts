@@ -69,6 +69,8 @@ describe('AC-12 · 不自建存储', () => {
       .filter((file) => file.relativePath !== 'channels/session.ts')
       // 真相视图里的 Map 是「事件 → 每席动作」的临时聚合，不是存储。
       .filter((file) => file.relativePath !== 'view/truth.ts')
+      // 用量统计是运行时指标累加器，不是对局存储。
+      .filter((file) => file.relativePath !== 'llm/usage.ts')
       .filter((file) => /new Map</.test(file.source))
       .map((file) => file.relativePath);
 

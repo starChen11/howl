@@ -2,6 +2,8 @@ import type { ApiError, SessionResponse, SubmitActionBody } from '@shared/api';
 import type { ProjectedContext } from '@shared/project';
 import { parseSseData, type StreamMessage } from '@shared/stream';
 import { TruthViewSchema, type TruthView } from '@shared/truth';
+import { ReplaySnapshotSchema } from '@shared/replay-schema';
+import type { ReplaySnapshot } from '@shared/replay';
 
 /**
  * 浏览器侧的 HTTP 客户端（RFC-011 §3）。
@@ -57,6 +59,51 @@ export class ApiClient {
 
     if (response.ok) return { ok: true };
     return { ok: false, error: (await response.json()) as ApiError };
+  }
+
+  /** 复盘快照；未终局返回 null（RFC-014 AC-1）。 */
+  async replay(gameId: string): Promise<ReplaySnapshot | null> {
+    const response = await this.fetchImpl(`${this.baseUrl}/api/games/${gameId}/replay`, {
+      credentials: 'same-origin',
+    });
+    if (!response.ok) return null;
+    const parsed = ReplaySnapshotSchema.safeParse(await response.json());
+    return parsed.success ? (parsed.data as ReplaySnapshot) : null;
+  }
+
+  /** 新建一局并启动（「再来一局」）。 */
+  async restart(
+    mode: 'slaughter-side' | 'slaughter-all' = 'slaughter-side',
+  ): Promise<string | null> {
+    const created = await this.fetchImpl(`${this.baseUrl}/api/games`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    if (!created.ok) return null;
+    const body = (await created.json()) as { gameId?: string };
+    if (body.gameId === undefined) return null;
+
+    await this.fetchImpl(`${this.baseUrl}/api/games/${body.gameId}/play`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+    return body.gameId;
+  }
+
+  /** 复盘视角：把事件截断到 seq 后由服务端重新投影（RFC-014 AC-9）。 */
+  async replayPerspective(
+    gameId: string,
+    seat: number,
+    seq: number,
+  ): Promise<{ seat: number; seq: number; view: ProjectedContext } | null> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/api/games/${gameId}/replay/seat/${seat}?seq=${seq}`,
+      { credentials: 'same-origin' },
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as { seat: number; seq: number; view: ProjectedContext };
   }
 
   /** 真相视图数据；活着的玩家会拿到 403（SEC-6）。 */

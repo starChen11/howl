@@ -227,6 +227,19 @@ export const GameEndedPayloadSchema = z.object({
   condition: z.string().min(1),
 });
 
+/** AI 的内心理由（RFC-007 §2.5 / RFC-014）：`seat` 是产出它的席位。 */
+export const AiThoughtPayloadSchema = z.object({
+  reason: z.string(),
+  claim: z.unknown().optional(),
+  decisionSeq: z.number().int().min(0),
+  seat: z.number().int().min(1).max(9),
+});
+
+/** 降级标记（RFC-010）：被降级的席位。 */
+export const DegradedPayloadSchema = z.object({
+  seat: z.number().int().min(1).max(9),
+});
+
 /** 已登记 payload schema 的事件，可以拿去 `makeEventEnvelopeSchema` 组合成完整校验。 */
 export const PAYLOAD_SCHEMAS = {
   GAME_STARTED: GameStartedPayloadSchema,
@@ -245,4 +258,6 @@ export const PAYLOAD_SCHEMAS = {
   HUNTER_SHOOT: HunterShootPayloadSchema,
   PHASE_CHANGED: PhaseChangedPayloadSchema,
   GAME_ENDED: GameEndedPayloadSchema,
+  AI_THOUGHT: AiThoughtPayloadSchema,
+  DEGRADED: DegradedPayloadSchema,
 } as const;

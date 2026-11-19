@@ -225,3 +225,40 @@ test.describe('整局界面', () => {
     await expect(box).toBeHidden({ timeout: 10_000 });
   });
 });
+
+test.describe('复盘（RFC-014）', () => {
+  test('打完后出现复盘：时间线、身份与推理，360px 无横滚', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 720 });
+    await page.goto('/?seed=13');
+
+    // 脚本 AI + 玩家弃权：一局应该能在合理时间内结束
+    for (let round = 0; round < 60; round += 1) {
+      const isOver = await page.getByRole('heading', { name: '复盘' }).count();
+      if (isOver > 0) break;
+
+      const skip = page.getByRole('button', { name: '过' });
+      if ((await skip.count()) > 0) await skip.click().catch(() => undefined);
+      const vote = page.getByRole('button', { name: '弃权' });
+      if ((await vote.count()) > 0) await vote.click().catch(() => undefined);
+      await page.waitForTimeout(500);
+    }
+
+    const replayHeading = page.getByRole('heading', { name: '复盘' });
+    await expect(replayHeading).toBeVisible({ timeout: 60_000 });
+
+    // 身份区揭示全部席位
+    for (const seat of [1, 5, 9]) {
+      await expect(page.getByText(new RegExp(`${seat} 号：`)).first()).toBeVisible();
+    }
+    await expect(page.getByRole('heading', { name: '时间线' })).toBeVisible();
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+
+    // 再来一局：回到对局界面
+    await page.getByRole('button', { name: '再来一局' }).click();
+    await expect(page.getByRole('heading', { name: 'Howl' })).toBeVisible({ timeout: 30_000 });
+  });
+});

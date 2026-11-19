@@ -114,3 +114,72 @@ interface ThoughtEntry {
 | Q-014-1 | 快照保留多久 | **(assumption)** 按 RFC-006 的保留策略；快照本身很小，可长期保留 |
 | Q-014-2 | 视角筛选是否允许看「未来」 | **(assumption)** 不允许；只能看该 `seq` 及之前的投影 |
 | Q-014-3 | 复盘是否需要显示每轮票型的可视化 | **(assumption)** 不需要，列表足够；如有需要另开 RFC |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。前置 RFC-007 / 008 / 009 / 013 均已 `Reviewed`。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| 复盘页位置 | **A 方案**（用户选）：对局结束后在**同一个页面**切换成复盘模式，不引入路由 |
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+| **D-1** | 快照在**终局时生成一次**并落盘到 `GameRecord.snapshot` | 复盘要可复现（同一局每次看都一样），且状态释放后仍可读（AC-13） |
+| **D-2** | `AI_THOUGHT` 的 payload 增加 `seat` | 复盘要按席位展示推理。从 `visibleTo` 的 `self:N` 反解席位是 CR-003 明确禁止的模式（规则一改就静默错位） |
+| **D-3** | 用量来自进程级 `usageOf(gameId)` 累加器，不进 `MetaStore` | 它是运行时统计（NFR-13），不是对局状态；进程重启清零是可接受的 |
+| **D-4** | 视角数据由 `GET /replay/seat/:seat?seq=N` 重新投影 | 保证「它当时知道什么」是算出来的，不是界面猜的（AC-9） |
+| **D-5** | 复盘的推理只读 `reason`，`reasoning_content` 不进快照 | AI-5：隐藏思维链换模型就没了，那会让复盘整体失效 |
+
+### 8.3 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 共享新增 | `src/shared/replay.ts`（快照类型）、`src/shared/replay-schema.ts`（Zod 契约） |
+| 服务端新增 | `src/server/replay/snapshot.ts`、`src/server/llm/usage.ts`、`GET /replay` 与 `GET /replay/seat/:seat` |
+| 服务端修改 | `game-registry.ts`（终局生成快照）、`ai/agent.ts`（记录用量）、`shared/events.ts` + `schemas.ts`（`AI_THOUGHT.seat`、`DEGRADED`/`AI_THOUGHT` schema） |
+| 客户端新增 | `pages/ReplayPage.tsx`、`components/{Timeline,ThoughtCard,PerspectiveFilter}.tsx` |
+| 客户端修改 | `App.tsx`（终局切换 + 再来一局）、`api.ts`（replay / perspective / restart） |
+| 测试新增 | `tests/server/replay.test.ts`、`tests/client/replay.test.tsx`、`tests/e2e/game.spec.ts`（复盘用例） |
+
+### 8.4 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `replay.test.ts` · 时间线按 `seq` 严格升序、每条都能在事件流里找到 | PASS |
+| 2 | `replay.test.ts` · 九个席位都有角色与人格标签 | PASS |
+| 3 | 同上 · `thought.reason` 与事件 payload 的 `reason` 逐条一致 | PASS |
+| 4 | 同上 · 清掉 `reasoningContent` 不影响快照 | PASS |
+| 5 | 同上 · 每席带人格标签 | PASS |
+| 6 | `ReplayPage` 显示结果与胜负条件 | PASS |
+| 7 | `degraded` 与 `DEGRADED` 事件一一对应；时间线标注 | PASS |
+| 8 | `usageOf` 聚合用例 | PASS |
+| 9 | `GET /replay/seat/:seat?seq=N` 用截断后的事件重新投影；等价关系有用例 | PASS |
+| 10 | `replay.test.tsx` · 筛选前后时间线条目数不变 | PASS |
+| 11 | 同上 · 视角面板只展示该席位可见事件 | PASS |
+| 12 | 「再来一局」新建游戏（新 `gameId`，无旧事件） | PASS |
+| 13 | `release()` 之后 `snapshot` 仍在 | PASS |
+| 14 | e2e · 360px 复盘无横滚 | PASS |
+
+### 8.5 验证输出（实跑）
+
+```
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → 87 files / 737 tests
+$ pnpm test:e2e → 10 passed
+$ coverage（引擎）→ 行 96.96% / 分支 92.85%
+```
+
+### 8.6 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| 导出/分享 | 不做（F51 是 Won't） | — |
+| 票型可视化 | Q-014-3 的假设是不需要，列表足够 | 后续 |
+| 视角面板只显示事件类型 | 没有把每条事件渲染成完整句子 | 后续打磨 |

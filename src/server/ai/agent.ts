@@ -3,6 +3,7 @@ import type { PendingDecision, ProjectedContext } from '@shared/project';
 
 import { decide } from '../llm/client';
 import { toAction } from '../llm/to-action';
+import { recordUsage } from '../llm/usage';
 
 /**
  * AI 的行动来源（RFC-012 的整局入口）。
@@ -82,6 +83,7 @@ export function createLlmAgent(input: {
     );
 
     if ('duplicate' in outcome) return { action: undefined };
+    recordUsage(input.gameId, outcome.meta);
 
     const translated = toAction(
       outcome.decision,

@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.134 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.135 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -50,7 +50,7 @@
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Reviewed |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
-| [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
+| [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Implemented |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Not started |
 
@@ -1013,6 +1013,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.135 | RFC-014 实现完成（Status → Implemented）：终局快照（时间线/身份/推理/降级/用量）、`AI_THOUGHT.seat`、`GET /replay` 与 `/replay/seat/:seat`、复盘页与视角筛选、再来一局 |
 | 2026-11-19 | v2.134 | RFC-013 Round 4 复核（Status → Reviewed）：C-135 / C-136 / C-138 / C-141 / C-149 / C-151 六条 Round 3 阻塞项全部闭合，C-154 关闭；新增 **C-155**（非阻塞，C-150 的夜间死亡天数仍早一天、第一夜显示第 0 天且无测试）。门禁 85 files / 720 tests、9/9 e2e 全绿；M-R4-1/2/3/4/5/6/8 均打红，M-R4-7（服务端 parse 无回归锁）与 M-R4-9（C-150 无测试）全绿；探针从 `/tmp/howl-rfc013-r4/backup/` 文件备份恢复、5 个源码文件 SHA-256 全 `OK`、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-013.md`](reviews/REVIEW-RFC-013.md) Round 4 |
 | 2026-11-19 | v2.133 | RFC-013 Round 3 修复（Status → Implemented）：零副作用快照断言、终局观战用例、双端 schema 校验、真相渲染与锚点主路径锁、死后动作过滤、死亡天数 |
 | 2026-11-19 | v2.132 | RFC-013 Round 3 评审（Status → `Changes requested`）：C-134 / C-140 / C-142 / C-148 关闭；C-135 / C-136 / C-138 / C-141 / C-149 / C-151 仍 Open（阻塞）；新增 C-154（非阻塞，死狼仍被记袭击）。门禁 84 files / 710 tests、9/9 e2e 全绿；M-R3-2/6/7/9/10/12 等合理回归在官方套件里仍绿；探针从 `/tmp/howl-rfc013-r3/backup/` 文件备份恢复、6 个源码文件 SHA-256 全 `OK`、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-013.md`](reviews/REVIEW-RFC-013.md) Round 3 |

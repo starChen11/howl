@@ -24,6 +24,7 @@ export function toThought(input: ThoughtInput): {
   const payload: GameEventMap['AI_THOUGHT'] = {
     reason: input.decision.reason,
     decisionSeq: input.decisionSeq,
+    seat: input.seat,
   };
 
   // `claim` 原样带入，不做扁平化（CR-003 C3）。

@@ -59,6 +59,7 @@ function fakeClient(ctx: ProjectedContext) {
       calls.submits += 1;
       return { ok: true as const };
     },
+    replay: async () => null,
     truth: async () => {
       calls.truth += 1;
       return {

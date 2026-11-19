@@ -12,6 +12,7 @@ import type { ProjectedContext } from '@shared/project';
 import type { PendingDecision } from '@shared/project';
 
 import { project } from '../project';
+import { replay } from '@engine/replay';
 import { buildTruth, canSeeTruth } from '../view/truth';
 import { TruthViewSchema } from '@shared/truth';
 import { nextActor, pendingForPhase } from '../orchestrator';
@@ -126,6 +127,38 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
     const started = loop.start(session, record.gameId);
     return reply.code(started ? 202 : 200).send({ started });
   });
+
+  // 复盘视角（RFC-014 §2.4）：把事件截断到 seq 后重新投影，不猜。
+  app.get<{ Params: { id: string; seat: string }; Querystring: { seq?: string } }>(
+    '/api/games/:id/replay/seat/:seat',
+    async (request, reply) => {
+      const { session } = await resolveSession(registry, request, reply, production);
+      const record = await registry.getGame(request.params.id);
+      if (record === undefined || !session.gameIds.includes(record.gameId)) {
+        return reply.code(404).send({ error: 'GAME_NOT_FOUND', message: '对局不存在' });
+      }
+      if (record.status !== 'finished') {
+        return reply.code(404).send({ error: 'NOT_FINISHED', message: '对局还没有结束' });
+      }
+
+      const seat = Number(request.params.seat);
+      const seq = Number(request.query.seq ?? Number.MAX_SAFE_INTEGER);
+      if (!Number.isInteger(seat) || seat < 1 || seat > 9 || Number.isNaN(seq)) {
+        return reply.code(400).send({ error: 'VALIDATION_FAILED', message: '参数不合法' });
+      }
+
+      const truncated = record.events.filter((event) => event.seq <= seq);
+      const state = replay(truncated as never);
+      const view = project({
+        state,
+        events: truncated,
+        observer: seat as never,
+        pending: null,
+      });
+
+      return reply.send({ seat, seq, view });
+    },
+  );
 
   // 真相视图（RFC-013 / SEC-6）：只有**已出局**的玩家能拿到。
   app.get<{ Params: { id: string } }>('/api/games/:id/truth', async (request, reply) => {
@@ -306,7 +339,11 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
     if (record === undefined || !session.gameIds.includes(record.gameId)) {
       return reply.code(404).send({ error: 'GAME_NOT_FOUND', message: '对局不存在' });
     }
+    if (record.status !== 'finished') {
+      return reply.code(404).send({ error: 'NOT_FINISHED', message: '对局还没有结束' });
+    }
 
-    return reply.code(404).send({ error: 'NOT_FINISHED', message: '复盘由 RFC-014 实现' });
+    // 快照在终局时生成并落盘；即便事件流被释放，它仍然在（AC-13）。
+    return reply.send(record.snapshot);
   });
 }

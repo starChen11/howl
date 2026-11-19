@@ -9,6 +9,8 @@ import { EventPanel, buildPanelEntries } from './components/EventPanel';
 import { SpectatorBar } from './components/SpectatorBar';
 import { Notepad } from './components/Notepad';
 import { toggleTruth, initialTruthState } from './state/truth-view';
+import { ReplayPage } from './pages/ReplayPage';
+import type { ReplaySnapshot } from '@shared/replay';
 import type { TruthView } from '@shared/truth';
 import { SeatGrid } from './components/SeatGrid';
 import { SpeechFeed, type SpeechLine } from './components/SpeechFeed';
@@ -31,6 +33,8 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   const [truth, setTruth] = useState(initialTruthState);
   const [truthData, setTruthData] = useState<TruthView | null>(null);
   const [highlight, setHighlight] = useState<number | null>(null);
+  const [replay, setReplay] = useState<ReplaySnapshot | null>(null);
+  const [restarting, setRestarting] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -39,6 +43,18 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
       setError(cause instanceof Error ? cause.message : '读取对局失败');
     }
   }, [client, gameId]);
+
+  // 终局后取复盘（RFC-014）：同一个页面切换，不加路由。
+  useEffect(() => {
+    if (view?.view.phase !== 'FINISHED') return;
+    let cancelled = false;
+    void client.replay(gameId).then((snapshot) => {
+      if (!cancelled) setReplay(snapshot);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, gameId, view?.view.phase]);
 
   useEffect(() => {
     void refresh();
@@ -113,6 +129,23 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
 
   if (view === null || board === null) {
     return <p role="status">正在载入对局…</p>;
+  }
+
+  if (view.view.phase === 'FINISHED' && replay !== null) {
+    return (
+      <ReplayPage
+        snapshot={replay}
+        loadPerspective={(seat, seq) => client.replayPerspective(gameId, seat, seq)}
+        restarting={restarting}
+        onRestart={() => {
+          setRestarting(true);
+          void client.restart().then((nextGameId) => {
+            if (nextGameId !== null) window.location.search = `?game=${nextGameId}`;
+            else setRestarting(false);
+          });
+        }}
+      />
+    );
   }
 
   const ctx = view.view;

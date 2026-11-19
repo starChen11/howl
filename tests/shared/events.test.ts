@@ -220,6 +220,7 @@ describe('CR-003 · 三个 payload 的形状', () => {
       payload: {
         reason: '3 号的发言在保 5 号',
         decisionSeq: 7,
+        seat: 1,
         claim: {
           role: 'seer',
           checks: [{ target: 2, result: 'wolf' }],
@@ -237,6 +238,7 @@ describe('CR-003 · 三个 payload 的形状', () => {
       payload: {
         reason: '3 号的发言在保 5 号',
         decisionSeq: 8,
+        seat: 1,
         // @ts-expect-error 顶层 claimedRole 不是合同的一部分（CR-003 C3：统一为嵌套 claim）
         claimedRole: 'seer',
       },
@@ -252,7 +254,7 @@ describe('CR-003 · 三个 payload 的形状', () => {
       ts: 0,
       type: 'AI_THOUGHT',
       visibleTo: 'self:1',
-      payload: { reason: '这轮没有声称', decisionSeq: 1, claim: {} },
+      payload: { reason: '这轮没有声称', decisionSeq: 1, seat: 1, claim: {} },
     };
 
     expect(empty.type).toBe('AI_THOUGHT');
