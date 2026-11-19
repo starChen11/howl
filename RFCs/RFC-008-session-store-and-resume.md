@@ -279,7 +279,7 @@ $ pnpm test → 59 files / 495 tests
 | **N-R4-2 / C-75** | 注入存储的用例用空子类，且「创建 + 读取 + 提交」正文没有提交；`buildApp` 忽略注入也照样绿 | 用**同一个注入实例**建注册表读回记录；忽略注入时该用例变红 |
 
 ```
-$ pnpm test → 61 files / 499 tests
+$ pnpm test → 61 files / 500 tests
 ```
 
 ### 8.12 Round 6 回应
@@ -293,7 +293,7 @@ $ pnpm test → 61 files / 499 tests
 | **C-61**（AC-13 原文与 §2.5 矛盾） | 「释放后 replay 得同一状态」不可能成立——事件流已被清空 | 保持 Open，待 `/manage-changes` 修正 AC 措辞；本 RFC 的实现与测试按「未释放的终局记录不缓存」执行 |
 
 ```
-$ pnpm test → 61 files / 499 tests
+$ pnpm test → 61 files / 500 tests
 ```
 
 ### 8.13 Round 7 回应
@@ -305,5 +305,5 @@ $ pnpm test → 61 files / 499 tests
 | **C-61** | AC-13 原文「释放后 replay 得同一状态」与 §2.5 的「释放 = 清空 events」矛盾，两种「释放」含义被混用 | 这是**规范措辞**问题，不是代码缺陷：`PRD` NFR-17 / `FEATURES` F37 只要求「结束后可释放」，没有要求释放后还能 replay。按 `AGENTS.md` 硬规则 6，改 AC 措辞要走 `/manage-changes`，本 RFC 不擅自改 |
 
 ```
-$ pnpm test → 61 files / 499 tests
+$ pnpm test → 61 files / 500 tests
 ```
