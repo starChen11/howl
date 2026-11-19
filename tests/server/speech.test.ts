@@ -319,3 +319,40 @@ describe('B-R8-2 · timer 的 DAY_STARTED 起点与递减', () => {
     expect(second).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe('C-120 · 草稿全链路：POST /input → 通道 → 超时提交', () => {
+  it('草稿经路由写入通道，超时后以 timeout 交回', async () => {
+    const { buildApp } = await import('@server/app');
+    const { ChannelRegistry } = await import('@server/channels/session');
+    const { StreamBus } = await import('@server/stream/bus');
+    const { InMemoryMetaStore } = await import('@server/store/meta-store');
+
+    const bus = new StreamBus();
+    const channels = new ChannelRegistry(bus);
+    const app = buildApp({ store: new InMemoryMetaStore(), bus, channels });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side' },
+    });
+    const raw = created.headers['set-cookie'];
+    const header = Array.isArray(raw) ? raw[0] : raw;
+    const cookie = String(header).split(';')[0] ?? '';
+    const { gameId } = created.json<{ gameId: string }>();
+
+    // 先挂起（新一轮会清空旧草稿），再在等待期间同步草稿——这才真实链路。
+    const pending = channels
+      .forGame(gameId)
+      .input.read({ seat: 1 as never, timeoutMs: 60, kind: 'speech' });
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/games/${gameId}/input`,
+      headers: { cookie },
+      payload: { text: '我怀疑 2 号。' },
+    });
+
+    expect(await pending).toEqual({ kind: 'timeout', text: '我怀疑 2 号。' });
+  });
+});

@@ -12,7 +12,7 @@ import type { ProjectedContext } from '@shared/project';
 import type { PendingDecision } from '@shared/project';
 
 import { project } from '../project';
-import { pendingForPhase } from '../orchestrator';
+import { nextActor, pendingForPhase } from '../orchestrator';
 import { isWithinLimit, remainingSeconds } from '../speech';
 import { resolveSession } from '../session';
 import type { GameRegistry } from '../store/game-registry';
@@ -94,8 +94,11 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       const state = registry.stateOf(record);
       // 没显式指定时按阶段给默认值：投影要靠它算 `legalTargets`，
       // 否则前端的投票/查验按钮会没有目标（RFC-012 C-127）。
-      const pending = (pendingParsed.data.pending ??
-        pendingForPhase(state.phase)) as PendingDecision | null;
+      // 默认 `pending` **只给当前行动者**：夜间给所有人投影一个具体动作，
+      // 等于告诉旁观者「某个神职还活着并且正在行动」（C-133，RFC-007 C-28）。
+      const actor = nextActor(state);
+      const defaultPending = actor === record.playerSeat ? pendingForPhase(state.phase) : null;
+      const pending = (pendingParsed.data.pending ?? defaultPending) as PendingDecision | null;
       const view: ProjectedContext = project({
         state,
         events: record.events,

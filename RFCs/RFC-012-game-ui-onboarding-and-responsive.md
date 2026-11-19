@@ -245,3 +245,17 @@ $ pnpm test:e2e → 8 passed
 $ pnpm test → 80 files / 684 tests
 $ pnpm test:e2e → 8 passed
 ```
+
+### 8.10 Round 4 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-133**（安全）夜间默认 `pending` 泄漏 | 给**所有**观察者按阶段补 `pending`，等于告诉旁观者「某个神职还活着并在行动」 | 只有 `nextActor(state) === record.playerSeat`（即当前行动者本人）才补 `pending`，否则 `null`。补夜间旁观者用例：`legalTargets` 必须为空；反向探针会红 |
+| **C-127** 重投回归锁仍缺 | 回退 `targets.ts` 的 RUNOFF 分支全绿 | 补投影层用例：`legalTargetsOf(RUNOFF)` 只含并列者、不含 `abstain`（回退会红）；`isPlayerPhase('DAY_VOTE_RUNOFF')` 单独断言 |
+| **C-120** 草稿全链路仍缺 | 删路由 `setDraft` 不红 | 补真实链路用例：挂起 `read()` → `POST /input` → 超时**交出草稿**（删接线会红） |
+| 非阻塞 | `app.test.tsx` 的 AC 编号错位、公告不含 role | AC 编号在用例名里改成对应条目；公告的身份由 `IdCard` 承载（§8.6 记录取舍） |
+
+```
+$ pnpm test → 81 files / 688 tests
+$ pnpm test:e2e → 8 passed
+```

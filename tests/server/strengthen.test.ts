@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ProjectedContext } from '@shared/project';
+
 import { buildApp } from '@server/app';
 import { project } from '@server/project';
-import { pendingForPhase } from '@server/orchestrator';
+import { nextActor, pendingForPhase } from '@server/orchestrator';
 import { GameRegistry, KEEP_FULL_EVENTS } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
+import { StreamBus } from '@server/stream/bus';
 
 /**
  * RFC-008 Round 2 补强的回归锁：事件来源、投影一致性、retention（C-67 / C-68）。
@@ -68,7 +71,10 @@ describe('C-67 · AC-7：路由返回的就是 project() 的输出，逐字节�
       state: expectedState,
       events: record.events,
       observer: record.playerSeat,
-      pending: pendingForPhase(expectedState.phase),
+      pending:
+        nextActor(expectedState) === record.playerSeat
+          ? pendingForPhase(expectedState.phase)
+          : null,
     });
 
     // 多一个字段（比如 reviewer 探针塞的 allRoles）就会红
@@ -287,5 +293,73 @@ describe('C-68 · retention 不跨会话', () => {
 
     const stillThere = await registry.getGame(aRecord.gameId);
     expect(stillThere?.events.length ?? 0).toBeGreaterThan(0);
+  });
+});
+
+describe('C-133 · 夜间默认 pending 只给当前行动者', () => {
+  it('旁观者的 GET 不带 pending，也不会有 legalTargets', async () => {
+    const store = new InMemoryMetaStore();
+    const registry = new GameRegistry(store);
+    const session = await registry.createSession();
+
+    // 玩家坐 1 号（不保证是神职），推进到夜间的某个行动相位
+    const record = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 15,
+      playerSeat: 1,
+    });
+    let current = record;
+    const stateOf = () => registry.stateOf(current);
+    while (stateOf().phase === 'NIGHT_WOLF_CHAT') {
+      const state = stateOf();
+      const wolf = state.seats.find(
+        (seat) =>
+          seat.alive &&
+          seat.role === 'wolf' &&
+          !(state.wolfChat ?? []).some((e) => e.seat === seat.seat),
+      )?.seat;
+      if (wolf === undefined) break;
+      const r = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_CHAT', ts: 1, seat: wolf, text: '' } as never,
+        state.seq,
+      );
+      if (!r.ok) break;
+      current = r.record;
+    }
+
+    const app = buildApp({ store, bus: new StreamBus() });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/games/${current.gameId}`,
+      headers: { cookie: `session=${session.id}` },
+    });
+
+    const body = res.json<{ view: ProjectedContext }>();
+    // 夜间相位被折叠成 'NIGHT'（RFC-007 C-28），且不应带 legalTargets
+    if (body.view.phase === 'NIGHT') {
+      expect(body.view.legalTargets).toEqual([]);
+    }
+  });
+});
+
+describe('C-127 · 重投的合法目标只有并列者', () => {
+  it('RUNOFF 的 legalTargets 不含非并列者，也不含弃权', async () => {
+    const { legalTargetsOf } = await import('@server/project/targets');
+
+    const state = {
+      phase: 'DAY_VOTE_RUNOFF',
+      seats: [
+        { seat: 1, alive: true, role: 'villager' },
+        { seat: 2, alive: true, role: 'villager' },
+        { seat: 3, alive: true, role: 'villager' },
+      ],
+      runoff: [2, 3],
+    } as never;
+
+    const targets = legalTargetsOf(state, 'vote', [1, 2, 3] as never, 1 as never);
+    expect(targets).toEqual([2, 3]);
+    expect(targets).not.toContain('abstain');
   });
 });

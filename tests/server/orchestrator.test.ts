@@ -470,3 +470,14 @@ describe('B-R8-1 · 重读后是否还该提交', () => {
     expect(isStillTheirTurn('DAY_SPEECH', advanced as never, 3)).toBe(false);
   });
 });
+
+describe('C-127 · 玩家亲自行动的相位', () => {
+  it('发言与两种投票都算，夜间不算', async () => {
+    const { isPlayerPhase } = await import('@server/orchestrator');
+
+    expect(isPlayerPhase('DAY_SPEECH')).toBe(true);
+    expect(isPlayerPhase('DAY_VOTE')).toBe(true);
+    expect(isPlayerPhase('DAY_VOTE_RUNOFF')).toBe(true);
+    expect(isPlayerPhase('NIGHT_WOLVES')).toBe(false);
+  });
+});

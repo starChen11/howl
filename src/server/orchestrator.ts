@@ -109,6 +109,15 @@ export function pendingForPhase(phase: string): PendingDecision | null {
   }
 }
 
+/**
+ * 玩家亲自行动的相位（RFC-012 AC-11）。
+ *
+ * 发言与两种投票都要等玩家；夜间动作仍由注入的 `decide` 代劳（目标选择属 RFC-013）。
+ */
+export function isPlayerPhase(phase: string): boolean {
+  return phase === 'DAY_SPEECH' || phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF';
+}
+
 /** 从状态推出「现在该谁说话」；不是发言阶段返回 `undefined`。 */
 export function seatToSpeak(state: {
   phase: string;

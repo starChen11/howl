@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildApp } from '@server/app';
 import { project } from '@server/project';
-import { pendingForPhase } from '@server/orchestrator';
+import { nextActor, pendingForPhase } from '@server/orchestrator';
 import { GameRegistry, MAX_GAMES_PER_SESSION } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 
@@ -221,7 +221,10 @@ describe('C-74 / C-75 · 换存储实现后路由仍然工作；多个席位都�
       state: expectedState,
       events: record.events,
       observer: record.playerSeat,
-      pending: pendingForPhase(expectedState.phase),
+      pending:
+        nextActor(expectedState) === record.playerSeat
+          ? pendingForPhase(expectedState.phase)
+          : null,
     });
 
     expect(route.json<{ view: unknown }>().view).toEqual(expected);
