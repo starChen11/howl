@@ -101,7 +101,7 @@ async function setup() {
 
   const bus = new StreamBus();
   const app = buildApp({ store, bus });
-  return { app, bus, session, record: withSpeech };
+  return { app, bus, store, registry, session, record: withSpeech };
 }
 
 /** SSE 是长连接：发起请求后主动结束流，才能拿到完整响应。 */
@@ -516,5 +516,71 @@ describe('C-98 · 降级轮的刷新与重连终态', () => {
 
     expect(state.text).toBe('我先过。');
     expect(state.lastId).toBe(degradedEvent.seq);
+  });
+});
+
+describe('C-98 · 真实刷新：降级轮的终态', () => {
+  it('用 speak 造出最后一位降级，再用空总线连接 → degraded 的 id 与正文都对', async () => {
+    const { registry, session, store, record } = await setup();
+    const { speak } = await import('@server/llm/speak');
+    const { currentSpeaker } = await import('@engine/phases/day');
+    const { streamReducer, initialStreamState } = await import('@client/use-stream');
+
+    let current = record;
+    for (let guard = 0; guard < 20; guard += 1) {
+      const state = registry.stateOf(current);
+      if (state.phase !== 'DAY_SPEECH') break;
+      const speaker = currentSpeaker(state);
+      if (speaker === undefined) break;
+      const alive = state.seats.filter((seat) => seat.alive).length;
+      const spoken = state.speech?.spoken.length ?? 0;
+      const isLast = spoken === alive - 1;
+
+      const result = await speak({
+        registry,
+        bus: new StreamBus(),
+        session,
+        record: current,
+        seat: speaker,
+        attempt: async () =>
+          isLast ? { text: '', failed: true } : { text: '我过了。', failed: false },
+        limitMs: 5_000,
+      });
+      if (!result.ok) throw new Error('发言被拒');
+      current = result.record;
+    }
+
+    const degraded = current.events.find((event) => event.type === 'DEGRADED');
+    if (degraded === undefined) throw new Error('没有降级事件');
+
+    // 刷新：同一个 store、**全新的总线**（历史只能来自已提交事件）
+    const freshBus = new StreamBus();
+    const refreshed = buildApp({ store, bus: freshBus });
+    const cookie = `session=${session.id}`;
+
+    const pending = refreshed.inject({
+      method: 'GET',
+      url: `/api/games/${current.gameId}/stream`,
+      headers: { cookie },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    freshBus.end(current.gameId);
+
+    const frames = (await pending).body
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice(6)) as never);
+
+    let state = initialStreamState;
+    for (const frame of frames) state = streamReducer(state, frame);
+
+    const degradedFrames = frames.filter(
+      (frame: { type: string }) => frame.type === 'degraded',
+    ) as { id: number }[];
+
+    expect(degradedFrames).toHaveLength(1);
+    expect(degradedFrames[0]?.id).toBe(degraded.seq);
+    expect(state.text.length).toBeGreaterThan(0);
+    expect(state.lastId).toBe(degraded.seq);
   });
 });

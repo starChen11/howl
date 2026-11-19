@@ -280,3 +280,13 @@ $ pnpm test → 69 files / 583 tests
 ```
 $ pnpm test → 69 files / 586 tests
 ```
+
+### 8.16 Round 10 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| 刷新终态用例不是真实刷新 | 手工 `bus.publish` 两条消息，没过 `committedMessages`、没有 `Last-Event-ID`、也没覆盖最后一位的 `PHASE_CHANGED` | 改成真实链路：用 `speak` 走完一天（最后一位降级）→ 用**同一个 store、全新总线**建 app 模拟刷新 → 经真实路由取帧 → 喂 reducer。断言只有一条 `degraded`、`id === DEGRADED.seq`、正文非空、`lastId` 对齐。反向探针（删掉 committed 的 `DEGRADED` 映射）会红 |
+
+```
+$ pnpm test → 69 files / 587 tests
+```
