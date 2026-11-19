@@ -1,4 +1,5 @@
 import type { SeatId } from '@shared/domain';
+import type { EventEnvelope } from '@shared/events';
 
 import {
   decideDegrade,
@@ -59,10 +60,18 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
   let last: TurnAttempt = { text: '', failed: true };
 
   // AC-8：失败后重试 1 次；重试成功就不降级。
+  // `attempt` 抛错也算失败——否则真实 `decide()` 的异常会直接把这一轮打穿（C-87）。
   for (let index = 0; index < 2; index += 1) {
     attempts += 1;
-    last = await input.attempt();
+    try {
+      last = await input.attempt();
+    } catch {
+      last = { text: '', failed: true };
+    }
     if (!last.failed) break;
+
+    // 整体预算：重试不能把总耗时推到上限之外（否则「超时」会被第二次调用重置）。
+    if (input.now() - input.startedAt > input.limitMs) break;
   }
 
   const decision = decideDegrade({
@@ -102,9 +111,23 @@ export function degradeEvents(input: {
   seat: SeatId;
   text: string;
   seq: number;
-}): { type: 'DEGRADED' | 'SPEECH'; payload: { seat: SeatId; text?: string } }[] {
-  return [
-    { type: 'DEGRADED', payload: { seat: input.seat } },
-    { type: 'SPEECH', payload: { seat: input.seat, text: input.text } },
-  ];
+}): EventEnvelope[] {
+  const degraded: EventEnvelope = {
+    gameId: input.gameId,
+    seq: input.seq,
+    ts: input.ts,
+    type: 'DEGRADED',
+    visibleTo: 'public',
+    payload: { seat: input.seat },
+  };
+  const speech: EventEnvelope = {
+    gameId: input.gameId,
+    seq: input.seq + 1,
+    ts: input.ts,
+    type: 'SPEECH',
+    visibleTo: 'public',
+    payload: { seat: input.seat, text: input.text },
+  };
+
+  return [degraded, speech];
 }

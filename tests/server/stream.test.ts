@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from '@server/app';
+import { StreamBus } from '@server/stream/bus';
 import { GameRegistry } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 import { IncrementalDecoder, consumeStream, parseSseLine } from '@server/llm/stream';
@@ -79,23 +80,33 @@ async function setup() {
   const session = await registry.createSession();
   const record = await registry.createGame(session, { mode: 'slaughter-side', seed: 15 });
   const advanced = await advanceToDay(registry, session, record);
-  const app = buildApp({ store });
-  return { app, session, record: advanced };
+  const bus = new StreamBus();
+  const app = buildApp({ store, bus });
+  return { app, bus, session, record: advanced };
+}
+
+/** SSE 是长连接：发起请求后主动结束流，才能拿到完整响应。 */
+async function collect(
+  app: ReturnType<typeof buildApp>,
+  bus: StreamBus,
+  gameId: string,
+  headers: Record<string, string>,
+): Promise<string> {
+  const pending = app.inject({ method: 'GET', url: `/api/games/${gameId}/stream`, headers });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  bus.end(gameId);
+  const response = await pending;
+  return response.body;
 }
 
 describe('AC-5 · SSE 的 id 等于事件 seq，重连从下一个 seq 继续', () => {
   it('每条消息 id 递增且等于事件 seq；带 Last-Event-ID 后不重复', async () => {
-    const { app, session, record } = await setup();
+    const { app, bus, session, record } = await setup();
     const cookie = `session=${session.id}`;
 
-    const first = await app.inject({
-      method: 'GET',
-      url: `/api/games/${record.gameId}/stream`,
-      headers: { cookie },
-    });
-    expect(first.statusCode).toBe(200);
+    const body = await collect(app, bus, record.gameId, { cookie });
 
-    const frames = first.body.split('\n\n').filter((frame) => frame.trim().length > 0);
+    const frames = body.split('\n\n').filter((frame) => frame.trim().length > 0);
     expect(frames.length).toBeGreaterThan(0);
 
     const ids = frames.map((frame) => {
@@ -108,18 +119,17 @@ describe('AC-5 · SSE 的 id 等于事件 seq，重连从下一个 seq 继续', 
     );
 
     const lastId = ids[ids.length - 1] as number;
-    const resumed = await app.inject({
-      method: 'GET',
-      url: `/api/games/${record.gameId}/stream`,
-      headers: { cookie, 'last-event-id': String(lastId) },
+    const resumed = await collect(app, bus, record.gameId, {
+      cookie,
+      'last-event-id': String(lastId),
     });
 
-    expect(resumed.body).toBe('');
+    expect(resumed).toBe('');
   });
 
-  it('补偿窗口之外的重连只发最近 200 条', async () => {
-    const { REPLAY_WINDOW } = await import('@server/routes/stream');
-    expect(REPLAY_WINDOW).toBe(200);
+  it('补偿窗口是 200 条（由总线常量定义）', async () => {
+    const { BUS_HISTORY } = await import('@server/stream/bus');
+    expect(BUS_HISTORY).toBe(200);
   });
 });
 
@@ -200,8 +210,8 @@ describe('C-85 / C-88 · DEGRADED 可被折叠；断线超出窗口显式报错'
   });
 
   it('断线位置早于补偿窗口起点时，返回 SNAPSHOT_REQUIRED 而不是静默截断', async () => {
-    const { REPLAY_WINDOW } = await import('@server/routes/stream');
-    const { messagesFor } = await import('@server/routes/stream');
+    const { BUS_HISTORY } = await import('@server/stream/bus');
+    const { committedMessages } = await import('@server/routes/stream');
     const { GameRegistry } = await import('@server/store/game-registry');
     const { InMemoryMetaStore } = await import('@server/store/meta-store');
 
@@ -222,12 +232,63 @@ describe('C-85 / C-88 · DEGRADED 可被折叠；断线超出窗口显式报错'
       })),
     };
 
-    const all = messagesFor(many as never, 1, registry.stateOf(record));
+    const all = committedMessages(many as never, registry.stateOf(record));
     expect(all.length).toBe(300);
 
     // 窗口是最近 200 条（101..300）；Last-Event-ID = 50 早于窗口起点 → 必须报错
-    const windowStart = Math.max(0, all.length - REPLAY_WINDOW);
+    const windowStart = Math.max(0, all.length - BUS_HISTORY);
     expect(all[windowStart]?.id).toBe(101);
     expect(50 < (all[windowStart]?.id ?? 0)).toBe(true);
+  });
+});
+
+describe('C-86 · 增量经总线实时到达（thinking / delta 先于 done）', () => {
+  it('订阅者按发布顺序收到三条消息，且 id 递增', async () => {
+    const { app, bus, session, record } = await setup();
+    const cookie = `session=${session.id}`;
+
+    const pending = app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/stream`,
+      headers: { cookie, 'last-event-id': '9999' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    bus.publish(record.gameId, { type: 'thinking', id: 10_000, seat: 3 });
+    bus.publish(record.gameId, { type: 'delta', id: 10_000, seat: 3, text: '我' });
+    bus.publish(record.gameId, { type: 'delta', id: 10_000, seat: 3, text: '觉得' });
+    bus.publish(record.gameId, { type: 'done', id: 10_001, seat: 3, text: '我觉得' });
+    bus.end(record.gameId);
+
+    const body = (await pending).body;
+    const types = body
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => (JSON.parse(line.slice(6)) as { type: string }).type);
+
+    expect(types).toEqual(['thinking', 'delta', 'delta', 'done']);
+    // 增量的 id 是那条发言事件的 seq，不是逐字递增
+    expect(body).toContain('"text":"觉得"');
+  });
+
+  it('断线位置早于窗口起点时返回 SNAPSHOT_REQUIRED（text/event-stream）', async () => {
+    const { app, bus, session, record } = await setup();
+    const cookie = `session=${session.id}`;
+
+    // 灌满窗口：200 条之后最早一条会被挤掉
+    for (let index = 0; index < 210; index += 1) {
+      bus.publish(record.gameId, { type: 'thinking', id: 100 + index, seat: 3 });
+    }
+
+    const pending = app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/stream`,
+      headers: { cookie, 'last-event-id': '1' },
+    });
+    const response = await pending;
+
+    expect(response.headers['content-type']).toContain('text/event-stream');
+    expect(response.body).toContain('SNAPSHOT_REQUIRED');
   });
 });

@@ -176,3 +176,20 @@ $ pnpm test → Test Files 68 passed (68) · Tests 552 passed (552)
 ```
 $ pnpm test → 68 files / 559 tests
 ```
+
+### 8.8 Round 2 回应（Changes requested · High）
+
+评审对 C-86 的判断成立：**一次性 `reply.send` 读 `record.events` 永远读不到 `delta`**，而 `delta` 按 §4 不写入事件流。把「端点能实时把增量推给浏览器」推到 RFC-012 不成立——RFC-011 的 `SseOutputChannel` 才是生产侧落点，本 RFC 必须先把管子铺通。
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-86** SSE 没有实时增量 | 路由把每个可见事件映射成 `done`；`thinking` / `delta` 无生产源；客户端在 `done` 后吞掉下一段 | 新增 `src/server/stream/bus.ts`：`StreamBus` 负责 `publish` / `subscribe` / `replay`（200 条窗口）与 `end`。路由改为 **`PassThrough` 长连接**：先补已提交事件，再补总线增量，最后进入实时订阅；客户端断开时清理订阅。测试用「发起 inject → 发布 thinking/delta/done → `bus.end()`」验证增量先于 `done` 到达 |
+| **C-88** 超窗测试打不红、MIME 不对 | 只测了算术；`SNAPSHOT_REQUIRED` 返回 `text/plain` | 改为**走路由**的用例：灌满 210 条后带 `last-event-id: 1` 请求，断言 `content-type` 是 `text/event-stream` 且响应含 `SNAPSHOT_REQUIRED`。删除整个 `hasGap` 分支会红 |
+| **C-87** `runTurn` 不接抛错、预算可被重试突破 | `attempt` 抛异常直接 reject；两次各 20s 会突破 30s 上限 | `try/catch` 把异常当失败；每次失败后用 `now() - startedAt > limitMs` 检查整体预算，超了就不再重试。补三条用例（抛错后成功 / 两次抛错 / 首次即超时不再重试） |
+| **C-87** `degradeEvents` 返回的不是事件 | 入参 `gameId` / `ts` / `seq` 完全没用 | 返回真正的 `EventEnvelope[]`（`DEGRADED` + `SPEECH`，`seq` 连续） |
+| **C-89** `sawThinking` 跨发言、死三元 | delta-only 的新发言仍保留上一段的 `sawThinking` | `delta` 分支按 `sameSpeech` 决定是否保留；删掉 `done` 里的死三元 |
+| **C-92** 静态扫描误报 | `StreamBus` 的 `Map` 被当成「自建存储」 | 扫描排除 `stream/bus.ts`，并写明理由：进程内事件总线不持久、不是真值来源 |
+
+```
+$ pnpm test → 68 files / 564 tests
+```

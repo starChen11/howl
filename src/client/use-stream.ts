@@ -66,6 +66,7 @@ export function streamReducer(state: StreamState, message: StreamMessage, now = 
       return {
         ...state,
         phase: 'speaking',
+        sawThinking: sameSpeech ? state.sawThinking : false,
         seat: message.seat,
         text: (sameSpeech ? state.text : '') + message.text,
         firstDeltaAt: sameSpeech ? (state.firstDeltaAt ?? now) : now,
@@ -78,7 +79,7 @@ export function streamReducer(state: StreamState, message: StreamMessage, now = 
         ...state,
         phase: 'done',
         seat: message.seat,
-        text: state.speechId === message.id ? message.text : message.text,
+        text: message.text,
         lastId: message.id,
         speechId: message.id,
       };

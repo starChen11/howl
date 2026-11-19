@@ -1,11 +1,13 @@
+import { PassThrough } from 'node:stream';
+
 import type { FastifyInstance } from 'fastify';
 
 import { encodeSseFrame, type StreamMessage } from '@shared/stream';
-
 import { isVisibleTo } from '@shared/visibility';
 
 import { resolveSession } from '../session';
-import type { GameRecord, GameRegistry } from '../store/game-registry';
+import type { GameRegistry, GameRecord } from '../store/game-registry';
+import type { StreamBus } from '../stream/bus';
 
 /**
  * SSE 端点（RFC-010 §2.2）。
@@ -14,39 +16,36 @@ import type { GameRecord, GameRegistry } from '../store/game-registry';
  * - 每条消息的 `id` 等于对应事件的 `seq`（API-2）；
  * - 断线重连带 `Last-Event-ID` 后**从下一个 `seq` 继续**，不重复、不丢失（AC-5）。
  *
- * 补偿窗口：保留最近 200 条（Q-010-2）。
+ * 增量的来源是 `StreamBus`（`delta` 不写事件流），已提交的事件则从仓库补一次
+ * `done`——两者合起来才能让「刷新页面」与「实时观看」看到同一段对话。
  */
-
-export const REPLAY_WINDOW = 200;
 
 export interface StreamRoutesOptions {
   registry: GameRegistry;
+  bus: StreamBus;
   production: boolean;
 }
 
-/** 把一条对局事件转成 SSE 消息；不可见的席位不产出消息。 */
-export function messagesFor(
+/** 把已提交事件里对玩家可见的，转成 `done` 消息。 */
+export function committedMessages(
   record: GameRecord,
-  seat: number,
   state: ReturnType<GameRegistry['stateOf']>,
 ): StreamMessage[] {
-  // 用引擎的 `isVisibleTo` 判定，而不是手写一遍可见性规则：
-  // 「wolves」这种按身份的可见性手写极容易漏（漏了就是把狼队夜聊广播给好人）。
-  const visible = record.events.filter((event) => isVisibleTo(event, seat as never, state));
-
-  return visible.map((event) => {
-    const payload = event.payload as { seat?: number; text?: string };
-    return {
-      type: 'done' as const,
-      id: event.seq,
-      seat: (payload.seat ?? seat) as never,
-      text: payload.text ?? '',
-    };
-  });
+  return record.events
+    .filter((event) => isVisibleTo(event, record.playerSeat, state))
+    .map((event) => {
+      const payload = event.payload as { seat?: number; text?: string };
+      return {
+        type: 'done' as const,
+        id: event.seq,
+        seat: (payload.seat ?? record.playerSeat) as never,
+        text: payload.text ?? '',
+      };
+    });
 }
 
 export function registerStreamRoutes(app: FastifyInstance, options: StreamRoutesOptions): void {
-  const { registry, production } = options;
+  const { registry, bus, production } = options;
 
   app.get<{ Params: { id: string } }>('/api/games/:id/stream', async (request, reply) => {
     const { session } = await resolveSession(registry, request, reply, production);
@@ -65,34 +64,42 @@ export function registerStreamRoutes(app: FastifyInstance, options: StreamRoutes
         ? Number(lastEventIdRaw)
         : 0;
 
-    const all = messagesFor(record, record.playerSeat, registry.stateOf(record));
-    const afterLast = all.filter((message) => message.id > lastEventId);
-
-    // 补偿窗口只覆盖最近 200 条。若断线位置早于窗口起点，**不能**静默地只发窗口内的
-    // 那一段——客户端会以为中间没发生过事（C-88）。改为显式要求重新拉快照。
-    const windowStart = Math.max(0, all.length - REPLAY_WINDOW);
-    const oldestInWindow = all[windowStart]?.id;
-    const hasGap =
-      afterLast.length > REPLAY_WINDOW &&
-      oldestInWindow !== undefined &&
-      lastEventId < oldestInWindow;
-
-    if (hasGap) {
-      const frame = encodeSseFrame({
-        type: 'error',
-        id: lastEventId,
-        message: 'SNAPSHOT_REQUIRED',
-      });
-      return reply.send(frame);
-    }
-
-    const messages = afterLast.slice(-REPLAY_WINDOW);
-
     reply
-      .header('content-type', 'text/event-stream')
+      .header('content-type', 'text/event-stream; charset=utf-8')
       .header('cache-control', 'no-cache')
       .header('connection', 'keep-alive');
 
-    return reply.send(messages.map((message) => encodeSseFrame(message)).join(''));
+    const stream = new PassThrough();
+
+    // 超窗：断线位置早于补偿窗口起点 → 要求重拉快照，而不是静默只发窗口内那一段。
+    const replayable = bus.replay(record.gameId, lastEventId);
+    if (replayable === undefined) {
+      stream.end(encodeSseFrame({ type: 'error', id: lastEventId, message: 'SNAPSHOT_REQUIRED' }));
+      return reply.send(stream);
+    }
+
+    // 先补已提交的事件（按 seq），再补总线里的增量，最后进入实时订阅。
+    const committed = committedMessages(record, registry.stateOf(record)).filter(
+      (message) => message.id > lastEventId,
+    );
+    for (const message of committed) stream.write(encodeSseFrame(message));
+    for (const message of replayable) stream.write(encodeSseFrame(message));
+
+    const unsubscribe = bus.subscribe(record.gameId, (message) => {
+      stream.write(encodeSseFrame(message));
+    });
+    const endSubscription = bus.onEnd(record.gameId, () => {
+      unsubscribe();
+      endSubscription();
+      stream.end();
+    });
+
+    // 客户端断开时清理订阅，避免对局结束后还挂着 listener。
+    request.raw.on('close', () => {
+      unsubscribe();
+      endSubscription();
+    });
+
+    return reply.send(stream);
   });
 }

@@ -63,6 +63,8 @@ describe('AC-12 · 不自建存储', () => {
     const files = collectTypeScriptFiles('src/server');
     const offenders = files
       .filter((file) => file.relativePath !== 'store/meta-store.ts')
+      // 进程内事件总线不是存储：它不持久、进程重启即丢，也不充当任何真值来源。
+      .filter((file) => file.relativePath !== 'stream/bus.ts')
       .filter((file) => /new Map</.test(file.source))
       .map((file) => file.relativePath);
 

@@ -189,3 +189,67 @@ describe('C-87 · 一轮发言的编排（重试 → 降级 → 可推进的 SPE
     expect(calls).toBe(8);
   });
 });
+
+describe('C-87 · attempt 抛错也必须被接住', () => {
+  it('第一次抛错、第二次成功 → 不降级，尝试 2 次', async () => {
+    const { runTurn } = await import('@server/llm/turn');
+    let calls = 0;
+
+    const result = await runTurn({
+      seat: 1 as never,
+      attempt: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error('network');
+        return { text: '我过了', failed: false };
+      },
+      startedAt: 0,
+      now: () => 100,
+      limitMs: 5_000,
+      degradation: initialDegradation(),
+      sentenceIndex: 0,
+    });
+
+    expect(result.degraded).toBe(false);
+    expect(result.attempts).toBe(2);
+  });
+
+  it('两次都抛错 → 降级而不是把异常抛给调用方', async () => {
+    const { runTurn } = await import('@server/llm/turn');
+
+    const result = await runTurn({
+      seat: 1 as never,
+      attempt: async () => {
+        throw new Error('network');
+      },
+      startedAt: 0,
+      now: () => 100,
+      limitMs: 5_000,
+      degradation: initialDegradation(),
+      sentenceIndex: 0,
+    });
+
+    expect(result.degraded).toBe(true);
+    expect(result.attempts).toBe(2);
+  });
+
+  it('重试不会突破整体预算：第一次就超时则不再重试', async () => {
+    const { runTurn } = await import('@server/llm/turn');
+    let calls = 0;
+
+    const result = await runTurn({
+      seat: 1 as never,
+      attempt: async () => {
+        calls += 1;
+        return { text: '', failed: true };
+      },
+      startedAt: 0,
+      now: () => 10_000,
+      limitMs: 5_000,
+      degradation: initialDegradation(),
+      sentenceIndex: 0,
+    });
+
+    expect(calls).toBe(1);
+    expect(result.degraded).toBe(true);
+  });
+});

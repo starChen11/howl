@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import { registerGameRoutes } from './routes/games';
 import { registerStreamRoutes } from './routes/stream';
+import { StreamBus } from './stream/bus';
 import { GameRegistry } from './store/game-registry';
 import { InMemoryMetaStore, type MetaStore } from './store/meta-store';
 
@@ -15,6 +16,8 @@ export interface BuildAppOptions {
   store?: MetaStore;
   /** 生产环境：cookie 加 `Secure`。 */
   production?: boolean;
+  /** 流式事件总线（测试注入，默认新建）。 */
+  bus?: StreamBus;
 }
 
 /**
@@ -30,8 +33,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const store = options.store ?? new InMemoryMetaStore();
   const registry = new GameRegistry(store);
   const production = options.production ?? false;
+  const bus = options.bus ?? new StreamBus();
   registerGameRoutes(app, { registry, production });
-  registerStreamRoutes(app, { registry, production });
+  registerStreamRoutes(app, { registry, bus, production });
 
   return app;
 }
