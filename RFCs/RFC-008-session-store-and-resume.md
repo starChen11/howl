@@ -279,7 +279,7 @@ $ pnpm test → 59 files / 495 tests
 | **N-R4-2 / C-75** | 注入存储的用例用空子类，且「创建 + 读取 + 提交」正文没有提交；`buildApp` 忽略注入也照样绿 | 用**同一个注入实例**建注册表读回记录；忽略注入时该用例变红 |
 
 ```
-$ pnpm test → 61 files / 498 tests
+$ pnpm test → 61 files / 499 tests
 ```
 
 ### 8.12 Round 6 回应
@@ -291,6 +291,18 @@ $ pnpm test → 61 files / 498 tests
 | **§8.11 数字** | 「400 次内」实际 800、`release-and-entry` 218/220 实际 227、497 实际 498 | 已改 |
 | 两条名不副实的旧「AC-13」用例 | `release-and-entry` 只翻副本 `status`、`strengthen` 测的是 active 记录 | describe 改名，明确真正的 FINISHED 用例在 `finished-game.test.ts` |
 | **C-61**（AC-13 原文与 §2.5 矛盾） | 「释放后 replay 得同一状态」不可能成立——事件流已被清空 | 保持 Open，待 `/manage-changes` 修正 AC 措辞；本 RFC 的实现与测试按「未释放的终局记录不缓存」执行 |
+
+```
+$ pnpm test → 61 files / 499 tests
+```
+
+### 8.13 Round 7 回应
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-73** 「任何缓存都会露馅」再次不成立 | 我改的是最后一条事件的 `seq`，而 `(length, last.seq)` 缓存的键里正好有它——改它只会让缓存 miss | 新用例改成**长度不变、末条 `seq` 不变、只改 `GAME_STARTED.payload.seed`**，断言 `stateOf` 返回的 `seed` 必须跟着变。`(length, last.seq)` 缓存会返回旧 `seed`，因此必红（已实跑）。原来那条 `seq + 5` 的用例保留为「非法事件流必须抛错」的守卫 |
+| **文档漂移** | §8.11 的「400 次内」、README / TEST-STRATEGY 的 498、TEST-STRATEGY 里两个不存在的测试文件 | 全部修正 |
+| **C-61** | AC-13 原文「释放后 replay 得同一状态」与 §2.5 的「释放 = 清空 events」矛盾，两种「释放」含义被混用 | 这是**规范措辞**问题，不是代码缺陷：`PRD` NFR-17 / `FEATURES` F37 只要求「结束后可释放」，没有要求释放后还能 replay。按 `AGENTS.md` 硬规则 6，改 AC 措辞要走 `/manage-changes`，本 RFC 不擅自改 |
 
 ```
 $ pnpm test → 61 files / 499 tests

@@ -152,6 +152,31 @@ describe('AC-13 · 终局记录每次都重新 replay', () => {
     expect(() => registry.stateOf(tampered)).toThrow();
   });
 
+  it('同长度、同末条 seq，只改 payload 也必须反映（按 (length, seq) 校验的缓存会露馅）', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await playToFinish(registry, session);
+
+    const original = registry.stateOf(record);
+    const started = record.events.find((event) => event.type === 'GAME_STARTED');
+    if (started?.type !== 'GAME_STARTED') throw new Error('没有 GAME_STARTED');
+
+    // 长度不变、末条 seq 不变，只把 seed 改掉：任何以 (length, seq) 为键的缓存都会返回旧状态。
+    const tamperedStarted = {
+      ...started,
+      payload: {
+        ...(started.payload as { seed: number }),
+        seed: (started.payload as { seed: number }).seed + 1,
+      },
+    };
+    const tampered = {
+      ...record,
+      events: record.events.map((event) => (event.seq === started.seq ? tamperedStarted : event)),
+    };
+
+    expect(registry.stateOf(tampered).seed).toBe(original.seed + 1);
+  });
+
   it('释放后该局取不到状态（事件流是唯一权威），GET 返回 410', async () => {
     const registry = new GameRegistry(new InMemoryMetaStore());
     const session = await registry.createSession();
