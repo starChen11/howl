@@ -633,3 +633,174 @@ describe('C-115 · 弃权与空输入必须接上通道', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe('B-R9-1 · 端到端：玩家是最后一位发言者时不重复提交', () => {
+  it('路由写入后编排层跳过，事件流里没有 REJECTED', async () => {
+    const { buildApp } = await import('@server/app');
+    const { ChannelRegistry } = await import('@server/channels/session');
+    const { StreamBus } = await import('@server/stream/bus');
+    const { runGame } = await import('@server/orchestrator');
+
+    /** 把一局推进到「只剩最后一位没发言」，返回当时的记录与最后一位席位。 */
+    const driveToLastSpeaker = async (
+      registry: GameRegistry,
+      session: Awaited<ReturnType<GameRegistry['createSession']>>,
+      seed: number,
+      playerSeat: number,
+    ) => {
+      let current = await registry.createGame(session, {
+        mode: 'slaughter-side',
+        seed,
+        playerSeat: playerSeat as never,
+      });
+      const stateOf = () => registry.stateOf(current);
+
+      while (stateOf().phase === 'NIGHT_WOLF_CHAT') {
+        const state = stateOf();
+        const wolf = state.seats.find(
+          (seat) =>
+            seat.alive &&
+            seat.role === 'wolf' &&
+            !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+        )?.seat;
+        if (wolf === undefined) break;
+        const r = await registry.submit(
+          session,
+          current,
+          {
+            type: 'WOLF_CHAT',
+            ts: 1,
+            seat: wolf,
+            text: '',
+          } as never,
+          state.seq,
+        );
+        if (!r.ok) break;
+        current = r.record;
+      }
+      for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT', 'HUNTER_SHOOT'] as const) {
+        const state = stateOf();
+        if (state.phase === 'DAY_SPEECH') break;
+        const actor =
+          type === 'WOLF_KILL'
+            ? state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat
+            : type === 'SEER_CHECK'
+              ? state.seats.find((seat) => seat.alive && seat.role === 'seer')?.seat
+              : state.seats.find((seat) => seat.alive && seat.role === 'witch')?.seat;
+        if (actor === undefined) break;
+        const action =
+          type === 'WITCH_ACT'
+            ? { type, ts: 1, seat: actor, potion: 'none' }
+            : {
+                type,
+                ts: 1,
+                seat: actor,
+                target: state.seats.find((seat) => seat.alive && seat.seat !== actor)?.seat,
+              };
+        const r = await registry.submit(session, current, action as never, state.seq);
+        if (!r.ok) break;
+        current = r.record;
+      }
+
+      // 说满一圈，只剩最后一位
+      while (stateOf().phase === 'DAY_SPEECH') {
+        const state = stateOf();
+        const order = state.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+        const start = order.indexOf(state.speech?.startSeat ?? 1);
+        const next = [...order.slice(start), ...order.slice(0, start)].find(
+          (seat) => !(state.speech?.spoken ?? []).includes(seat),
+        );
+        const remaining = order.filter((seat) => !(state.speech?.spoken ?? []).includes(seat));
+        if (next === undefined || remaining.length <= 1) break;
+        const r = await registry.submit(
+          session,
+          current,
+          {
+            type: 'SPEECH',
+            ts: 1,
+            seat: next,
+            text: '我过了。',
+          } as never,
+          state.seq,
+        );
+        if (!r.ok) break;
+        current = r.record;
+      }
+
+      const state = stateOf();
+      const order = state.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+      const start = order.indexOf(state.speech?.startSeat ?? 1);
+      const last = [...order.slice(start), ...order.slice(0, start)].find(
+        (seat) => !(state.speech?.spoken ?? []).includes(seat),
+      );
+      return { current, last };
+    };
+
+    // 要复现「重复提交」，最后一位发言人必须**同时是投票的第一个行动者**：
+    // 发言从 startSeat 开始绕圈，所以 startSeat = 2 时最后一位正好是 1 号（票序第一个）。
+    // 逐个种子找这个拓扑（确定性）。
+    const probeStore = new InMemoryMetaStore();
+    const probeRegistry = new GameRegistry(probeStore);
+
+    let chosenSeed = 0;
+    let probe: Awaited<ReturnType<typeof driveToLastSpeaker>> | undefined;
+    for (let seed = 1; seed <= 40; seed += 1) {
+      const candidateSession = await probeRegistry.createSession();
+      const candidate = await driveToLastSpeaker(probeRegistry, candidateSession, seed, 1);
+      if (candidate.last === undefined) continue;
+      const state = probeRegistry.stateOf(candidate.current);
+      // 夜里被刀的猎人会进入开枪相位；这种种子跳过（本用例只关心白天）。
+      if (state.phase !== 'DAY_SPEECH') continue;
+      const alive = state.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+      if (candidate.last === Math.min(...alive)) {
+        chosenSeed = seed;
+        probe = candidate;
+        break;
+      }
+    }
+    if (probe?.last === undefined) throw new Error('找不到「最后发言 == 第一个投票」的种子');
+
+    const store = new InMemoryMetaStore();
+    const bus = new StreamBus();
+    const channels = new ChannelRegistry(bus);
+    const app = buildApp({ store, bus, channels });
+    const registry = new GameRegistry(store);
+    const session = await registry.createSession();
+    const { current, last } = await driveToLastSpeaker(registry, session, chosenSeed, probe.last);
+
+    expect(last).toBe(probe.last);
+    expect(registry.stateOf(current).phase).toBe('DAY_SPEECH');
+
+    // 编排层在等玩家说话
+    const runPromise = runGame({
+      registry,
+      session,
+      input: channels.forGame(current.gameId).input,
+      output: { emit() {}, async flush() {} },
+      decide: async () => ({ action: undefined }),
+      maxSteps: 5,
+    });
+
+    // 玩家经路由提交最后一句（同时兑现挂起的输入）
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/games/${current.gameId}/actions`,
+      headers: { cookie: `session=${session.id}` },
+      payload: {
+        action: { type: 'SPEECH', ts: 1, seat: last, text: '最后一句' },
+        expectedVersion: current.events.length,
+      },
+    });
+
+    await runPromise;
+
+    const after = await registry.getGame(current.gameId);
+    expect(res.statusCode).toBe(200);
+    expect(after?.events.some((event) => event.type === 'REJECTED')).toBe(false);
+    const speeches = after?.events.filter(
+      (event) => event.type === 'SPEECH' && (event.payload as { seat?: number }).seat === last,
+    );
+    expect(speeches).toHaveLength(1);
+  });
+});
