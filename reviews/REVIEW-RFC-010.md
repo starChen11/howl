@@ -1,9 +1,9 @@
 # RFC-010 评审 · 流式发言、思考指示与降级
 
 > **评审会话**：独立 subagent，全新上下文；本会话没有参与本仓库任何代码 / RFC / 测试的写作。
-> **日期**：2026-11-19（Round 1）
-> **分支 / HEAD**：`main` / `cf9c196`
-> **结论**：**Changes requested**
+> **日期**：2026-11-19（Round 2；Round 1 同日，HEAD `cf9c196`）
+> **分支 / HEAD**：`main` / `ec24536`
+> **结论**：**Changes requested**（Round 2）
 > **整体风险**：**High**
 
 ## Round 1 -- 2026-11-19
@@ -380,3 +380,353 @@ $ pnpm test
 - **C-91**：`RULES.md:127` 的 `ARCH-2`（`src/shared/` 只放类型与纯常量）vs `src/shared/stream.ts:33-50` 的运行时编解码。按权威顺序先记录冲突；建议 `/manage-changes` 扩展 C-13 / C-57 的例外，或把编解码移到 `src/server/`。
 - **C-86（归属部分）**：RFC-010 §8.6 把「持续推送」归给 RFC-012，但 RFC-011 §2.3 / §3 的 `SseOutputChannel` 才是服务端通道，RFC-012 是界面。两处必须选一处，不能把服务端工作记到 UI RFC 上。
 - **C-92**：RFC-010 §8.4 的 AC-8 / 9 / 10 / 11 / 12 PASS、§2.3 的「RFC-007 重试」、`TEST-STRATEGY.md` 的 RFC-010 计划、`README.md:11,36-38` 的状态互相不一致；本轮按「代码 + 实测」判，文档待回写。
+
+## Round 2 -- 2026-11-19
+
+**结论：Changes requested · Overall Risk Level: High**
+
+本轮只复核 Round 1 的五条阻塞（C-85 ~ C-89）与 C-86 的持续推送归属；C-90 ~ C-95 按用户要求不重查，状态保持 Round 1 的记录。
+
+一句话：**C-85 已真正修好并有回归锁；C-86 只修了「下一段以 `thinking` / `delta` 开头」的客户端路径，路由仍然把每个可见事件映射成 `done`，Round 1 的 P9 可原样复现；C-87 / C-88 / C-89 都只修到「函数 / 分支存在」，没有修到「行为被端到端锁住」。** 服务端持续推送不是可选项，判断见 §3。
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。HEAD `ec24536`，`git status --porcelain` 为空。
+
+```
+$ pnpm typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+> eslint .
+LINT_EXIT=0
+
+$ pnpm format:check
+> prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+vite v8.3.8 building client environment for production...
+✓ 14 modules transformed.
+dist/client/assets/index-DTkfWeVY.js  219.65 kB │ gzip: 68.71 kB
+✓ built in 65ms
+vite v8.3.8 building ssr environment for production...
+✓ 41 modules transformed.
+dist/server/index.js  87.62 kB │ gzip: 29.33 kB
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  68 passed (68)
+      Tests  559 passed (559)
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+```
+
+覆盖率来自 `tests/meta/coverage.test.ts` 生成的 `coverage/coverage-summary.json`（只覆盖 `src/engine/**`）：
+
+```
+lines: 96.96% (544/561)   branches: 92.85% (364/392)
+```
+
+**Product Type**：`PRD.md` 是 **game（主）+ web app（交付形态）**。本轮检查核心循环 / 事件流 / 重放、服务端 SSE 与可见性、安全、测试证据；**显式跳过** UI / A11Y / 响应式 / 浏览器兼容 / 首屏性能 / Playwright，因为 A 方案把界面留给 RFC-012，`tests/e2e/` 为空。HTTP 端点与事件流仍然检查，因为 `/api/games/:id/stream` 是本 RFC 的交付物。
+
+**探针后的复跑**：所有变异探针从 `/tmp/howl-rfc010-r2-backup/` 的文件备份恢复（**没有使用 `git checkout`**），四处 `md5` 与备份逐一相同；临时探针文件已删除；`git status --porcelain` 为空；恢复后全量 `pnpm test` 复跑 **68 files / 559 tests 全绿**。没有 `git commit`。
+
+---
+
+### 1. 五条阻塞的复核
+
+#### C-85 · `DEGRADED` 折叠 —— **关闭**
+
+- `src/engine/apply.ts:90-93` 已增加 `DEGRADED` 分支，把席位追加到 `state.degradations`；`src/shared/domain.ts:119` 有字段；`tests/engine/replay.test.ts:292-301` 的「未实现事件」样本换成了真正不存在的 `NOT_A_REAL_EVENT`。
+- `tests/server/stream.test.ts:176-200` 用真实 `GAME_STARTED` + 追加 `DEGRADED` 后 `replay()`，断言 `state.degradations === [2]`。**M3** 删掉 `apply.ts` 的 `DEGRADED` 分支后该用例 1 红——行为被锁住。
+- 留有两条非阻塞尾巴（归入 C-92 / C-95）：`PAYLOAD_SCHEMAS`（`src/shared/schemas.ts:231-248`）仍没有 `DEGRADED`；`src/shared/domain.ts:118` 的「药水位」注释被 `degradations` 顶替，`potionsUsed` 失去了注释。`project()` 没有专门用例，但它与 `replay()` 共用 `applyEvent`，风险低。
+
+#### C-86 · SSE 路由 / 客户端分段 / 持续推送 —— **仍 Open（阻塞）**
+
+**① 客户端：`use-stream.ts:44` 仍会丢掉下一段发言的 `done`。**
+
+```ts
+if (state.phase === 'done' && message.type === 'done') return state;
+```
+
+这不是 Round 1 建议的「只在终结类消息上按 `<=` 判」：它按**阶段**判，而不是按**发言 id** 判。只要上一段已经 `done`，任何 id 更大的 `done` 都被吞掉。P-R2-A：
+
+```
+两个 done（id=3 "第一段"，id=9 "第二段"）
+→ {"phase":"done","seat":1,"text":"第一段","lastId":3,"speechId":3,...}
+```
+
+新增的 C-89 用例（`tests/client/use-stream.test.ts:70-93`）只覆盖「新一段以 `thinking` 开头」和「新一段以 `delta` 开头」；`tests/client/use-stream.test.ts:44-52` 只覆盖「同一个 id 的 `done` 重放」。**没有任何用例覆盖「上一段 done 之后，下一段只有一个 done」**，而这正是当前路由实际发出的形状。
+
+**② 路由：`routes/stream.ts:37-45` 仍把每一个可见事件都映射成 `done`，不读事件类型。**
+
+P-R2-D（真实 `messagesFor`）：
+
+```
+SPEECH(seq=3,"第一段") / DEGRADED(seq=4) / SPEECH(seq=9,"第二段")
+→ [{"type":"done","id":3,"seat":1,"text":"第一段"},
+   {"type":"done","id":4,"seat":2,"text":""},
+   {"type":"done","id":9,"seat":2,"text":"第二段"}]
+
+经 streamReducer 后：
+→ {"phase":"done","text":"第一段","lastId":3,"speechId":3,...}
+```
+
+`DEGRADED` 变成空文本 `done`（不是 `degraded`），`PHASE_CHANGED` / `DAY_STARTED` 同样变成空气泡。Round 1 的 P9 与 P4 都还能原样复现。AC-9 的「前端收到 `degraded`」、AC-2 的「done 之前至少 2 个中间态」、AC-4 的「thinking / speaking 可区分」在真实路由上都不成立。
+
+**③ `thinking` / `delta` 根本没有生产源。**
+
+- `src/server/llm/stream.ts` 的 `consumeStream` / `IncrementalDecoder` 只有测试调用；`src/server/llm/client.ts` 没有 `stream: true`，也没有 `reasoning_content` 的任何读取（全仓库 `grep` 零命中）。
+- RFC-010 §3 的交付物写的是「`src/server/llm/stream.ts`：**流式调用**与增量解析」；当前文件只有「增量解析」，没有流式调用，也没有 OpenAI chunk → `StreamMessage` 的适配层。
+- 因此 F18（Must）的「思考进度 + 逐字发言」在真实对局里没有实现点；reducer 的 `thinking` / `delta` 分支只在单测的合成消息上成立。
+
+**④ 持续推送**：`routes/stream.ts:96` 用一次 `reply.send(...)` 写完补偿窗口；没有保持连接、没有订阅、没有「每收到一个 chunk 立刻转发」。详细归属判断见 §3。
+
+#### C-87 · 降级编排 —— **仍 Open（阻塞，部分修复）**
+
+**已修的部分：**
+
+- `runTurn`（`src/server/llm/turn.ts:57-96`）确实做了「失败后重试 1 次 → 仍失败则写短句」。`tests/server/degrade.test.ts:116-137` 的「第一次失败、第二次成功」现在是真的两次调用，不再是传 `failed: false` 的自证。
+- `tests/server/degrade.test.ts:166-190` 连续 4 轮、每轮 2 次调用，`calls === 8`；`canAttempt()` 恒 true。**M4** 把 `index < 2` 改成 `index < 1` 后该文件 3 红——重试与「第 4 次仍调用」被锁住。
+
+**没修的部分：**
+
+1. **真实失败模式会直接抛出，不会重试也不会降级。** `src/server/llm/client.ts:189` 的 `decide()` 在重试用尽后 `throw lastError`；`runTurn` 的 `last = await input.attempt()`（`turn.ts:64`）没有 `try/catch`。P-R2-CC：
+
+   ```
+   attempt 抛 Error('LlmError: 调用超时') → calls=1, runTurn rejected（没有第二次调用，没有降级）
+   ```
+
+   也就是说，`runTurn` 只适配「返回 `{ failed: true }`」的假客户端；真实调用方的契约是 `throw`。除非调用方每次自己包一层 catch，否则 AC-7/8 的失败路径不成立。这一层适配要么放进 `runTurn`，要么把它明确写成调用方义务并测试。
+
+2. **硬超时预算没有在重试前检查，第二次尝试可以把 30 秒变成 60 秒。** `turn.ts:68-75` 的 `decideDegrade` 在两次 `attempt` **之后**才看 `now()`。P-R2-E：`limitMs=30_000`、每次 `attempt` 消耗 20 秒 →
+
+   ```
+   calls=2, attempts=2, clock=40_000, degraded=true
+   ```
+
+   真实 `decide()` 的 `AbortSignal.timeout(30_000)` 也是每次调用独立计时，所以「第一次 30 秒超时、第二次再 30 秒」会到 60 秒，违反 NFR-1 的「硬超时 30 秒后必须降级」。需要在每次重试前算剩余预算（或把 `AbortSignal` / `remaining` 传进 attempt），并补一条「第一次已用掉预算时不再重试」的用例。
+
+3. **`degradeEvents` 不是可直接写入引擎的事件。** `turn.ts:98-110`：
+
+   ```ts
+   degradeEvents({ gameId: 'g', ts: 1, seat: 2, text: '我先过。', seq: 41 })
+   → [{ type: 'DEGRADED', payload: { seat: 2 } },
+      { type: 'SPEECH', payload: { seat: 2, text: '我先过。' } }]
+   ```
+
+   `gameId` / `ts` / `seq` 三个入参**完全没被使用**（seq=41 与 seq=99 的输出逐字相同），返回值缺 `gameId` / `seq` / `ts` / `visibleTo`，两个事件也没有 `seq` 与 `seq+1` 的区分。`tests/server/degrade.test.ts:139-164` 只断言 `['DEGRADED','SPEECH']`，没有把它喂给 `replay()` / `applyEvent()`，没有断言 `state.speech.spoken` 前进，也没有断言 seq 连续。Round 1 要求的「下一席位前进、seq 连续」仍未验收。**而且写回路径也不存在**：`GameRegistry` 只有 `submit(action)`（`src/server/store/game-registry.ts:178`），没有追加原始事件的入口；降级短句也没有走 `SPEAK` action / `toAction`。即使 helper 返回完整 envelope，当前也没有把它写进 record 的 API。
+
+4. **仍没有生产调用者，且没有按 Round 1 允许的方式记录交接。** `grep runTurn src` 只命中定义本身；RFC-011 的 orchestrator 还没开工。Round 1 说「如果本 RFC 不做编排，就把它明确交给 RFC-011 并在 §8.6 / §8.4 如实记录」；当前 §8.4 仍把 AC-10 写成 `PASS（事件已在 RFC-005 定义）`，§8.6 没有提到 `runTurn` / RFC-011，`RFCS.md` §3 的依赖表里 RFC-010 仍然没有后继。代码接缝可以接受，**声明不能接受**。
+
+5. 次要：`runTurn` 自己重试 1 次，而 `decide()` 的 `maxRetries` 默认也是 1；若调用方自然地把 `decide` 包成 `attempt`，一次发言最多 4 次调用，不是 AC-8 的「重试 1 次」。需要明确「重试只能有一层」，并在文档 / 测试里固定。
+
+#### C-88 · `Last-Event-ID` 超窗信号 —— **仍 Open（阻塞，部分修复）**
+
+**代码逻辑本身是对的：**
+
+- `routes/stream.ts:73-87` 先算窗口起点，`lastEventId < oldestInWindow` 时返回 `SNAPSHOT_REQUIRED`。P-R2-B：`last-event-id: 50` → body 为 `id: 50\ndata: {"type":"error","id":50,"message":"SNAPSHOT_REQUIRED"}`；P-R2-B2：`last-event-id: 100` → 200 帧，第一条 `id: 101`。不再静默丢 51..100。
+
+**两个问题：**
+
+1. **测试没有打到路由。** `tests/server/stream.test.ts:202-232` 只调用 `messagesFor`，然后自己算 `windowStart` / 断言 `50 < 101`；它没有注入 `Last-Event-ID`、没有调 `registerStreamRoutes`、没有读响应。**M1** 把整个 `if (hasGap) { ... }` 删掉后 `tests/server/stream.test.ts` **8/8 全绿**。按 TEST-1，这不是回归锁。
+2. **`SNAPSHOT_REQUIRED` 的响应 MIME 是 `text/plain`。** `reply.header('content-type', 'text/event-stream')`（`:91-94`）在 gap 分支之后才设置；gap 分支直接 `reply.send(frame)`，P-R2-B 实测：
+
+   ```
+   content-type: text/plain; charset=utf-8
+   body: id: 50\ndata: {"type":"error","id":50,"message":"SNAPSHOT_REQUIRED"}\n\n
+   ```
+
+   浏览器 `EventSource` 收到非 `text/event-stream` 会中止连接，`SNAPSHOT_REQUIRED` 根本到不了客户端 reducer。修法：把 `content-type` / `cache-control` 头移到 gap 分支之前，并用 `app.inject` 断言 header 与 body。
+
+3. 附带一个策略问题：300 条可见事件、**没有** `Last-Event-ID` 的新连接会得到 `id: 0 ... SNAPSHOT_REQUIRED`（P-R2-B3），而不是最近 200 条。Q-010-2 只写了「断线超出窗口」，没写「新连接」；如果这是有意的（新连接先拉 `GET /api/games/:id` 快照），请写进 §2.2 / §8.6 并补用例；如果不是，需要区分「无 Last-Event-ID」与「有但超窗」。
+
+#### C-89 · 客户端跨发言重置 —— **仍 Open（阻塞，部分修复）**
+
+- `text` / `firstDeltaAt` 的跨发言重置在「`thinking` 开头」和「`delta` 开头」两条路径上已修：P-R2-A2 的第二段 `text` 是 `乙`、`firstDeltaAt` 是 300；**M5** 把 `text: (sameSpeech ? state.text : '') + message.text` 改成 `state.text + message.text` 后 `tests/client/use-stream.test.ts` 1 红。这部分有效。
+- **`sawThinking` 仍然跨发言保留。** `use-stream.ts:48-51` 的 `base` 只在 `message.type === 'thinking'` 时重置；`delta` / `done` / `degraded` 的新发言分支都不重置。P-R2-A2：
+
+  ```
+  第一段 thinking(id=1) → delta(id=1) → done(id=1)
+  第二段 delta(id=2, 没有 thinking)
+  → {"phase":"speaking","text":"乙","firstDeltaAt":300,"sawThinking":true}
+  ```
+
+  AC-4 的「当前这段发言是否经历过思考」从第二段起就是错的；RFC-012 若用 `sawThinking` 决定是否显示「思考过」的标识，会显示假阳性。
+- `done` 分支（`use-stream.ts:76-84`）也没有重置 `sawThinking` / `firstDeltaAt`；对于「只有 done、没有 delta」的发言（恰好是当前路由的形状），`firstDeltaAt` 会停在上一段。`use-stream.ts:81` 还有一个死三元：`state.speechId === message.id ? message.text : message.text`，两个分支相同。
+- 补测：① 上一段 `thinking+delta+done`，下一段**只有 delta**，断言 `sawThinking === false`；② 上一段有 delta，下一段**只有 done**，断言 `firstDeltaAt` 被重置（或明确 null 的语义）。
+
+---
+
+### 2. 逐条验收标准（本轮受影响的部分）
+
+> `PASS` 只给「有测试会在行为退化时变红」的项；手工项按 D-6 记录。
+
+| AC | 证据 | 判定 |
+|---|---|---|
+| 1 | reducer 的 `thinking` / 首 `delta` 口径存在；但服务端没有首事件时间，`thinking` 没有生产源；per-speech `firstDeltaAt` 只在 thinking/delta 开头时正确 | **PARTIAL** |
+| 2 | 路由不发 `delta`；只有 `done`；第二段 `done` 被 `:44` 丢掉（P-R2-D）；50 字中间态没有测试 | **FAIL** |
+| 3 | 真实 p95 是手工项（D-6，接受）；当前没有可采样的服务端时间点 | **PARTIAL（记录）** |
+| 4 | `phase` 可区分，但真实流里没有 `thinking`；`sawThinking` 跨发言不重置（P-R2-A2） | **FAIL** |
+| 5 | 窗口信号逻辑正确，但测试没打到路由（M1 全绿）；error 帧 MIME 错；第二段 `done` 丢失 | **FAIL** |
+| 6 | 逐字节中文解码；Round 1 的 P7 已锁住 | **PASS** |
+| 7 | `decideDegrade` 的超时判定有单测；`runTurn` 没有超时用例，且重试可在 30 秒后再等一轮（P-R2-E）；`DEGRADED` 没有生产产出 | **NEEDS WORK** |
+| 8 | `runTurn` 的「失败→成功」是真重试（M4 锁住）；但真实 `decide()` 抛错时直接 reject（P-R2-CC） | **PARTIAL** |
+| 9 | 路由把 `DEGRADED` 映射成空 `done`，客户端收不到 `degraded`（P-R2-D） | **FAIL** |
+| 10 | `degradeEvents` 不是可直接写入引擎的事件；没有 `speech.spoken` / seq 连续性测试；没有调用者 | **FAIL** |
+| 11 | `DEGRADED` 可 replay 且状态累计席位；但没有测试把事件对应到轮次，`degradations` 只记席位不记轮次 | **PARTIAL** |
+| 12 | 4 轮 × 2 次调用，`canAttempt` 恒 true（M4 锁住重试） | **PASS** |
+
+> TEST-STRATEGY 把 AC-7/8/9/10/11/12 标成 `Should`；即便如此，本轮仍把 C-87 列为阻塞，因为 §8.4 把 AC-10 写成 PASS、而 F19 的核心路径（真实失败 → 降级 → 推进）没有被任何测试端到端验证。
+
+---
+
+### 3. C-86 的服务端持续推送，是否必须在本 RFC 内完成？
+
+**判断：必须在本 RFC 内完成「服务端把增量推给浏览器的能力」；「谁生产这个增量」的实现（`SseOutputChannel` + orchestrator）可以放在 RFC-011。把整件事记到 RFC-012 是不成立的。**
+
+理由，按权威顺序：
+
+1. **RFC-010 的正文与 AC 就是规范。** §2.1（`RFCs/RFC-010...:21-28`）写「THINKING 一开始就向前端推一个 `thinking` 事件」「正文到达后逐字推送」；§2.2（`:30-35`）定义端点、事件类型和 `Last-Event-ID`；§4（`:65-67`）要求 `delta` 不写入事件流、但要在 `done` 前到达；§6（`:89`）要求「每收到一个 chunk 必须立刻转发，不攒批」。AC-1 / 2 / 4 / 5 / 9 全部依赖这条实时链路。一次性 `reply.send` 无法满足其中任何一条：`delta` 按 §4 不落事件流，路由读 `record.events` 永远读不到它。
+2. **用户批准的 A 方案是「服务端全做」。** §8.1（`:105-109`）的记录是「先做服务端（SSE、流式解析、降级），前端做成不依赖 DOM 的纯状态机并单测；界面留到 RFC-012」。被推迟的只有**界面**，不是服务端 SSE。§8.6 把「真实 SSE 长连接」记成 RFC-012，与 §8.1 的批准范围相矛盾。
+3. **归属也写错了。** RFC-011 §2.3（`RFCs/RFC-011...:44-58`）明确 `SseOutputChannel` 是「把增量推到 RFC-010 的 SSE 端点」，交付物是 `src/server/channels/sse.ts`；RFC-012 是界面（`SpeechFeed.tsx` 等），它不负责服务端通道。服务端端点的实时能力属于 RFC-010，生产侧通道属于 RFC-011；把两者一起推给 RFC-012，既不符合 RFC-010 的 AC，也不符合 RFC-011 的交付物定义。
+4. **依赖表没有交接记录。** `RFCS.md` §3 里 RFC-010 的直接后继是「—」，RFC-011 的直接前置只有 005 / 007。如果正式把持续推送交给 RFC-011，就必须把 RFC-011 加入 RFC-010 的后继 / RFC-010 加入 RFC-011 的前置，并同步 RFC-010 §3 / §5 / §8.4 与 `TEST-STRATEGY.md`。只在 §8.6 写一句「留到 RFC-012」不是交接，是未记录偏离（`DOC-1`）。
+5. **可行的最小切分**（既不越到 RFC-011 的 orchestrator，又能验收 AC）：
+   - RFC-010：`src/server/llm/client.ts` 的流式调用（`stream: true`）+ `reasoning_content` / content 增量映射；`src/server/llm/stream.ts` 的 OpenAI chunk → `StreamMessage` 适配；`src/server/routes/stream.ts` 的保持连接 / 订阅 / 按 chunk 写帧；测试用 stub 生产者覆盖 `thinking` → `delta` → `done`、`DEGRADED` → `degraded`、`Last-Event-ID` 续传。
+   - RFC-011：`SseOutputChannel` 把 orchestrator 的增量交给 RFC-010 的端点/订阅；玩家输入与通道抽象。
+   - 这样 RFC-010 不依赖 orchestrator 就能验收「`done` 前至少有 2 个中间态」「`thinking` / `speaking` 可区分」「`degraded` 到达」「断线不重不漏」。
+6. **如果产品负责人确实要推迟**：这属于需求/验收范围变更，按 `AGENTS.md` 硬规则 6 走 `/manage-changes`，正式改 RFC-010 的 AC / 交付物 / 依赖表，并把 RFC-010 的状态留在 `Changes requested` 或 `Spec changed`；不能在 §8.4 继续标 PASS 后把 RFC 标成 `Reviewed`。
+
+**一句话回答**：服务端持续推送必须在本 RFC 内完成「端点能实时把增量推给浏览器」这一半；只把 `SseOutputChannel` / orchestrator 放 RFC-011 是可以的，但 RFC-010 必须留下可被它推送的实时端点、适配层和测试。当前一次性 `reply.send` + 没有 `thinking` / `delta` 生产源的实现不满足这条。
+
+---
+
+### 4. 非阻塞发现与未重查项
+
+- **C-90（未重查，仍非阻塞）**：`routes/stream.ts:35` 仍用 `isVisibleTo(event, seat, state)` 对全部历史做最终状态判定；`wolves` / `self:<n>` 分支仍没有回归锁（Round 1 的 P1）。建议复用 `GameRegistry.visibleEventsOf`。
+- **C-91（未重查，仍非阻塞）**：`src/shared/stream.ts:33-50` 的运行时编解码仍扩大 `ARCH-2` 例外，未登记到 `RULES.md`。
+- **C-92（未重查，仍非阻塞；本轮新增两处证据）**：`TEST-STRATEGY.md:3` 仍引 `RFCS.md v2.65`，`:302-312` 的 RFC-010 计划仍全是 `proposed` 且文件名与实际不符（`sse.test.ts` / `replay-degrade.test.ts` / `stream.spec.ts` 不存在；`stream.test.ts` / `use-stream.test.ts` 未登记）；`README.md:9-13,36-40` 仍写「7 Reviewed / RFC-008 等待评审」；RFC-010 §8.4 仍把 AC-10 / 11 写成 PASS；`PAYLOAD_SCHEMAS` 仍缺 `DEGRADED`。
+- **C-93（未重查，仍非阻塞）**：p95 的服务端首事件时间仍未记录；`streamReducer` 的 `now` 仍是第三参数（`useReducer` 下会恒为 0），需要把 `receivedAt` 放进 action 或由外层记录；没有 per-speech 样本数组。
+- **C-94（未重查，仍非阻塞）**：`src/server/llm/stream.ts:36-52` 的 `parseSseLine` 仍只检查 `type`，绕过 `StreamMessageSchema`。如果按 §3 的切分补上流式调用，这条会在生产路径上被放大，建议一起修。
+- **C-95（未重查，仍非阻塞；新实例）**：`src/shared/domain.ts:118` 的注释错位；`src/client/use-stream.ts:81` 的死三元；`src/server/llm/turn.ts:98-110` 的未使用入参；`markUnstable` 仍硬编码 `3`。
+
+---
+
+### 5. 五个审查维度
+
+#### 5.1 RFC ADHERENCE —— **FAIL**
+
+- 12 条 AC 中 AC-6 完全通过，AC-12 通过；AC-1 / 3 / 11 是 PARTIAL；AC-2 / 4 / 5 / 9 / 10 失败；AC-7 / 8 仍缺真实失败路径与超时预算。
+- 缺功能：服务端流式调用（`stream: true`）、`reasoning_content` 映射、`thinking` / `delta` / `degraded` 的产出与路由映射、实时 SSE 订阅、`degradeEvents` 的引擎可写入性、`runTurn` 的异常 / 超时处理。
+- 多做的部分：`messagesFor` 继续把非发言事件映射成空 `done`，这是协议之外的语义，会在界面上产生空气泡。
+
+#### 5.2 RULES COMPLIANCE —— **NEEDS WORK**
+
+| 规则 | 结论 |
+|---|---|
+| `ARCH-1` | **PASS**：`src/engine/` 没有新增 UI / server / 网络依赖。 |
+| `ARCH-2` | **NEEDS WORK**：`src/shared/stream.ts` 的运行时编解码仍未登记（C-91）。 |
+| `ARCH-4` | **PASS**：降级决策仍是纯函数；`runTurn` 的时钟由调用方注入。 |
+| `DATA-1` | **PASS**：SSE 消息的 `id` 取事件 `seq`；`DEGRADED` 折叠后 `seq` 仍由 `applyEvent` 统一推进。 |
+| `DATA-3` | **PASS（本轮修复）**：`DEGRADED` 可 replay；M3 删掉分支会红。 |
+| `API-1` | **PARTIAL**：`StreamMessageSchema` 在 shared；`parseSseLine` 仍绕过它（C-94）。 |
+| `API-2` | **PARTIAL**：`id === seq` 只在 `done` 上成立；`thinking` / `delta` / `error` 的生产路径缺失。 |
+| `TEST-1` | **FAIL**：C-88 的修复没有会红的测试（M1）；C-87 的引擎推进 / seq 连续没有测试；C-86 的第二段 `done` 没有测试。 |
+| `TEST-2` | **PASS**：引擎覆盖率 96.96% / 92.85%，未因本 RFC 下降。 |
+| `DOC-1` | **FAIL**：§8.4 的 AC-10 / 11 PASS、§8.6 的 RFC-012 归属、§8.7 的「已修复」与实测不符。 |
+| `AI-3` / `AI-7` | **PASS（未改）**：本 RFC 没有改调用超时 / 重试配置；但 `runTurn` 的重试与 `decide()` 的 `maxRetries` 叠加风险见 C-87。 |
+| `SEC-5` | **PASS（数据面）**：SSE 只发可见事件，没有直接序列化完整 `GameState`；会话检查仍在（`routes/stream.ts:52-57`）。 |
+
+#### 5.3 SECURITY —— **PASS**
+
+- 路由先 `resolveSession` 再检查 `session.gameIds.includes(record.gameId)`，没有会话不能读别人的局。
+- 可见性由 `isVisibleTo` 统一判定；没有手写 `wolves` 规则；当前 fixture 下没有发现泄漏。
+- `SNAPSHOT_REQUIRED` 帧只回显客户端提供的 `Last-Event-ID`，不泄漏服务端状态。
+- 没有新增密钥、日志或错误响应里的敏感数据；SSE 的 `data` 是 `JSON.stringify`，换行被转义，不能注入帧。
+- 缺口仍是回归锁：D-2 的 `wolves` / `self:<n>` 用例不存在（C-90，未重查）。
+
+#### 5.4 PERFORMANCE —— **NEEDS WORK**
+
+- 一次性 `reply.send` 每次重连都跑 `registry.stateOf(record)`（完整 replay）+ `messagesFor` 全量过滤；`EventSource` 自动重连会把「历史回放」变成每几秒一次的 O(n) 重算。真正的实时推送没有，所以 p95 无法测。
+- `consumeStream` 每 chunk 立即回调，本身不攒批；但它没有生产调用者。
+- 没有新增 LLM / 数据库 / 网络调用；`runTurn` 的重试最多 2 次（或 4 次，若与 `decide()` 叠加），需要明确的预算。
+
+#### 5.5 MAINTAINABILITY —— **NEEDS WORK**
+
+- `use-stream.ts` 的 `phase === 'done'` 去重与 `speechId` 语义脱节；`done` 分支有死三元；`sawThinking` 的重置分散在 `base` / `delta` / `done` 三处且不一致。
+- `routes/stream.ts` 的 `messagesFor` 用 `payload as { seat?; text? }` 与 `as never` 绕过事件 payload 类型；仍然重复 `visibleEventsOf` 的过滤。
+- `turn.ts` 的 `degradeEvents` 入参 / 返回类型与真实 `GameEvent` 脱节；`RunTurnInput` 没有超时 / 取消信号。
+- 测试计划与实现文件名脱节（C-92）；`tests/server/stream.test.ts:202-232` 的「窗口」用例是常量 / 算术自证。
+- 正向：C-85 的折叠与 M3 锁、`runTurn` 的重试与 M4 锁、C-89 的 `text` / `firstDeltaAt` 与 M5 锁都是有效的；`IncrementalDecoder` 的 `{ stream: true }` 注释与 AC-6 的逐字节测试仍然可靠。
+
+---
+
+### 6. 变异探针与恢复
+
+备份在 `/tmp/howl-rfc010-r2-backup/`，覆盖 `src/server/routes/stream.ts`、`src/client/use-stream.ts`、`src/server/llm/turn.ts`、`src/engine/apply.ts`。每个探针用 `cp` 从备份恢复，`md5` 逐项相同；**没有使用 `git checkout`**，也没有 `git commit`。
+
+| # | 注入 / 探针 | 跑什么 | 结果 |
+|---|---|---|---|
+| P-R2-A | 两个 `done`（id 3 / id 9）经 `streamReducer` | 临时测试 | `text=第一段`、`lastId=3`（C-86 第二段 `done` 被吞） |
+| P-R2-A2 | `thinking`+`delta`+`done` 后，新一段只有 `delta` | 临时测试 | `text=乙`、`firstDeltaAt=300`、`sawThinking=true`（C-89） |
+| P-R2-B | 300 条可见事件、`Last-Event-ID: 50` 调真实路由 | 临时测试 | body 为 `SNAPSHOT_REQUIRED`，但 `content-type: text/plain; charset=utf-8`（C-88） |
+| P-R2-B2 | 同上、`Last-Event-ID: 100` | 临时测试 | 200 帧，首帧 `id: 101`（窗口逻辑正确） |
+| P-R2-B3 | 300 条可见事件、无 `Last-Event-ID` | 临时测试 | `id: 0 ... SNAPSHOT_REQUIRED`（策略待定） |
+| P-R2-CC | `runTurn` 的 attempt 抛错；`degradeEvents` seq 41 vs 99 | 临时测试 | `calls=1` 且 rejected；两次输出完全相同（C-87） |
+| P-R2-D | 真实 `messagesFor`：`SPEECH` / `DEGRADED` / `SPEECH` → reducer | 临时测试 | 3 条 `done`；`DEGRADED` 空文本；最终 `text=第一段`、`lastId=3`（C-86） |
+| P-R2-E | `limitMs=30_000`、每次 attempt 20 秒 | 临时测试 | `calls=2`、`clock=40_000`、`degraded=true`（C-87 超时预算） |
+| M1 | 删掉 `routes/stream.ts:80-87` 的 `hasGap` 分支 | `tests/server/stream.test.ts` | **8/8 全绿**（C-88 未被锁） |
+| M3 | 删掉 `apply.ts:90-93` 的 `DEGRADED` 分支 | `tests/server/stream.test.ts` | **1 failed / 7 passed**（C-85 被锁） |
+| M4 | `turn.ts:62` 的 `index < 2` 改成 `index < 1` | `tests/server/degrade.test.ts` | **3 failed / 9 passed**（重试被锁） |
+| M5 | `use-stream.ts:70` 去掉 `sameSpeech ? '' : ...` 的重置 | `tests/client/use-stream.test.ts` | **1 failed / 6 passed**（`text` 重置被锁） |
+
+**恢复校验**：
+
+```
+$ md5 -q src/server/routes/stream.ts src/client/use-stream.ts src/server/llm/turn.ts src/engine/apply.ts
+faa56ac3f4a9964124601575408b7fd4
+0496fc460c0e726340cdee6572304563
+8ac9ee7d841bd37064002c1892bd4780
+a3d30bb6e091ee29cfff48acec20c46f
+
+$ md5 -q /tmp/howl-rfc010-r2-backup/stream.ts /tmp/howl-rfc010-r2-backup/use-stream.ts /tmp/howl-rfc010-r2-backup/turn.ts /tmp/howl-rfc010-r2-backup/apply.ts
+faa56ac3f4a9964124601575408b7fd4
+0496fc460c0e726340cdee6572304563
+8ac9ee7d841bd37064002c1892bd4780
+a3d30bb6e091ee29cfff48acec20c46f
+
+$ git status --porcelain
+（空）
+
+$ pnpm test
+ Test Files  68 passed (68)
+      Tests  559 passed (559)
+```
+
+临时探针文件 `tests/server/__r2-probe.test.ts` / `tests/server/__r2-timeout-probe.test.ts` 已删除；仓库没有新增探针文件。
+
+---
+
+### 7. 结论
+
+- **Overall Risk Level: High**
+- **Summary**：C-85 已修好并有回归锁；C-87 / C-88 / C-89 的代码接缝存在，但关键行为（真实 `decide()` 抛错、30 秒硬超时预算、路由超窗响应、`sawThinking` 跨发言）都没有端到端测试，C-88 的修复在 M1 下完全不受保护。C-86 是最大的缺口：路由仍把每个可见事件变成 `done`，`DEGRADED` 变成空 `done`，第二段 `done` 被客户端吞掉，且没有 `thinking` / `delta` 的生产源；服务端持续推送被错误地记到 RFC-012，而不是 RFC-010 的端点 + RFC-011 的通道。
+- **Blocking Issues**：C-86（路由映射 / 第二段 `done` / 实时流与归属）、C-87（真实失败、超时预算、`degradeEvents` 可写入性、未记录的 RFC-011 交接）、C-88（测试未打到路由、`SNAPSHOT_REQUIRED` MIME）、C-89（`sawThinking` / done-only 重置）。
+- **Improvement Suggestions**：按 §3 的最小切分补实时端点；把 `use-stream.ts:44` 改成按 `speechId` 去重并在任何新发言起点重置 `sawThinking` / `firstDeltaAt`；把 SSE 头移到 gap 分支之前；让 `degradeEvents` 返回完整 `GameEvent[]` 并用真实 `DAY_SPEECH` 状态断言 `speech.spoken` + `seq`；让 `runTurn` catch 异常并在每次重试前检查剩余预算；补 `DegradedPayloadSchema`、更新 `TEST-STRATEGY.md` / `README.md` / §8.4。
+- **Suggested status**：**`Changes requested`**。
+
+---
+
+### 8. Open conflicts（登记到 `RFCS.md` §8.31 Round 2 段）
+
+- **C-86 归属**：RFC-010 §8.6 把持续推送记给 RFC-012；RFC-011 §2.3 / §3 说 `SseOutputChannel` 才是把增量推到 RFC-010 端点的那一层；RFC-012 是界面。本轮按「RFC-010 端点实时能力 + RFC-011 生产通道」判，反对整件事记到 RFC-012。若正式改派，走 `/manage-changes` 并更新依赖表。
+- **C-87 交接**：RFC-010 §8.4 把 AC-10 写成 PASS，但 `runTurn` / `degradeEvents` 没有生产调用者，`RFCS.md` §3 里 RFC-010 也没有后继。按「代码 + 实测」判为未验收；若把调用方交给 RFC-011，必须把 RFC-011 加入依赖并改 §8.4 / §8.6。
+- **C-88 新连接**：Q-010-2 只规定「断线超出窗口」；当前实现把无 `Last-Event-ID` 的新连接也判成 `SNAPSHOT_REQUIRED`。本轮按保守解释接受，但要求写进协议或区分两种情形。
+- **C-92**：`TEST-STRATEGY.md` / `README.md` / RFC-010 §8.4 与实现仍不一致；本轮按代码 + 实测判，文档待回写。
