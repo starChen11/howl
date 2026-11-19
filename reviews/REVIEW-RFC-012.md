@@ -2411,3 +2411,306 @@ $ pnpm test:e2e → 8 passed
 ```
 
 **状态**：RFC-012 → **`Changes requested`**（C-127 两项阻塞）。
+
+## Round 6 -- 2026-11-19
+
+> 评审方式：全新上下文 subagent，只读仓库文件；本会话没有写过 RFC-012 的实现代码。
+> 被评审提交：`840916f fix(rfc-012): isPlayerPhase 接进 runGame、平票用例与夹具（Round 5）`。
+> 评审开始时 HEAD `840916f`，工作树 clean。结论：**Reviewed**。
+>
+> 本轮按用户指示**只复核 Round 5 的两个阻塞项与一处加固**：**C-127(a)**（投影夹具加入不在
+> runoff 的存活席位）、**C-127(b)**（`runGame` 调 `isPlayerPhase` + 平票重投的 runGame 级用例）、
+> **C-133**（断言移出 `if` 并补 `pending === null`）。已关闭项（C-116 / C-118 / C-119 / C-120 /
+> C-121·C-123 / C-130 / C-132 等）不重查；C-124 ~ C-126 等非阻塞项沿用前轮记录，本轮不重新验收。
+>
+> **产品类型**：`PRD.md` §Product Type 为 **game（主）+ web app（交付形态）**，沿用 Round 1 ~ 5
+> 的检查口径；平台认证、帧预算、手柄、账号、SEO、离线同步等显式跳过，不另列 N/A 行。
+
+---
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · HEAD `840916f` · 评审开始时工作树 clean。
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  80 passed (80)
+      Tests  689 passed (689)
+   Duration  34.00s
+TEST_EXIT=0
+
+$ pnpm exec vitest run --project unit --coverage
+ Test Files  68 passed (68)
+      Tests  606 passed (606)
+All files        |   96.46 |    92.85 |   97.38 |   96.96 |
+COVERAGE_EXIT=0
+
+$ E2E_PORT=4201 pnpm test:e2e
+Running 8 tests using 1 worker
+  ✓  1 tests/e2e/game.spec.ts:12:3 › 整局界面 › 主路径：能开一局、看到状态条与席位、发言区可达 (412ms)
+  ✓  2 tests/e2e/game.spec.ts:22:3 › 整局界面 › 360px 视口没有横向滚动 (289ms)
+  ✓  3 tests/e2e/game.spec.ts:35:3 › 整局界面 › 1024px 视口用桌面布局（席位在侧栏） (263ms)
+  ✓  4 tests/e2e/game.spec.ts:49:3 › 整局界面 › 手机视口下输入区不遮挡状态条 (326ms)
+  ✓  5 tests/e2e/game.spec.ts:113:3 › 整局界面 › 焦点可见：Tab 之后焦点元素有可见 outline (235ms)
+  ✓  6 tests/e2e/game.spec.ts:131:3 › 整局界面 › 对比度：正文与次要文字达到 AA (268ms)
+  ✓  7 tests/e2e/game.spec.ts:172:3 › 整局界面 › 键盘：Tab 能到投票按钮，Enter 能投票 (420ms)
+  ✓  8 tests/e2e/game.spec.ts:199:3 › 整局界面 › 键盘：Tab 能到发言区，Enter 能提交 (310ms)
+
+  8 passed (5.2s)
+E2E_EXIT=0
+```
+
+绿色不是结论。本轮用定向变异验证「Round 5 声称已锁住的行为」是否真的会红；探针全部从
+`/tmp/howl-rfc012-r6-probes/backup/` 的文件备份恢复（**未使用 `git checkout` / `git restore`**），
+恢复后 5 个源码/测试文件 SHA-256 与探针前一致、`git status --porcelain` 为空；临时日志已
+恢复；没有 `git commit`。最终重跑仍为 **80 files / 689 tests**、**8/8 e2e** 全绿。
+
+---
+
+### 1. 三项复核结论（先看这张表）
+
+| 用户项 | 本轮结论 | 一句话证据 |
+|---|---|---|
+| **C-127(a)** 投影夹具加非并列存活席位 | **Closed** | 夹具 `alive [1,2,3,4]`、`runoff [2,3]`、观察者 1；回退成 `[...alive]` → 用例 **1 failed**（`[2,3,4] ≠ [2,3]`，M-R6-1）；回退成 `[...alive,'abstain']` → **1 failed**（M-R6-2） |
+| **C-127(b)** `runGame` 调 `isPlayerPhase` + 真平票 runGame 用例 | **Closed** | 真实夹具落点 `DAY_VOTE_RUNOFF`、`runoff:[2,3]`、`playerSeat:2`；探针 `kinds:["vote"]`、`aiCoveredPlayer:false`；删 helper 的 RUNOFF → **1 failed**（M-R6-3）；把调用点换回无 RUNOFF 的内联判断 → **1 failed**（M-R6-4） |
+| **C-133** 断言移出 `if` + `pending === null` | **Closed（加固成立）** | `strengthen.test.ts:342-344` 已无条件断言 `phase==='NIGHT'`、`pending===null`、`legalTargets===[]`；回退成对所有观察者给 `pendingForPhase` → **1 failed**（`null ≠ 'kill'`，M-R6-5） |
+
+**总判断**：Round 5 的两项阻塞都已闭合，且不是「代码对了、锁没牙」：三处目标回归各自
+都能打红；C-133 的断言也不再可能因夜间夹具漂移而静默失效。本轮改动没有生产行为变化
+（`runGame` 只是从内联条件改为调用既有 helper），新增的 154 行均为测试。
+
+---
+
+### 2. 逐项证据
+
+#### 2.1 C-127(a)：投影夹具现在能区分「并列者」与「全部存活」
+
+`tests/server/strengthen.test.ts:348-367` 的夹具已改为：
+
+```ts
+seats: [
+  { seat: 1, alive: true, role: 'villager' },
+  { seat: 2, alive: true, role: 'villager' },
+  { seat: 3, alive: true, role: 'villager' },
+  { seat: 4, alive: true, role: 'villager' },   // 活着，但不在 runoff
+],
+runoff: [2, 3],
+...
+const targets = legalTargetsOf(state, 'vote', [1, 2, 3, 4] as never, 1 as never);
+expect(targets).toEqual([2, 3]);
+expect(targets).not.toContain('abstain');
+```
+
+`src/server/project/targets.ts:29` 的 RUNOFF 分支仍返回 `[...(state.runoff ?? [])]`。两个反向探针：
+
+```text
+# M-R6-1：RUNOFF 回退成 [...alive]
+$ pnpm exec vitest run --project unit tests/server/strengthen.test.ts -t "C-127"
+→ 1 failed | 8 skipped (9)
+  AssertionError: expected [ 2, 3, 4 ] to deeply equal [ 2, 3 ]
+  tests/server/strengthen.test.ts:365
+
+# M-R6-2：RUNOFF 回退成 [...alive, 'abstain']
+→ 1 failed | 8 skipped (9)
+  AssertionError: expected [ 2, 3, 4, 'abstain' ] to deeply equal [ 2, 3 ]
+```
+
+Round 5 的 M-R5-6（`[...alive]` 仍 1 passed）已不再复现。**C-127(a) Closed。**
+4 号这个「存活但不在 runoff」的席位正是鉴别力所在：它让「只含并列者」与「全部存活」
+不再是同一个集合。
+
+#### 2.2 C-127(b)：`runGame` 的 RUNOFF 分支现在真的被锁住了
+
+生产代码（`src/server/orchestrator.ts:193`）已改为：
+
+```ts
+const playerPhase = isPlayerPhase(state.phase);
+```
+
+helper 本身（`:117-119`）包含 `DAY_VOTE_RUNOFF`；它在 `src/` 里再也不是死代码。新增用例
+`tests/server/orchestrator.test.ts:485-636` 用真实 `GameRegistry` 把一局推到平票重投，再用
+真实 `runGame` 推进。临时打印夹具与结果（已恢复）：
+
+```text
+PROBE-R6-FIXTURE {"phase":"DAY_VOTE_RUNOFF","runoff":[2,3],
+                  "alive":[2,3,4,5,6,7,8,9],"playerSeat":2,"playerRole":"wolf"}
+PROBE-R6-RESULT  {"kinds":["vote"],"aiCoveredPlayer":false,"playerSeat":2}
+```
+
+即：这是**真平票**（`runoff:[2,3]`），不是伪造的投影；玩家（2 号）是重投的第一个行动者；
+`input.read` 确实以 `kind:'vote'` 被调用；`decide` 没有收到玩家席。
+
+两个方向的变异：
+
+```text
+# M-R6-3：isPlayerPhase 删掉 DAY_VOTE_RUNOFF（helper 是生产路径）
+$ pnpm exec vitest run --project unit tests/server/orchestrator.test.ts -t "平票重投"
+→ 1 failed | 10 skipped (11)
+  AssertionError: expected [] to include 'vote'
+  tests/server/orchestrator.test.ts:634
+
+# M-R6-4：把 runGame 的调用点换回「无 RUNOFF」的内联判断（helper 保持完整）
+→ 1 failed | 10 skipped (11)
+  AssertionError: expected [] to include 'vote'
+```
+
+M-R6-3 复现 Round 5 的 M-R5-3 场景：删掉生产路径的 RUNOFF 后，`input.read` 不再被调用，
+`decide` 会接管玩家席；新用例在第一条断言就打红。M-R6-4 进一步证明 `runGame` 真的走了
+helper，而不是另有一份内联实现。**C-127(b) Closed。**
+
+补充说明：用例里的 `read` 对 `kind:'vote'` 返回 `{ kind:'speak', text:String(a) }`，
+这不是错误——`src/shared/channels.ts:13-14` 的 `PlayerInput` 本来就没有 `vote` 变体，
+投票目标约定放在 `text` 里，`playerAction` 也是这么解析的（`:243-253`）。
+
+#### 2.3 C-133：断言已移出条件，且回退会红
+
+`tests/server/strengthen.test.ts:342-344` 现在是：
+
+```ts
+expect(body.view.phase).toBe('NIGHT');
+expect(body.view.pending).toBeNull();
+expect(body.view.legalTargets).toEqual([]);
+```
+
+不再包在 `if (body.view.phase === 'NIGHT')` 里；如果夜间夹具漂移到别的相位，用例会明确失败，
+而不是静默跳过。反向探针（M-R6-5）把 `src/server/routes/games.ts:100` 改回对所有观察者
+`pendingForPhase(state.phase)`：
+
+```text
+$ pnpm exec vitest run --project unit tests/server/strengthen.test.ts -t "C-133"
+→ 1 failed | 8 skipped (9)
+  AssertionError: expected null but received "kill"
+  tests/server/strengthen.test.ts:343
+```
+
+`pending` 断言本身有牙，且当前夹具（`NIGHT_WOLVES` / 玩家 1 号女巫）不再依赖
+`legalTargets` 的非空性来间接证明泄漏。**C-133 的加固成立。**
+
+#### 2.4 非阻塞观察（不改变 Reviewed 结论）
+
+1. **`tests/server/orchestrator.test.ts:606-609` 的早期 `return` 仍可能静默跳过。**
+   如果未来引擎/夹具变化使首轮投票不再并列，用例会直接 `return` 并以绿色结束。实测
+   （M-R6-P2，仅改测试目标分配、不改生产代码）：把所有票集中投给 `a` 后，夹具相位变成
+   `NIGHT_WOLF_CHAT`，用例仍 **1 passed**。建议把 `return` 换成
+   `expect(afterVote.phase).toBe('DAY_VOTE_RUNOFF')` 或 `throw`，让夹具漂移可见。
+   当前夹具确实是 `DAY_VOTE_RUNOFF`，所以这是**加固建议**，不是本轮的功能缺陷。
+2. **注释与实际席位不符**：`tests/server/orchestrator.test.ts:490` 写「玩家坐 1 号」，
+   探针实际 `playerSeat:2`（循环创建对局直到玩家是狼）。建议改成「玩家坐到任意狼席（当前为 2 号）」。
+3. **新用例没有断言事件流**：它只断言 `read('vote')` 与 `decide` 不覆盖玩家席，没有断言
+   玩家重投票产生了 `VOTE_CAST`、也没有断言无 `INVALID_RUNOFF_TARGET` / `NOT_YOUR_TURN`。
+   Round 5 的建议里包含这些；它们不是本轮用户声明的判据，故记为非阻塞。
+4. **`as never` 与 150 行夹具**：测试用大量 `as never` 和手工推进构造平票，类型检查帮不上忙；
+   可抽一个 `driveToRunoff(playerSeat)` helper，降低后续维护成本。
+5. **文档残项**：RFC §8.11 的「80 files / 689 tests」与实跑一致；但 §8.10 仍写
+   「81 files / 688 tests」，`README.md:12` 的 RFC 计数仍是「11 Reviewed、1 Changes requested、
+   4 Not started」，`TEST-STRATEGY.md:332-345` 的 RFC-012 行仍全部 `proposed`。这些是
+   C-124 / C-131 的旧非阻塞项，不在本轮复核范围，但 RFC-012 转 `Reviewed` 后计数应同步为
+   「12 Reviewed、0 Changes requested、4 Not started」。
+
+---
+
+### 3. 五个维度（按本轮改动范围）
+
+#### 3.1 RFC ADHERENCE — **PASS**
+
+- C-127 的两半（投影只含并列者、runGame 的 RUNOFF 玩家输入）都成立，且各自有变异探针证明；
+- C-133 的夜间信息边界保持成立，断言加固后不再有静默失效的入口；
+- 没有新增范围外功能；`runGame` 的改动是与原内联条件等价的重构，`git diff` 只改了这一行
+  生产代码（`src/server/orchestrator.ts:193`）；
+- 没有未记录的新偏离。RFC §8.11 的记录与实跑一致（80 files / 689 tests）。
+
+#### 3.2 RULES COMPLIANCE — **PASS（本轮范围）**
+
+- **TEST-1**：C-127(a) / C-127(b) 的回归锁都能打红；C-133 的 `pending` 断言也能打红。
+  这是本轮的核心判据，通过。
+- **TEST-6**：本轮没有新增用户可见功能；e2e 仍 8/8，不涉及新的 Must 主路径，N/A。
+- **DOC-1**：§8.11 的验证数字正确；§8.10 的 81/688 与 §8.6 等旧文档残项仍是 C-124 的
+  非阻塞范围，未被本轮引入。
+- **SEC-5 / UI-1**：本轮没有改投影输出口；C-133 的默认 `pending` 仍只给当前行动者。
+
+#### 3.3 SECURITY — **PASS**
+
+- 夜间 `pending` 只给当前行动者（`routes/games.ts:99-100`）；M-R6-5 证明回退会红。
+- 新测试只读/写测试内 registry；没有扩大 HTTP 面，也没有把完整状态暴露给客户端。
+- `?pending=` 显式查询仍可由客户端指定（Round 4 / 5 的非阻塞旧项，未变），不构成本轮新风险。
+
+#### 3.4 PERFORMANCE — **N/A**
+
+- 本轮没有生产性能改动；`isPlayerPhase` 是 O(1) 字符串比较，`runGame` 的调用次数不变。
+- C-126 的每秒全量 GET / `project()` 是旧非阻塞项，未在本轮范围内。
+
+#### 3.5 MAINTAINABILITY — **NEEDS WORK（非阻塞）**
+
+- 新用例的早期 `return` 是**可静默通过**的入口（§2.4 第 1 条），建议改成断言；
+- 注释「玩家坐 1 号」与实际 2 号不符；
+- 150 行手工构造 + 大量 `as never`，可读性和类型安全都有改进空间；
+- 未断言玩家重投的事件流（`VOTE_CAST` / 无 `INVALID_RUNOFF_TARGET`）；
+- 这些都是测试质量问题，不影响本轮「行为已锁住」的结论，故不阻塞 `Reviewed`。
+
+---
+
+### 4. 结论
+
+**Overall Risk Level: Low（本轮改动范围）。** Round 5 的两项阻塞都是「测试锁没有鉴别力」
+的问题，本轮已用夹具和非死代码调用点修复；三组反向变异全部打红，全量 80 files / 689 tests
+与 8/8 e2e 全绿。生产代码只改了一行等价重构，没有可见行为变化。
+
+**Blocking Issues（必须修复后才能合并）**
+
+- 无。
+
+**Improvement Suggestions（非阻塞）**
+
+1. 把 `tests/server/orchestrator.test.ts:606-609` 的 `return` 换成
+   `expect(afterVote.phase).toBe('DAY_VOTE_RUNOFF')`，避免夹具漂移时静默通过。
+2. 修正 `:490` 的「玩家坐 1 号」注释（当前实际是 2 号），或改成从 `playerSeat` 动态生成。
+3. 在 runGame 用例里补事件流断言：玩家重投产生 `VOTE_CAST`、无
+   `INVALID_RUNOFF_TARGET` / `NOT_YOUR_TURN`，并断言 `runoff` 含玩家席。
+4. 抽 `driveToRunoff` 夹具 helper，减少 150 行 setup 与 `as never`。
+5. 顺手把 RFC §8.10 的「81 files / 688 tests」改成 80/689；RFC-012 转 Reviewed 后同步
+   `README.md:12` 的「12 Reviewed、0 Changes requested、4 Not started」；
+   `TEST-STRATEGY.md:332-345` 的 `Exists?` 回填仍是 C-131 的旧非阻塞项。
+6. C-133 可再补一条 `NIGHT_SEER` / 村民观察者的真实路由用例（Round 5 建议），
+   让「折叠后相位 + pending」在另一条夜间路径上也有锁；当前用例已足以证明行为。
+
+---
+
+### 5. 探针恢复与最终门禁
+
+探针前备份的 5 个源码/测试文件与恢复后的 SHA-256（`shasum -a 256 -c` 全部 OK，
+`git status --porcelain` 为空）：
+
+```text
+96f0224e4304a95dcd8166044adaa1deeeefda94bb031b8fd3dbc85f10331b76  src/server/orchestrator.ts
+67a6cba74716288f9ef77216d2b1148f19cbf46682265fb6dd9e0d83b3681b5e  src/server/project/targets.ts
+8887b7c3ea590b71da3e417ee96933ceb2647e6083386b45f0becf6a050e0c10  src/server/routes/games.ts
+d71f3057a3f1ec76cab29fcbac17deb5684d645e624a977a629425190d6e3024  tests/server/strengthen.test.ts
+e1048155aa71f796f9c168d4a00bfcb016e43875e2587e3b1e7ae2d036641880  tests/server/orchestrator.test.ts
+```
+
+本轮临时改动（含测试内的 `PROBE-R6-FIXTURE` / `PROBE-R6-RESULT` 日志、M-R6-P2 的投票目标
+修改）全部从 `/tmp/howl-rfc012-r6-probes/backup/` 恢复；**没有使用 `git checkout` /
+`git restore`**；临时探针测试没有写入仓库；没有 `git commit`。
+
+最终（恢复后）重跑：
+
+```text
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → 80 files / 689 tests 全绿
+$ pnpm test:e2e → 8 passed
+```
+
+**状态**：RFC-012 → **`Reviewed`**。
