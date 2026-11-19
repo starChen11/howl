@@ -168,9 +168,10 @@ describe('C-73 · AC-13：FINISHED 的对局每次都重新 replay，不缓存',
 });
 
 describe('C-74 / C-75 · 换存储实现后路由仍然工作；多个席位都做过深度比较', () => {
-  it('buildApp 注入第二个实现后，创建 + 读取 + 提交都正常', async () => {
+  it('buildApp 注入第二个实现后，路由确实往那个实例里写', async () => {
     class SecondStore extends InMemoryMetaStore {}
-    const app = buildApp({ store: new SecondStore() });
+    const injected = new SecondStore();
+    const app = buildApp({ store: injected });
 
     const created = await app.inject({
       method: 'POST',
@@ -179,6 +180,12 @@ describe('C-74 / C-75 · 换存储实现后路由仍然工作；多个席位都�
     });
     const cookie = cookieOf(created.headers);
     const { gameId } = created.json<{ gameId: string }>();
+
+    // 用**同一个注入实例**建注册表读回：如果 buildApp 忽略注入、自己 new 一个 store，
+    // 这里就读不到——只看「路由能返回 200」测不出这件事。
+    const registry = new GameRegistry(injected);
+    const record = await registry.getGame(gameId);
+    expect(record).toBeDefined();
 
     const view = await app.inject({
       method: 'GET',

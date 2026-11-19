@@ -118,6 +118,23 @@ describe('AC-13 · 终局记录每次都重新 replay', () => {
     expect(registry.stateOf(record).day).toBe(first.day);
   });
 
+  it('改掉 record.events 后 stateOf 必须跟着变（任何形式的缓存都会露馅）', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await playToFinish(registry, session);
+
+    const before = registry.stateOf(record).seq;
+
+    // 砍掉一半事件：如果实现缓存了状态，这里仍会返回 before
+    const truncated = {
+      ...record,
+      events: record.events.slice(0, Math.floor(record.events.length / 2)),
+    };
+    const after = registry.stateOf(truncated).seq;
+
+    expect(after).toBeLessThan(before);
+  });
+
   it('释放后该局取不到状态（事件流是唯一权威），GET 返回 410', async () => {
     const registry = new GameRegistry(new InMemoryMetaStore());
     const session = await registry.createSession();
