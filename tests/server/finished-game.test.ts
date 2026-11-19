@@ -135,6 +135,23 @@ describe('AC-13 · 终局记录每次都重新 replay', () => {
     expect(after).toBeLessThan(before);
   });
 
+  it('同长度的不同事件流也必须反映出来（按长度校验的缓存会露馅）', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await playToFinish(registry, session);
+
+    const last = record.events[record.events.length - 1];
+    if (last === undefined) throw new Error('没有事件');
+
+    // 长度不变、内容变了（seq 跳号）→ replay 必须抛错。按长度命中缓存的实现会返回旧状态。
+    const tampered = {
+      ...record,
+      events: [...record.events.slice(0, -1), { ...last, seq: last.seq + 5 }],
+    };
+
+    expect(() => registry.stateOf(tampered)).toThrow();
+  });
+
   it('释放后该局取不到状态（事件流是唯一权威），GET 返回 410', async () => {
     const registry = new GameRegistry(new InMemoryMetaStore());
     const session = await registry.createSession();

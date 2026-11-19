@@ -147,7 +147,7 @@ describe('C-72 · AC-8：动作必须真的被引擎接受', () => {
   });
 });
 
-describe('C-73 · AC-13：FINISHED 的对局每次都重新 replay，不缓存', () => {
+describe('C-73 的历史用例（只翻 status，真正的 FINISHED 用例在 finished-game.test.ts）', () => {
   it('终局记录两次 stateOf 深度相等，改返回值不影响下一次', async () => {
     const registry = new GameRegistry(new InMemoryMetaStore());
     const session = await registry.createSession();

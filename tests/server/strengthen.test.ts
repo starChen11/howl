@@ -165,7 +165,7 @@ describe('C-65 · AC-8：B1 的 HTTP 回归测试要有 server 事件可筛', ()
   });
 });
 
-describe('C-67 · AC-13：终局状态每次都重新 replay，不缓存', () => {
+describe('C-67 · 状态重建：两次 stateOf 结果一致（真正的 FINISHED 用例在 finished-game.test.ts）', () => {
   it('同一记录两次 stateOf 深度相等，且改返回值不影响第二次', async () => {
     const registry = new GameRegistry(new InMemoryMetaStore());
     const session = await registry.createSession();

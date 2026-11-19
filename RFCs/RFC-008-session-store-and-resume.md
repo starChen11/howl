@@ -274,10 +274,24 @@ $ pnpm test → 59 files / 495 tests
 | 项 | 问题 | 处理 |
 |---|---|---|
 | **C-73** 仍未闭合 | 我声称「把 `store.test.ts` 那条改名」，但 `git diff` 显示该文件 0 行改动——又一次「声称改了但没改」。新用例只把副本的 `status` 翻成 `finished`，既没真的走到 FINISHED，也没走 release | 新增 `tests/server/finished-game.test.ts`：**真的用脚本打到 FINISHED**（400 次内），再断言两次 `stateOf` 深度相等、改返回值不影响下一次；另有一条断言释放后无法重建。同时真的把 `store.test.ts` 的 describe 改名（`grep` 已确认）。反向探针：给终局记录加缓存 → 释放用例变红 |
-| **C-76**（非阻塞） | `strengthen.test.ts` 涨到 485 行，超过 `STYLE-6` 的 400 行上限 | 按主题拆成两个文件：`strengthen.test.ts`（289 行，事件来源/投影一致性/retention）与 `release-and-entry.test.ts`（220 行，释放语义与 HTTP 入口） |
+| **C-76**（非阻塞） | `strengthen.test.ts` 涨到 485 行，超过 `STYLE-6` 的 400 行上限 | 按主题拆成两个文件：`strengthen.test.ts`（289 行，事件来源/投影一致性/retention）与 `release-and-entry.test.ts`（227 行，释放语义与 HTTP 入口） |
 | **N-R4-1** | AC-8 只断言「非 REJECTED + version 前进」，动作被接受但空转也能满足 | 追加断言：这一夜必须产出 `DAY_STARTED`（女巫选 none → 结算 → 天亮）。反向探针（把 `none` 改成恒拒绝）会红 |
 | **N-R4-2 / C-75** | 注入存储的用例用空子类，且「创建 + 读取 + 提交」正文没有提交；`buildApp` 忽略注入也照样绿 | 用**同一个注入实例**建注册表读回记录；忽略注入时该用例变红 |
 
 ```
-$ pnpm test → 61 files / 497 tests
+$ pnpm test → 61 files / 498 tests
+```
+
+### 8.12 Round 6 回应
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-73** 「任何形式的缓存都会露馅」不成立 | 用 `{ length, state }` 按 `events.length` 校验缓存时，全量仍 61/498 全绿——我的用例只砍长度，没换内容 | 新增：**同长度、不同内容**的事件流（最后一条 `seq` 跳号）必须让 `stateOf` 抛错。按长度命中缓存的实现会返回旧状态，因此必红（已实跑） |
+| **C-75** | 已用注入实例读回 | 关闭 |
+| **§8.11 数字** | 「400 次内」实际 800、`release-and-entry` 218/220 实际 227、497 实际 498 | 已改 |
+| 两条名不副实的旧「AC-13」用例 | `release-and-entry` 只翻副本 `status`、`strengthen` 测的是 active 记录 | describe 改名，明确真正的 FINISHED 用例在 `finished-game.test.ts` |
+| **C-61**（AC-13 原文与 §2.5 矛盾） | 「释放后 replay 得同一状态」不可能成立——事件流已被清空 | 保持 Open，待 `/manage-changes` 修正 AC 措辞；本 RFC 的实现与测试按「未释放的终局记录不缓存」执行 |
+
+```
+$ pnpm test → 61 files / 499 tests
 ```

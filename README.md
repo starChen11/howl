@@ -34,8 +34,8 @@ pnpm test       # 498 个用例，含五条命令与覆盖率门禁
 
 ```
 RFC-001 ~ 007  Reviewed（共七个）
-RFC-008 会话与存储  Changes requested（Round 1，见 reviews/REVIEW-RFC-008.md）
-下一步：修复 RFC-008 的阻塞项（C-59 ~ C-62）
+RFC-008 会话与存储  Implemented（Round 6 修复中）
+下一步：/review-rfc 008
 ```
 
 随时查看全局进度：`/workflow-status`。
