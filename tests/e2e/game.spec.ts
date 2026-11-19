@@ -192,8 +192,8 @@ test.describe('整局界面', () => {
     expect(reached, 'Tab 到不了投票按钮').toBe(true);
     await page.keyboard.press('Enter');
 
-    // 投票后按钮消失（本轮结束或轮到别人）
-    await expect(voteButton).toBeHidden({ timeout: 25_000 });
+    // 投票的结果会出现在公开事件面板里（票型）；这比「按钮消失」更接近事实
+    await expect(page.getByText(/号投 \d+ 号|号弃权/).first()).toBeVisible({ timeout: 25_000 });
   });
 
   test('键盘：Tab 能到发言区，Enter 能提交', async ({ page }) => {

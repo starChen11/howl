@@ -364,3 +364,75 @@ body {
   white-space: nowrap;
   border: 0;
 }
+
+/* 公开事件面板 */
+.panel,
+.notepad,
+.spectator,
+.truth {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px;
+  min-width: 0;
+}
+
+.panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 32dvh;
+  overflow-y: auto;
+}
+
+.panel__item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.panel__jump {
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--surface-2);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.panel__text {
+  color: var(--muted);
+}
+
+/* 被定位到的发言 */
+.feed__line--highlight {
+  outline: 2px solid var(--accent);
+}
+
+/* 记事板 */
+.notepad__box {
+  width: 100%;
+  min-height: 64px;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--surface-2);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+/* 观战提示 */
+.spectator__notice {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.truth ul {
+  margin: 0;
+  padding-left: 18px;
+}

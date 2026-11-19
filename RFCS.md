@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.126 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.127 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -49,7 +49,7 @@
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Reviewed |
-| [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
+| [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Implemented |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Not started |
@@ -919,6 +919,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.127 | RFC-013 实现完成（Status → Implemented）：事件面板（三类公开事件 + 点击定位高亮）、观战态、真相视图（SEC-6 服务端 403）、局内记事板（只写本地） |
 | 2026-11-19 | v2.126 | RFC-012 Round 6 复核（Status → Reviewed）：C-127(a) 投影夹具（alive `[1,2,3,4]`、runoff `[2,3]`）回退成 `[...alive]` → **1 failed**；C-127(b) `runGame` 调 `isPlayerPhase`，删 helper/调用点的 RUNOFF 均 **1 failed**，真实平票探针 `kinds:["vote"]`、`aiCoveredPlayer:false`；C-133 断言移出 `if` 并断言 `pending:null`，回退 → **1 failed**。门禁 80 files / 689 tests、覆盖率行 96.96% / 分支 92.85%、8/8 e2e 全绿；探针从 `/tmp/howl-rfc012-r6-probes/backup/` 文件备份恢复、5 个文件 SHA-256 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 6 |
 | 2026-11-19 | v2.125 | RFC-012 Round 5 修复（Status → Implemented）：`isPlayerPhase` 接进 `runGame` 并补平票重投用例；投影夹具加入非并列者；C-133 断言收紧 |
 | 2026-11-19 | v2.124 | RFC-012 Round 5 复核（Status → `Changes requested`）：**C-133（安全）关闭**（真实路由 `NIGHT_SEER` / 村民观察者 → `pending:null` / `legalTargets:[]`；回退 → 1 failed）；**C-120 关闭**（删路由 `setDraft` → 1 failed；8/8 稳定）；**C-127 仍 Open（阻塞，测试）**——投影用例夹具使「只含并列者」与「全部存活」同集（M-R5-6 仍绿），`runGame` 的 `DAY_VOTE_RUNOFF` 分支删掉后 27 files / 240 tests 全绿（M-R5-3），`isPlayerPhase` 为死代码（M-R5-4）。门禁 80 files / 688 tests、8/8 e2e 全绿；探针从 `/tmp/howl-rfc012-r5-probes/backup/` 文件备份恢复、4 个文件 SHA-256 一致、临时测试删除、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 5 |

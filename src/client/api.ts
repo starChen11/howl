@@ -58,6 +58,19 @@ export class ApiClient {
     return { ok: false, error: (await response.json()) as ApiError };
   }
 
+  /** 真相视图数据；活着的玩家会拿到 403（SEC-6）。 */
+  async truth(
+    gameId: string,
+  ): Promise<{ seats: { seat: number; roleLabel: string; alive: boolean }[] } | null> {
+    const response = await this.fetchImpl(`${this.baseUrl}/api/games/${gameId}/truth`, {
+      credentials: 'same-origin',
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as {
+      seats: { seat: number; roleLabel: string; alive: boolean }[];
+    };
+  }
+
   /** 同步草稿：超时由服务端用最后一次草稿提交（RFC-011 AC-6）。 */
   async draft(gameId: string, text: string): Promise<void> {
     await this.fetchImpl(`${this.baseUrl}/api/games/${gameId}/input`, {

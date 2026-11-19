@@ -12,6 +12,7 @@ import type { ProjectedContext } from '@shared/project';
 import type { PendingDecision } from '@shared/project';
 
 import { project } from '../project';
+import { buildTruth, canSeeTruth } from '../view/truth';
 import { nextActor, pendingForPhase } from '../orchestrator';
 import { isWithinLimit, remainingSeconds } from '../speech';
 import { resolveSession } from '../session';
@@ -123,6 +124,25 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
 
     const started = loop.start(session, record.gameId);
     return reply.code(started ? 202 : 200).send({ started });
+  });
+
+  // 真相视图（RFC-013 / SEC-6）：只有**已出局**的玩家能拿到。
+  app.get<{ Params: { id: string } }>('/api/games/:id/truth', async (request, reply) => {
+    const { session } = await resolveSession(registry, request, reply, production);
+    const record = await registry.getGame(request.params.id);
+    if (record === undefined || !session.gameIds.includes(record.gameId)) {
+      return reply.code(404).send({ error: 'GAME_NOT_FOUND', message: '对局不存在' });
+    }
+
+    const state = registry.stateOf(record);
+    if (!canSeeTruth(state, record.playerSeat)) {
+      return reply.code(403).send({
+        error: 'TRUTH_LOCKED',
+        message: '对局进行中不能查看真相',
+      });
+    }
+
+    return reply.send(buildTruth(state));
   });
 
   // 草稿同步：客户端每敲几个字就 POST 一次，超时由服务端用它提交（AC-6）。

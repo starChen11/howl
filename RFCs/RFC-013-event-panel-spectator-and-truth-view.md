@@ -91,3 +91,72 @@
 |---|---|---|
 | Q-013-1 | 记事板是否属于「跨对局状态」（是否要进 `MetaStore`） | **(assumption)** 属于会话级，随会话存在，不进 `MetaStore` |
 | Q-013-2 | 真相视图是否允许截图分享 | **不属于技术问题**；D37 已定内容完全放开，产品层面不干预 |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。前置 RFC-011 已 `Reviewed`。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| 面板对齐 | **A 方案**（用户选）：点面板条目，发言流滚动/高亮到对应 `seq` |
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+| **D-1** | 真相对活着的玩家返回 **403 `TRUTH_LOCKED`** | SEC-6：前端隐藏不算数，服务端必须拒绝 |
+| **D-2** | 真相开关状态只在组件内存（`src/client/state/truth-view.ts`） | 持久化会让玩家忘记自己开着，之后看到的都带着「已知答案」的偏差 |
+| **D-3** | 记事板只写 `localStorage`，服务端**没有**对应字段 | 它一旦进投影或提示词就是作弊；最安全的实现是「服务端根本拿不到」 |
+| **D-4** | 面板从 `publicEvents` 重建，不新增事件 | 面板是「已经公开的事实」的第二视角，不是第二份真相 |
+| **D-5** | 放逐条目用 `PHASE_CHANGED → DAY_LYNCH` 触发 | 引擎的放逐结果通过相位表达，没有单独的「放逐」事件 |
+
+### 8.3 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 服务端新增 | `src/server/view/truth.ts`（`canSeeTruth` / `buildTruth`）、`GET /api/games/:id/truth` |
+| 客户端新增 | `components/{EventPanel,SpectatorBar,Notepad}.tsx`、`state/truth-view.ts` |
+| 客户端修改 | `App.tsx`（侧栏面板/记事板、观战条、真相区、高亮）、`SpeechFeed.tsx`（高亮） |
+| 样式 | `styles/global.css`（面板/记事板/观战/真相） |
+| 测试新增 | `tests/server/truth.test.ts`、`tests/client/{event-panel,spectator}.test.tsx` |
+| 文档 | 本文件 §8、`RFCS.md`、`TEST-STRATEGY.md`、`README.md` |
+
+### 8.4 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `event-panel.test.tsx` · 面板只有 `death` / `vote` 两类（放逐由相位触发） | PASS |
+| 2 | 同上 · 条目不包含发言文本与 `role` 字段 | PASS |
+| 3 | 同上 · 条目含 `seq` 与「第 N 天」 | PASS |
+| 4 | 同上 · 点击回调带上对应 `seq`；`App` 用它给发言流加高亮 | PASS |
+| 5 | `spectator.test.tsx` · 出局后仍渲染发言流与面板 | PASS |
+| 6 | 同上 · 没有输入框、没有投票按钮，只有观战提示 | PASS |
+| 7 | 对局由 `GameLoop` 推进到 `FINISHED`（RFC-012 AC-15），观战态不影响 | PASS |
+| 8 | `event-panel.test.tsx` · 默认关；`aria-pressed` 反映状态 | PASS |
+| 9 | `spectator.test.tsx` · 打开后显示所有席位角色 | PASS |
+| 10 | 同上 · 再点关闭，真相区消失 | PASS |
+| 11 | 同上 · 整个开关过程 `client.submit` 调用次数为 0 | PASS |
+| 12 | `truth.test.ts` · 活着的玩家 `GET /truth` → 403 `TRUTH_LOCKED` | PASS |
+| 13 | 记事板只写 `localStorage`，服务端类型里没有它 | PASS |
+| 14 | 同上：`client.submit` / `client.draft` 都不会带记事板内容（用例断言 `submits === 0`） | PASS |
+| 15 | 重新挂载 `Notepad` 后内容仍在 | PASS |
+
+### 8.5 验证输出（实跑）
+
+```
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → 83 files / 700 tests
+$ pnpm test:e2e → 8 passed
+```
+
+### 8.6 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| 死亡原因 | `pendingDeaths` 只有席位；真实死因在 `PLAYER_DIED` 事件里，已出局者本可看到 | 后续（可与 RFC-014 一起） |
+| 真相里的夜间行动结果 | 当前只给角色，不给「狼刀了谁 / 验了谁」 | RFC-014 |
+| 记事板跨设备 | 只在本浏览器；会话级同步需要 `MetaStore` | 后续 |

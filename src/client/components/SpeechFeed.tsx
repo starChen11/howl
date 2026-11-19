@@ -12,7 +12,13 @@ export interface SpeechLine {
   degraded?: boolean;
 }
 
-export function SpeechFeed({ lines }: { lines: SpeechLine[] }) {
+export function SpeechFeed({
+  lines,
+  highlightSeq,
+}: {
+  lines: SpeechLine[];
+  highlightSeq?: number | null;
+}) {
   const endRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLOListElement>(null);
 
@@ -32,7 +38,11 @@ export function SpeechFeed({ lines }: { lines: SpeechLine[] }) {
       <h2>发言记录</h2>
       <ol className="feed__list" ref={containerRef} aria-live="polite">
         {lines.map((line) => (
-          <li key={line.id} className="feed__line">
+          <li
+            key={line.id}
+            className={`feed__line${line.id === highlightSeq ? ' feed__line--highlight' : ''}`}
+            data-seq={line.id}
+          >
             <span className="feed__seat">{line.seat} 号</span>
             <span className="feed__text">{line.text}</span>
             {line.degraded === true ? <span className="feed__degraded">（模型降级）</span> : null}

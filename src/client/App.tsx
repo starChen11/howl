@@ -5,6 +5,10 @@ import { ApiClient } from './api';
 import { boardAnnouncement, buildBoard, speakingSeat } from './game-state';
 import { IdCard } from './components/IdCard';
 import { VoteInput } from './components/VoteInput';
+import { EventPanel, buildPanelEntries } from './components/EventPanel';
+import { SpectatorBar } from './components/SpectatorBar';
+import { Notepad } from './components/Notepad';
+import { toggleTruth, initialTruthState } from './state/truth-view';
 import { SeatGrid } from './components/SeatGrid';
 import { SpeechFeed, type SpeechLine } from './components/SpeechFeed';
 import { SpeechInput } from './components/SpeechInput';
@@ -23,6 +27,11 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   const [stream, setStream] = useState<StreamState>(initialStreamState);
   const [remaining, setRemaining] = useState(60);
   const [error, setError] = useState<string | null>(null);
+  const [truth, setTruth] = useState(initialTruthState);
+  const [truthData, setTruthData] = useState<{
+    seats: { seat: number; roleLabel: string; alive: boolean }[];
+  } | null>(null);
+  const [highlight, setHighlight] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -58,6 +67,18 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   );
 
   const board = useMemo(() => (view === null ? null : buildBoard(view.view)), [view]);
+  const panelEntries = useMemo(() => (view === null ? [] : buildPanelEntries(view.view)), [view]);
+
+  const onToggleTruth = useCallback(async () => {
+    const next = toggleTruth(truth);
+    setTruth(next);
+    if (!next.enabled) {
+      setTruthData(null);
+      return;
+    }
+    // 真相数据只对已出局者开放；服务端活着会回 403（SEC-6）。
+    setTruthData(await client.truth(gameId));
+  }, [client, gameId, truth]);
 
   // 读屏公告只在「阶段 / 天数 / 轮到谁」变化时更新；跟着倒计时每秒刷会淹掉读屏（C-123）。
   const [announcement, setAnnouncement] = useState('');
@@ -137,17 +158,35 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
         <div className="app__side">
           <IdCard ctx={ctx} />
           <SeatGrid seats={board.seats} />
+          <EventPanel entries={panelEntries} onJump={(seq) => setHighlight(seq)} />
+          <Notepad gameId={gameId} />
         </div>
-        <SpeechFeed lines={lines} />
+        <SpeechFeed lines={lines} highlightSeq={highlight} />
       </main>
       <p className="sr-only" role="status" aria-live="polite">
         {announcement}
       </p>
       <footer className="app__footer">
-        {myTurn ? (
+        {ctx.self.alive ? null : (
+          <SpectatorBar truthEnabled={truth.enabled} onToggleTruth={() => void onToggleTruth()} />
+        )}
+        {truth.enabled && truthData !== null ? (
+          <section className="truth" aria-label="真相视图">
+            <h2>真相视图</h2>
+            <ul>
+              {truthData.seats.map((seat) => (
+                <li key={seat.seat}>
+                  {seat.seat} 号：{seat.roleLabel}
+                  {seat.alive ? '' : '（已出局）'}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+        {ctx.self.alive && myTurn ? (
           <SpeechInput remaining={remaining} onSubmit={submit} onSkip={skip} onDraft={syncDraft} />
         ) : null}
-        {ctx.phase === 'DAY_VOTE' || ctx.phase === 'DAY_VOTE_RUNOFF' ? (
+        {ctx.self.alive && (ctx.phase === 'DAY_VOTE' || ctx.phase === 'DAY_VOTE_RUNOFF') ? (
           <VoteInput
             targets={ctx.legalTargets
               .filter((target) => typeof target === 'number' && target !== ctx.self.seat)
