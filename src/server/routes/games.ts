@@ -142,7 +142,7 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       });
     }
 
-    return reply.send(buildTruth(state));
+    return reply.send(buildTruth(state, record.events));
   });
 
   // 草稿同步：客户端每敲几个字就 POST 一次，超时由服务端用它提交（AC-6）。

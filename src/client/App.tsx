@@ -69,6 +69,13 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   const board = useMemo(() => (view === null ? null : buildBoard(view.view)), [view]);
   const panelEntries = useMemo(() => (view === null ? [] : buildPanelEntries(view.view)), [view]);
 
+  const jumpTo = useCallback((seq: number) => {
+    setHighlight(seq);
+    // 滚动到对应发言（用 data-seq 精确定位）
+    const target = document.querySelector(`[data-seq="${seq}"]`);
+    (target as HTMLElement | null)?.scrollIntoView?.({ block: 'center' });
+  }, []);
+
   const onToggleTruth = useCallback(async () => {
     const next = toggleTruth(truth);
     setTruth(next);
@@ -158,7 +165,7 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
         <div className="app__side">
           <IdCard ctx={ctx} />
           <SeatGrid seats={board.seats} />
-          <EventPanel entries={panelEntries} onJump={(seq) => setHighlight(seq)} />
+          <EventPanel entries={panelEntries} onJump={jumpTo} />
           <Notepad gameId={gameId} />
         </div>
         <SpeechFeed lines={lines} highlightSeq={highlight} />

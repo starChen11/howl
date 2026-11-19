@@ -144,7 +144,7 @@ describe('AC-9 / AC-10 · 出局后能看真相，且全席位身份齐全', () 
     const { registry, record } = await gameWithDeadPlayer(store);
     const before = JSON.stringify(registry.stateOf(record));
 
-    buildTruth(registry.stateOf(record));
+    buildTruth(registry.stateOf(record), record.events);
 
     expect(JSON.stringify(registry.stateOf(record))).toBe(before);
   });

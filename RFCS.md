@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.128 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.129 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -49,7 +49,7 @@
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Reviewed |
-| [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Changes requested |
+| [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Implemented |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Not started |
@@ -938,6 +938,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.129 | RFC-013 Round 1 修复（Status → Implemented）：面板锚点让 A 方案可达、补夜间死亡/放逐、真相含夜间行动、共享 Zod 契约、活人无入口、记事板隔离与零副作用用例 |
 | 2026-11-19 | v2.128 | RFC-013 Round 1 评审（Status → Changes requested）：C-134 ~ C-143 阻塞；AC-12 服务端 403 有牙，AC-11 / AC-13·14 未验证，ACL 8/9/10 只断言标题，A 方案因 seq 永不匹配而无法触发；AC-1 漏夜间死亡/放逐、AC-9 缺夜间行动、e2e 投票断言被改弱；探针从文件备份恢复、8 个文件 SHA-256 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-013.md`](reviews/REVIEW-RFC-013.md) |
 | 2026-11-19 | v2.127 | RFC-013 实现完成（Status → Implemented）：事件面板（三类公开事件 + 点击定位高亮）、观战态、真相视图（SEC-6 服务端 403）、局内记事板（只写本地） |
 | 2026-11-19 | v2.126 | RFC-012 Round 6 复核（Status → Reviewed）：C-127(a) 投影夹具（alive `[1,2,3,4]`、runoff `[2,3]`）回退成 `[...alive]` → **1 failed**；C-127(b) `runGame` 调 `isPlayerPhase`，删 helper/调用点的 RUNOFF 均 **1 failed**，真实平票探针 `kinds:["vote"]`、`aiCoveredPlayer:false`；C-133 断言移出 `if` 并断言 `pending:null`，回退 → **1 failed**。门禁 80 files / 689 tests、覆盖率行 96.96% / 分支 92.85%、8/8 e2e 全绿；探针从 `/tmp/howl-rfc012-r6-probes/backup/` 文件备份恢复、5 个文件 SHA-256 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 6 |

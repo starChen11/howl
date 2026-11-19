@@ -48,11 +48,13 @@ function view(partial: Partial<ProjectedContext> = {}): ProjectedContext {
 }
 
 function fakeClient(ctx: ProjectedContext) {
-  const calls = { submits: 0, truth: 0 };
+  const calls = { submits: 0, drafts: 0, truth: 0 };
   const client = {
     game: async () => ({ version: 5, view: ctx }),
     openStream: () => () => undefined,
-    draft: async () => undefined,
+    draft: async () => {
+      calls.drafts += 1;
+    },
     submit: async () => {
       calls.submits += 1;
       return { ok: true as const };
@@ -69,6 +71,19 @@ function fakeClient(ctx: ProjectedContext) {
   } as unknown as ApiClient;
   return { client, calls };
 }
+
+describe('AC-12 · 活着的玩家没有真相入口', () => {
+  it('进行中不渲染观战条，也没有真相按钮', async () => {
+    const { client } = fakeClient(
+      view({ self: { seat: 1, role: 'villager', alive: true, personaId: null } }),
+    );
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByRole('heading', { name: '你的身份' });
+    expect(screen.queryByText(/你已出局/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /真相视图/ })).toBeNull();
+  });
+});
 
 describe('AC-5 ~ AC-7 · 出局后观战', () => {
   it('没有发言输入、没有投票，只有观战提示', async () => {
@@ -94,12 +109,14 @@ describe('AC-8 ~ AC-11 · 真相视图', () => {
     await user.click(screen.getByRole('button', { name: '打开真相视图' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: '真相视图' })).toBeTruthy());
     expect(screen.getByText(/2 号：狼人/)).toBeTruthy();
-
+    // 关闭后内容必须真的消失，而不只是标题消失（评审 C-136）
     await user.click(screen.getByRole('button', { name: '关闭真相视图' }));
-    await waitFor(() => expect(screen.queryByRole('heading', { name: '真相视图' })).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/2 号：狼人/)).toBeNull());
+    expect(screen.queryByRole('heading', { name: '真相视图' })).toBeNull();
 
-    // 开关是纯视图状态：没有提交任何 action（AC-11）
+    // 开关是纯视图状态：没有任何写操作，视图快照也没变（AC-11）
     expect(calls.submits).toBe(0);
+    expect(calls.drafts).toBe(0);
     expect(calls.truth).toBe(1);
   });
 });

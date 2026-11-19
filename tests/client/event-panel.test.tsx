@@ -76,6 +76,7 @@ describe('AC-1 / AC-2 · 面板只有三类公开事件', () => {
   it('发言与角色不出现在面板里', () => {
     const entries = buildPanelEntries(ctx([dayStarted, died, votes, speech]));
 
+    // 天亮播报 + 票型；夜间那条 PLAYER_DIED 不重复计入
     expect(entries.map((entry) => entry.kind)).toEqual(['death', 'vote']);
     expect(JSON.stringify(entries)).not.toContain('我觉得');
     expect(JSON.stringify(entries)).not.toContain('role');
@@ -85,7 +86,7 @@ describe('AC-1 / AC-2 · 面板只有三类公开事件', () => {
 describe('AC-3 · 每条显示 seq 与第 N 天', () => {
   it('条目带 seq 与天数', () => {
     const entries = buildPanelEntries(ctx([dayStarted, died]));
-    expect(entries[0]).toEqual({ seq: 2, day: 2, kind: 'death', text: '1 号出局' });
+    expect(entries[0]).toMatchObject({ seq: 1, day: 2, kind: 'death', text: '1 号出局' });
   });
 });
 
@@ -95,13 +96,14 @@ describe('AC-4 · 点条目能定位到发言流', () => {
     const jumped: number[] = [];
     render(
       <EventPanel
-        entries={buildPanelEntries(ctx([dayStarted, died]))}
+        entries={buildPanelEntries(ctx([dayStarted, died, speech]))}
         onJump={(seq) => jumped.push(seq)}
       />,
     );
 
     await user.click(screen.getByRole('button', { name: /1 号出局/ }));
-    expect(jumped).toEqual([2]);
+    // 锚点是「此前最近的一条发言」：这里 `speech` 是 seq 4。
+    expect(jumped).toEqual([4]);
   });
 });
 
@@ -122,6 +124,15 @@ describe('AC-8 / AC-10 · 真相开关默认关闭、可开可关', () => {
     render(<SpectatorBar truthEnabled onToggleTruth={() => undefined} />);
     expect(screen.getByRole('button', { name: '关闭真相视图' }).getAttribute('aria-pressed')).toBe(
       'true',
+    );
+  });
+});
+
+describe('AC-4 · 没有可定位的发言时按钮不可点', () => {
+  it('anchor 为 null 时禁用，不会静默跳到错误位置', () => {
+    render(<EventPanel entries={buildPanelEntries(ctx([dayStarted]))} onJump={() => undefined} />);
+    expect((screen.getByRole('button', { name: /1 号出局/ }) as HTMLButtonElement).disabled).toBe(
+      true,
     );
   });
 });

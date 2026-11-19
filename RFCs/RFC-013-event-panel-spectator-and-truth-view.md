@@ -160,3 +160,20 @@ $ pnpm test:e2e → 8 passed
 | 死亡原因 | `pendingDeaths` 只有席位；真实死因在 `PLAYER_DIED` 事件里，已出局者本可看到 | 后续（可与 RFC-014 一起） |
 | 真相里的夜间行动结果 | 当前只给角色，不给「狼刀了谁 / 验了谁」 | RFC-014 |
 | 记事板跨设备 | 只在本浏览器；会话级同步需要 `MetaStore` | 后续 |
+
+### 8.7 Round 1 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **AC-4 A 方案不可达** | 面板条目的 `seq` 来自死亡/票型/相位事件，而发言流的 `id` 只来自 `SPEECH`——全局唯一 `seq` 意味着永远匹配不到 | 面板每条带 `anchor`（此前最近的发言 `seq`），点击跳转到它并高亮；没有可定位发言时按钮**禁用**而不是静默乱跳 |
+| **AC-1 漏夜间死亡与放逐** | `DAY_STARTED.diedLastNight` 被忽略；`banish` 分支永远不触发 | 死亡从「天亮播报」取（并在 `PLAYER_DIED` 里跳过夜间重复），放逐/枪杀从 `PLAYER_DIED` 的 `cause` 取 |
+| **AC-9 没有夜间行动结果** | `buildTruth` 的 `actions` 恒为空 | `buildTruth(state, events)` 现在会汇总刀人、查验、用药、开枪；共享 Zod schema `src/shared/truth.ts`（API-1） |
+| **AC-12 客户端入口无锁** | 删掉「活着不显示观战条」全绿 | 补「活人没有观战条与真相按钮」用例；`TRUTH_LOCKED` 也补进 `ApiErrorCode` |
+| **AC-11 零副作用没验证** | 只断言 `submit` 0 次 | 同时断言 `draft` 0 次；并收紧「关→开→关」：关闭后**内容**必须消失，而不只是标题 |
+| **AC-13/14 记事板隔离没验证** | 只测了 localStorage | 新增 `notepad-isolation.test.ts`：投影 JSON 与提示词都不含记事板文本，且 `src/server` 源码里不出现 `notepad` |
+| **C-143 e2e 投票断言被改弱** | 删掉投票调用仍绿 | 改为等待**我们自己的** `POST /actions` 200 响应；另补一条 e2e「进行中没有真相入口」 |
+
+```
+$ pnpm test → 84 files / 704 tests
+$ pnpm test:e2e → 9 passed
+```

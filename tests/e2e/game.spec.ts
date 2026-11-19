@@ -110,6 +110,13 @@ test.describe('整局界面', () => {
     expect(hit).toBe(true);
   });
 
+  test('对局进行中不出现真相视图入口（SEC-6）', async ({ page }) => {
+    await page.goto('/?seed=13');
+    await expect(page.locator('.app')).toBeVisible();
+
+    await expect(page.getByRole('button', { name: /真相视图/ })).toHaveCount(0);
+  });
+
   test('焦点可见：Tab 之后焦点元素有可见 outline', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 800 });
     await page.goto('/?seed=13');
@@ -190,10 +197,17 @@ test.describe('整局界面', () => {
       reached = await voteButton.evaluate((element) => element === document.activeElement);
     }
     expect(reached, 'Tab 到不了投票按钮').toBe(true);
-    await page.keyboard.press('Enter');
 
-    // 投票的结果会出现在公开事件面板里（票型）；这比「按钮消失」更接近事实
-    await expect(page.getByText(/号投 \d+ 号|号弃权/).first()).toBeVisible({ timeout: 25_000 });
+    // 等**我们自己的** POST /actions 到账，而不是等 AI 的票型出现（评审 C-143）
+    const submitted = page.waitForResponse(
+      (response) =>
+        response.url().includes('/actions') &&
+        response.request().method() === 'POST' &&
+        response.status() === 200,
+      { timeout: 25_000 },
+    );
+    await page.keyboard.press('Enter');
+    await submitted;
   });
 
   test('键盘：Tab 能到发言区，Enter 能提交', async ({ page }) => {

@@ -61,7 +61,8 @@ export type ApiErrorCode =
   | 'VERSION_MISMATCH'
   | 'NOT_YOUR_SEAT'
   | 'NOT_FINISHED'
-  | 'NOT_IMPLEMENTED';
+  | 'NOT_IMPLEMENTED'
+  | 'TRUTH_LOCKED';
 
 export interface ApiError {
   error: ApiErrorCode;
