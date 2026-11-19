@@ -1,10 +1,10 @@
 # RFC-009 评审 · AI 人格与高级打法
 
 > **评审会话**：独立 subagent，全新上下文；本会话没有参与本仓库任何代码 / RFC / 测试的写作。
-> **日期**：2026-11-19（Round 2；Round 1 同日，HEAD `a9c340f`）
-> **分支 / HEAD**：`main` / `cdea69c`（Round 2；Round 1 为 `a9c340f`）
-> **结论**：**Changes requested**（Round 2）
-> **整体风险**：**Medium**（Round 1 为 High）
+> **日期**：2026-11-19（Round 3；Round 1 / 2 同日，HEAD 分别为 `a9c340f` / `cdea69c`）
+> **分支 / HEAD**：`main` / `0acb9ab`（Round 3；Round 2 为 `cdea69c`）
+> **结论**：**Reviewed**（Round 3）
+> **整体风险**：**Low**（Round 2 为 Medium，Round 1 为 High）
 
 ## Round 1 -- 2026-11-19
 
@@ -599,3 +599,159 @@ pnpm test
 - **Improvement Suggestions**：C-84 文档回写；C-78 补 1 ~ 2 个人格的提示断言；AC-4 的阈值改成具名常量；`applyGameStarted` 的人格不变量（承接项）。
 - **Open conflicts**：本轮没有发现新的「两个 artifact 互相矛盾」；C-79 / C-80 是测试与实现证据不足，不是规范冲突。C-84 的文档漂移已登记到 `RFCS.md` §8.29。
 - **建议状态**：**`Changes requested`**。修完 C-77 / C-79 / C-80 后再开 Round 3；Round 3 至少重跑 P2-R2 / P2-R3 / P2-R4 / P2-R5 与新增的用例。
+
+## Round 3 -- 2026-11-19
+
+**结论：Reviewed · Overall Risk Level: Low**
+
+本轮按用户要求只复核 Round 2 的三个阻塞项（C-77 / C-79 / C-80，其中 C-80 拆成 a / b），以及这些修复本身引入的测试质量问题。C-78 / C-81 / C-82 / C-83 与更早已关闭项没有重查；C-84 的文档漂移仍是非阻塞开放项。
+
+**结果摘要**：三项阻塞全部有可失败的回归锁。我独立重跑了 8 条探针：打进目标测试的 7 条全部变红；唯一没有变红的是 C-77 的「timeout 不随人格变」断言（P3-R2），它是非阻塞残项（N-R3-1）。门禁 **65 files / 532 tests** 全绿，引擎覆盖率 **行 96.96% / 分支 92.80%**。RFC-009 的 Status 置为 **`Reviewed`**。
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。HEAD `0acb9ab`，评审开始时工作树 clean。
+
+```
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+vite v8.3.8 building client environment for production...
+✓ 14 modules transformed.
+vite v8.3.8 building ssr environment for production...
+✓ 39 modules transformed.
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  65 passed (65)
+      Tests  532 passed (532)
+TEST_EXIT=0
+```
+
+覆盖率（`coverage/coverage-summary.json`）：**lines 96.96% / branches 92.80%**，过 `TEST-2`（90 / 85）。
+
+`pnpm test:e2e` 未跑：本 RFC 没有 UI 改动，`TEST-6` 的 Playwright 门禁从 RFC-012 起生效。`pnpm selfplay` 未跑：它仍是 RFC-015 的占位（`tests/meta/selfplay-placeholder.test.ts`）。
+
+**Product Type**：`PRD.md` 是 **game（主）+ web app（交付形态）**。本轮检查游戏状态、事件流、确定性、测试证据与人格 / 事件数据面；显式跳过 UI / A11Y / 浏览器兼容 / 首屏性能 / Playwright，因为本 RFC 不改 `src/client/`、不新增 HTTP 端点。
+
+### 1. 三项阻塞复核
+
+| # | Round 2 的问题 | Round 3 结论 | 证据 |
+|---|---|---|---|
+| **C-77** | §4 的 `verbosity` → `maxOutputTokens` 没有测试；P2-R2 把 factor 改成恒 1 后全量仍绿 | **关闭（主项）** | `client.test.ts:397-425` 用假 `fetch` 捕获真实请求体：`quiet` → 400、`chatty` → 1200、`null` → 800。P3-R1（factor 恒 1）1 failed / 19 passed；P3-R8（null 返回 1）同样打红。`timeout` 一条见 N-R3-1 |
+| **C-79** | START 之后没有跨 action；P2-R4 在 `applyPhaseChanged` 清空人格后全量仍绿 | **关闭** | `personas-start.test.ts:91-109` 从真实 `started()` 出发连续提交三次 `WOLF_CHAT`，断言 9 席 `personaId` 与开局逐位相同。P3-R3（相位切换清空）1 failed / 6 passed |
+| **C-80-a** | AC-5 的 label 映射没锁；P2-R5 让 `personaOf('careful')` 返回错误 label 仍绿 | **关闭** | `personas.test.ts:115-121` 对 `PERSONAS` 逐项比对 `personaOf(id).label`，并断言 `personaOf('careful').label === '谨慎观察'`。P3-R4 打红 |
+| **C-80-b** | AC-9 只触发自曝；P2-R3 关掉悍跳 / 狼查杀狼后仍绿 | **关闭** | `scenarios/advanced-play.test.ts:35-81`：真实 `step` 开局 + 3 条注入的 `AI_THOUGHT` 悍跳 + 3 条注入的狼查杀狼 + 3 次真实 `SELF_EXPOSE`，三类各 ≥3。P3-R5 / P3-R6 / P3-R7 分别关掉三类判定后各 1/1 红 |
+
+### 2. 受影响的验收标准
+
+> 未列出的 AC-2 / 3 / 6 / 7 / 8 / 10 / 11 在 Round 2 已判 PASS，本轮按用户要求不重查。
+
+| AC | 证据 | 变异后会红吗 | 判定 |
+|---|---|---|---|
+| 1 | `personas-start.test.ts:23-51` 开局 / replay；`:91-109` 连续三次夜聊 | P3-R3 红（相位切换清空） | **PASS** |
+| 4 | `personas.test.ts:103-113` 风格组合；`client.test.ts:414-424` 真实 `max_tokens` | P3-R1 / P3-R8 红 | **PASS**（D-6 的记录偏离；timeout 残项见 N-R3-1） |
+| 5 | `personas.test.ts:115-121` 逐项 label；`personas-start.test.ts:64-71` label 唯一非空、`:54-61` id 可解析 | P3-R4 红 | **PASS** |
+| 9 | `scenarios/advanced-play.test.ts:35-81` | P3-R5 / P3-R6 / P3-R7 红 | **PASS**（场景注入的细节见 N-R3-3） |
+
+### 3. 非阻塞发现
+
+#### N-R3-1 · C-77 的 timeout 断言是自证
+
+`tests/server/llm/client.test.ts:426-429` 只断言 `CONFIG.timeoutMs === 50`——`CONFIG` 是本文件顶部的字面量，测试没有观察 `decide` 传给 `AbortSignal.timeout` 的参数。P3-R2 把请求超时改成 `config.timeoutMs + (personaId === 'chatty' ? 100 : 0)`，`client.test.ts` **20/20 全绿**。
+
+修法：spy `AbortSignal.timeout`，分别用 `quiet` / `chatty` / `null` 断言参数恒为 `config.timeoutMs`。这不阻塞 `Reviewed`：§4 的实现行为正确，AC 列表不包含超时。
+
+#### N-R3-2 · C-79 的用例有「空真」风险
+
+`personas-start.test.ts:91-109` 的循环上限是 3，且 `speaker === undefined` 或相位不是 `NIGHT_WOLF_CHAT` 时直接结束；测试没有断言三次 `WOLF_CHAT` 都被接受、也没有断言 `PHASE_CHANGED` 真的发生。若 `WOLF_CHAT` handler 退化到全部拒绝，`cursor` 不变，断言仍然通过。当前实现确实走到第三次并触发 `PHASE_CHANGED`（P3-R3 打红），所以本轮判 C-79 关闭；建议补 `expect(cursor.phase).toBe('NIGHT_WOLVES')`（或事件计数 / replay 一次）。
+
+#### N-R3-3 · AC-9 场景的注入真实性与类型
+
+`scenarios/advanced-play.test.ts:35-81` 的数量断言成立，但有三处可改进：
+
+1. 固定种子 `20_261_117` + `playerSeat: 3` 下，**座位 3 是玩家且是狼**（我实跑过开局：`1:seer 2:wolf 3:wolf(P) 4:witch 5:hunter 6:villager 7:villager 8:wolf 9:villager`）。`thought()` 给座位 3 注入 `AI_THOUGHT`，但真实对局里玩家席位不会产生 `AI_THOUGHT`。换一个玩家不是狼的种子，或显式记录这是「预置决策序列」而不是真实 AI 决策。
+2. `thought()` 用 `Record<string, unknown>` + `as unknown as EventEnvelope` 绕过了 `Claim` / `GameEvent` 的类型检查（`advanced-play.test.ts:24-33`）；`claim` 形状若漂移，`pnpm typecheck` 不会拦住。
+3. `speakerOf` 从 `visibleTo` 反解席位（`:70-73`），与 D-3 的理由相反；测试自己构造的事件可以直接给 `[event, seat]` 映射。另：三次 `SELF_EXPOSE` 都从同一个 `day` 状态 `step`，事件的 `seq` 都是 2 / 3，拼出来的流不可 replay（`:57-65`）。这不影响 `annotate` 的计数，因为 AC-9 只要求标注、不要求 replay；但会让「定向对局」这个说法偏强。
+
+#### C-84（承接，非阻塞）· 文档仍漂移
+
+修复提交更新了 §8.3 的测试清单、§8.4 的 AC-4 / 5 / 9 / 10 证据、§8.5 的覆盖率与 README 的用例数，但以下仍是 Round 2 记录的旧值：
+
+- `README.md:11` 仍写「7 个 Reviewed / 0 个 Changes requested / 8 个 Not started」，覆盖率仍 `96.69% / 93.33%`；`:36-38` 仍写「RFC-001 ~ 007 Reviewed」「RFC-008 Implemented，等待评审」「下一步 /review-rfc 008」。
+- `TEST-STRATEGY.md:3` 仍引用 `RFCS.md v2.65`；`:38` 仍写「其余 15 个 RFC 仍为 proposed」；`:290-296` 的 `Exists?` 列仍未列 `scenarios/advanced-play.test.ts`。
+- RFC §8.4 的 AC-3 仍写「200 局交叉表里每个人格的狼数都少于好人数 + 1（D-5 的界）」，与 D-5 的 1000 局卡方不一致；§8.5 仍写 `63 files / 519 tests`；§8.8 的 C-84 行说「已同步」，与实际不符。
+
+这些不影响 `Reviewed`，但会让下一个会话读到错误的状态，按 `DOC-1` 应回写。
+
+### 4. 五个审查维度
+
+#### 4.1 RFC ADHERENCE —— PASS
+
+C-77 / C-79 / C-80 的阻塞残项已闭合；AC-1 / 4 / 5 / 9 都有可失败测试。AC-4 仍按 D-6 的记录偏离（风格画像 + 提示渲染替代生成文本）。未重查的 AC 沿用 Round 2 的 PASS。
+
+#### 4.2 RULES COMPLIANCE —— PASS（非阻塞文档残项）
+
+| 规则 | 结论 |
+|---|---|
+| `TEST-1` | **PASS**：本轮三项阻塞都有会失败的测试；门禁 65/532 全绿。 |
+| `TEST-2` | **PASS**：引擎覆盖率 96.96% / 92.80%。 |
+| `DOC-1` | **非阻塞**：§8.8 的 timeout 声明与「C-84 已同步」不准确；C-84 文档漂移仍在。 |
+| `ARCH-1` | **PASS**：本提交只改测试与文档，没有改 `src/engine/` 的依赖。 |
+| `ARCH-3` / `DATA-2` / `DATA-4` / `AI-4` / `AI-5` / `AI-6` | **PASS**（实现未变；Round 2 已核对）。 |
+
+#### 4.3 SECURITY —— PASS
+
+本提交没有改生产代码；`GAME_STARTED.personas` 仍为 `server` 可见性，`project()` 只给观察者自己的 `personaId`；人格仍来自固定库、`personaId` 来自服务端状态，没有新增输入面。
+
+#### 4.4 PERFORMANCE —— PASS
+
+测试与文档改动；`maxTokensFor` 仍是每次决策一次线性 `find`；1000 局卡方只在测试里跑。没有新增网络 / DB / LLM 调用。
+
+#### 4.5 MAINTAINABILITY —— PASS（有改进项）
+
+新测试放在对的文件、命名清楚；N-R3-1 / N-R3-2 / N-R3-3 是测试强度与真实性的改进点，不是行为缺陷。
+
+### 5. 变异探针与恢复
+
+备份在 `/tmp/howl-r9r3-backup/`，覆盖 `src/server/llm/client.ts`、`src/engine/{apply,personas,annotate}.ts`。每个探针用 `cp` 从备份恢复，`md5` 逐项相同；**没有使用 `git checkout`**，也没有 `git commit`。
+
+| # | 注入 | 跑什么 | 结果 |
+|---|---|---|---|
+| P3-R1 | `client.ts:200` factor 恒 1 | `tests/server/llm/client.test.ts` | 1 failed / 19 passed；`expected 800 to be 400` |
+| P3-R2 | `client.ts:130` 请求超时按人格加 100ms（不改 `CONFIG`） | 同上 | **20/20 绿**（N-R3-1） |
+| P3-R3 | `apply.ts` 的 `applyPhaseChanged` 清空所有 `personaId` | `tests/engine/personas-start.test.ts` | 1 failed / 6 passed；收到 8 个 `null` |
+| P3-R4 | `personaOf('careful')` 返回错误 label | `tests/engine/personas.test.ts` | 1 failed / 8 passed；`expected '错误标签' to be '谨慎观察'` |
+| P3-R5 | `isFakeSeerClaim` 恒 false | `tests/engine/scenarios/advanced-play.test.ts` | 1 failed（该文件仅 1 条用例）；`fake-seer-claim` 0 |
+| P3-R6 | `isWolfAccusesWolf` 恒 false | 同上 | 1 failed（该文件仅 1 条用例）；`wolf-accuses-wolf` 0 |
+| P3-R7 | 删掉 `SELF_EXPOSE` 的标注 | 同上 | 1 failed（该文件仅 1 条用例）；`self-expose` 0 |
+| P3-R8 | `maxTokensFor(null)` 返回 1 | `tests/server/llm/client.test.ts` | 1 failed / 19 passed；`expected 1 to be 800` |
+
+**恢复校验**：
+
+```
+md5 src/server/llm/client.ts src/engine/{apply,personas,annotate}.ts /tmp/howl-r9r3-backup/*
+# 四对逐项相同
+git status --porcelain
+# （空）
+pnpm test
+# Test Files  65 passed (65)
+# Tests       532 passed (532)
+```
+
+### 6. 结论
+
+- **Overall Risk Level: Low**
+- **Summary**：Round 2 的三个阻塞项现在都有能打红的回归锁；我独立重跑了 factor / phase-clear / label / 三类判定的探针，目标测试均为红。剩余问题都是非阻塞的测试强度与文档漂移。
+- **Blocking Issues**：无。
+- **Improvement Suggestions**：N-R3-1（timeout 断言）、N-R3-2（C-79 的空真风险）、N-R3-3（AC-9 的玩家席位 / 类型 / seq）、C-84 文档回写。
+- **Open conflicts**：没有新的 artifact 冲突；C-84 是文档漂移，不是权威顺序冲突。
+- **建议状态**：**`Reviewed`**。
