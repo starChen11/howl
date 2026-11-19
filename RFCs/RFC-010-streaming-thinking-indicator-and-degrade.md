@@ -246,3 +246,15 @@ $ pnpm test → 69 files / 575 tests
 ```
 $ pnpm test → 69 files / 578 tests
 ```
+
+### 8.13 Round 7 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-97** 引擎的 `REJECTED` 被当成功 | `submit` 的 `ok` 只表示版本对得上；引擎拒绝会以 `REJECTED` **事件**出现。夜晚调用 `speak` 仍返回成功，并向总线发一句从未发生过的话 | `speak` 检查返回事件里是否有 `REJECTED`，有则返回 `{ ok: false, code }` 且不发 `done`。返回值改成可判别联合，调用方必须处理失败 |
+| **C-97** 降级分支没有回归锁 | 只把降级分支改回 `appendEvents`，全量仍绿 | 补用例：降级一轮之后「当前发言者换人」（`speech.spoken` 长度 +1）——绕开引擎时这条会红 |
+| **AC-12** 用例语义失效 | 同一席位连说 4 次，后 3 次实际被拒，只数 `calls` 所以仍绿 | 每轮取 `currentSpeaker` 再发言，并断言 `spoken === 4`、`total === 4` |
+
+```
+$ pnpm test → 69 files / 581 tests
+```

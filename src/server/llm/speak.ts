@@ -2,7 +2,7 @@ import type { SeatId } from '@shared/domain';
 
 import type { StreamBus } from '../stream/bus';
 import type { GameRecord, GameRegistry, SessionRecord } from '../store/game-registry';
-import { degradeEvents, runTurn } from './turn';
+import { runTurn } from './turn';
 import { initialDegradation, UNSTABLE_AFTER, type DegradationState } from './degrade';
 
 /**
@@ -27,14 +27,17 @@ export interface SpeakInput {
   degradation?: DegradationState;
 }
 
-export interface SpeakResult {
-  record: GameRecord;
-  text: string;
-  degraded: boolean;
-  degradation: DegradationState;
-  /** 需要向 UI 推「模型不稳定」。 */
-  unstable: boolean;
-}
+export type SpeakResult =
+  | {
+      ok: true;
+      record: GameRecord;
+      text: string;
+      degraded: boolean;
+      degradation: DegradationState;
+      /** 需要向 UI 推「模型不稳定」。 */
+      unstable: boolean;
+    }
+  | { ok: false; code: string; record: GameRecord };
 
 export async function speak(input: SpeakInput): Promise<SpeakResult> {
   const now = input.now ?? Date.now;
@@ -57,38 +60,55 @@ export async function speak(input: SpeakInput): Promise<SpeakResult> {
 
   // **发言必须走引擎**：`SPEECH` 会推进发言 cursor、说满一圈后切到投票。
   // 用 `appendEvents` 直接写事件会绕开这些，最后卡在 DAY_SPEECH（C-97）。
-  // 降级时先把 `DEGRADED` 标记补进去，再走同一条通道写短句。
+  const submitted = await input.registry.submit(
+    input.session,
+    input.record,
+    { type: 'SPEECH', ts: now(), seat: input.seat, text: turn.text } as never,
+    input.record.events.length,
+  );
+
+  if (!submitted.ok) {
+    // 引擎拒绝（不在白天 / 不是当前发言者）时**不能**当成功：既不写事件，
+    // 也不向总线发 `done`——那会让客户端显示一句从未发生过的话（C-97）。
+    return { ok: false, code: submitted.code, record: input.record };
+  }
+
+  // `submit` 的 `ok` 只表示「版本对得上」；**引擎的拒绝会以 `REJECTED` 事件出现**。
+  // 把它当成功会让客户端显示一句从未发生过的话（C-97）。
+  const rejected = submitted.events.find((event) => event.type === 'REJECTED');
+  if (rejected !== undefined) {
+    return {
+      ok: false,
+      code: (rejected.payload as { code?: string }).code ?? 'REJECTED',
+      record: submitted.record,
+    };
+  }
+
+  let record = submitted.record;
+
   if (turn.degraded) {
-    const events = degradeEvents({
-      gameId: input.record.gameId,
-      ts: now(),
-      seat: input.seat,
-      text: turn.text,
-      seq: nextSeq,
-    });
-    const [degradedEvent] = events;
-    const withMarker =
-      degradedEvent === undefined
-        ? input.record
-        : await input.registry.appendEvents(input.record, [degradedEvent]);
+    // 降级标记补在短句之后：`DEGRADED` 不改变局面，只供复盘统计。
+    record = await input.registry.appendEvents(record, [
+      {
+        gameId: record.gameId,
+        seq: record.events.length + 1,
+        ts: now(),
+        type: 'DEGRADED',
+        visibleTo: 'public',
+        payload: { seat: input.seat },
+      },
+    ]);
 
-    const submitted = await input.registry.submit(
-      input.session,
-      withMarker,
-      { type: 'SPEECH', ts: now(), seat: input.seat, text: turn.text } as never,
-      withMarker.events.length,
-    );
-    const record = submitted.ok ? submitted.record : withMarker;
-
-    input.bus.publish(input.record.gameId, { type: 'degraded', id: nextSeq, seat: input.seat });
-    input.bus.publish(input.record.gameId, {
+    input.bus.publish(record.gameId, { type: 'degraded', id: nextSeq, seat: input.seat });
+    input.bus.publish(record.gameId, {
       type: 'done',
-      id: nextSeq + 1,
+      id: nextSeq,
       seat: input.seat,
       text: turn.text,
     });
 
     return {
+      ok: true,
       record,
       text: turn.text,
       degraded: true,
@@ -97,26 +117,15 @@ export async function speak(input: SpeakInput): Promise<SpeakResult> {
     };
   }
 
-  const submitted = await input.registry.submit(
-    input.session,
-    input.record,
-    { type: 'SPEECH', ts: now(), seat: input.seat, text: turn.text } as never,
-    input.record.events.length,
-  );
-  if (!submitted.ok) throw new Error(`发言被引擎拒绝：${submitted.code}`);
-  const record = submitted.record;
-
-  // 增量：把完整发言按小块推给前端（真实流式时这些块来自模型）。
-  const chunks = chunkText(turn.text);
-  for (const chunk of chunks) {
-    input.bus.publish(input.record.gameId, {
+  for (const chunk of chunkText(turn.text)) {
+    input.bus.publish(record.gameId, {
       type: 'delta',
       id: nextSeq,
       seat: input.seat,
       text: chunk,
     });
   }
-  input.bus.publish(input.record.gameId, {
+  input.bus.publish(record.gameId, {
     type: 'done',
     id: nextSeq,
     seat: input.seat,
@@ -124,6 +133,7 @@ export async function speak(input: SpeakInput): Promise<SpeakResult> {
   });
 
   return {
+    ok: true,
     record,
     text: turn.text,
     degraded: false,

@@ -91,6 +91,7 @@ describe('AC-10 / 11 · 正常发言：thinking → delta → 落盘 SPEECH → 
       limitMs: 5_000,
     });
 
+    if (!result.ok) throw new Error(`发言被拒：${result.code}`);
     expect(result.degraded).toBe(false);
     expect(seen[0]?.type).toBe('thinking');
     expect(seen.some((message) => message.type === 'delta')).toBe(true);
@@ -113,6 +114,7 @@ describe('AC-7 / 9 · 降级：DEGRADED + 短句落盘，bus 推 degraded', () =
       limitMs: 5_000,
     });
 
+    if (!result.ok) throw new Error(`发言被拒：${result.code}`);
     expect(result.degraded).toBe(true);
     expect(result.text.length).toBeLessThanOrEqual(10);
     expect(seen.some((message) => message.type === 'degraded')).toBe(true);
@@ -126,18 +128,22 @@ describe('AC-7 / 9 · 降级：DEGRADED + 短句落盘，bus 推 degraded', () =
 
 describe('AC-12 · 连续 3 次降级后仍尝试真实调用', () => {
   it('第 4 次仍然调用 attempt（不是全跳过）', async () => {
-    const { registry, session, record, bus, speaker } = await setup();
+    const { registry, session, record, bus } = await setup();
     let calls = 0;
     let current = record;
     let degradation;
+    let spoken = 0;
 
+    // 每轮都让**当前发言者**说，否则第二句就被引擎拒绝（C-97 之后的正确语义）。
     for (let index = 0; index < 4; index += 1) {
+      const currentSpeakerSeat = currentSpeaker(registry.stateOf(current));
+      if (currentSpeakerSeat === undefined) break;
       const result = await speak({
         registry,
         bus,
         session,
         record: current,
-        seat: speaker,
+        seat: currentSpeakerSeat,
         attempt: async () => {
           calls += 1;
           return { text: '', failed: true };
@@ -145,10 +151,13 @@ describe('AC-12 · 连续 3 次降级后仍尝试真实调用', () => {
         limitMs: 5_000,
         ...(degradation === undefined ? {} : { degradation }),
       });
+      if (!result.ok) break;
       current = result.record;
       degradation = result.degradation;
+      spoken += 1;
     }
 
+    expect(spoken).toBe(4);
     expect(calls).toBe(8); // 每轮重试一次
     expect(degradation?.total).toBe(4);
   });
@@ -173,9 +182,74 @@ describe('C-97 · 发言必须走引擎，不能绕过相位推进', () => {
         attempt: async () => ({ text: '我过了。', failed: false }),
         limitMs: 5_000,
       });
+      if (!result.ok) break;
       current = result.record;
     }
 
     expect(registry.stateOf(current).phase).not.toBe('DAY_SPEECH');
+  });
+});
+
+describe('C-97 · 引擎拒绝时不能假装成功', () => {
+  it('夜晚调用返回 ok=false，且不向总线发 done', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, { mode: 'slaughter-side', seed: 15 });
+    const bus = new StreamBus();
+    const seen: StreamMessage[] = [];
+    bus.subscribe(record.gameId, (message) => seen.push(message));
+
+    const result = await speak({
+      registry,
+      bus,
+      session,
+      record,
+      seat: 1 as never,
+      attempt: async () => ({ text: '我说话', failed: false }),
+      limitMs: 5_000,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(seen.filter((message) => message.type === 'done')).toHaveLength(0);
+    expect(result.record.events.filter((event) => event.type === 'SPEECH')).toHaveLength(0);
+  });
+
+  it('非当前发言者返回 ok=false', async () => {
+    const { registry, session, record, bus, speaker } = await setup();
+    const other = registry.stateOf(record).seats.find((seat) => seat.seat !== speaker)?.seat;
+    if (other === undefined) throw new Error('没有别的席位');
+
+    const result = await speak({
+      registry,
+      bus,
+      session,
+      record,
+      seat: other,
+      attempt: async () => ({ text: '我插一句', failed: false }),
+      limitMs: 5_000,
+    });
+
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('C-97 · 降级发言也走引擎，能推进发言顺序', () => {
+  it('降级一轮之后，当前发言者换人', async () => {
+    const { registry, session, record, bus, speaker } = await setup();
+    const before = registry.stateOf(record).speech?.spoken.length ?? 0;
+
+    const result = await speak({
+      registry,
+      bus,
+      session,
+      record,
+      seat: speaker,
+      attempt: async () => ({ text: '', failed: true }),
+      limitMs: 5_000,
+    });
+    if (!result.ok) throw new Error(`发言被拒：${result.code}`);
+
+    const after = registry.stateOf(result.record).speech?.spoken.length ?? 0;
+    expect(after).toBe(before + 1);
   });
 });
