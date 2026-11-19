@@ -706,3 +706,164 @@ B-R3-1 和 B-R3-2 都真修好了：原文断言在换文本 / 换 `SPEECH_SKIP`
 **Non-blocking**：AC-1 只认角色 id，不认 `ROLE_LABELS` / 同角色他人（P-R4-4）；`otherRoles` 条件里的 `has` 是死代码；新用例的 `expect([200,409])` 与 `/input` 仅 200 的断言太弱；`ChannelRegistry` 无清理；AC-7 / AC-8 / AC-11 / AC-13 沿用前判；C-99 / C-104 未重查；README 状态行过期。
 
 **状态**：RFC-011 → `Changes requested`（从 `Implemented` 回退）。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r4-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），三个源码文件 SHA-256 与探针前一致；临时探针测试已删除；探针恢复后（写评审文件前）全量 **75 files / 620 tests** 绿、`git status --porcelain` 为空。
+
+## Round 5 — 2026-11-19
+
+> 被评审提交：`fd66de2 fix(rfc-011): 通知顺序与草稿校验；C-103 提请迁移（Round 4）` + `67f6b22 docs(rfc-011): 按 CR-010 裁决把生产入口迁到 RFC-012`
+> 评审方式：全新上下文的 subagent，只读仓库文件后实跑；本会话没有写过 RFC-011 的实现代码。
+> 结论：**Changes requested**
+> 范围：按用户指示复核 ① C-107（引擎接受后通知）与 C-108（草稿 300 字）是否真修；② `CHANGE-REQUEST-010` 的边界迁移是否落地一致；③ 其余 AC 是否有能打红的证据。AC-3 / AC-4 的界面顺延是**用户批准的偏离**，本轮不作为缺陷（C-99 的承接问题仍只在 RFCS 记非阻塞）。C-100 已 Closed；AC-10 / AC-14 本轮只复核静态锁仍成立。
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · 评审开始时 HEAD `67f6b22`，工作树 clean。
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+✓ 46 modules transformed (server) · dist/server/index.js 96.17 kB
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  75 passed (75)
+      Tests  622 passed (622)
+   Duration  24.21s
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+```
+
+`pnpm selfplay` 仍以退出码 1 结束并提示 RFC-015，按 RFC-011 的范围记 **N/A**，不是本轮回归。
+
+### 1. 产品类型与跳过项
+
+`PRD.md` 的 **Product Type** 是 **game（主）+ web app（交付形态）**。本轮采用 game 的状态机 / 视野 / 跨 RFC 契约检查，以及 web app 的服务端输入校验检查。UI、无障碍与响应式检查随 AC-3 / AC-4 顺延到 RFC-012，**显式跳过**；本轮不冒充已检查。
+
+### 2. 用户列出的三项逐条复核
+
+| 用户声明 | 判定 | 一手证据 |
+|---|---|---|
+| **C-107**：改成引擎接受之后才通知，夜间提交 `SPEECH` 被拒时不通知，补了用例 | **通知顺序：PASS；C-107 的另一半（单一写者 / 双写）：仍 FAIL** | `src/server/routes/games.ts:180-187` 确实在 `registry.submit`（`:166-171`）之后、且 `result.events` 不含 `REJECTED` 时调用 `channels.submit`。P-R5-1 把通知改回提交之前：`tests/server/channels.test.ts` **1 failed / 12 passed**（`:240` 收到 `{kind:'speak'}`）——负向锁有牙。**但** C-107 原文里的 P-R4-7 双写没有修：P-R5-7 用真实 `buildApp` + 真实路由 + `runGame`，路由接受后返回 `SPEECH seq=15 ts=1`，`runGame` 结束后 store 里同 seq 的事件变成 `ts=1795073117229`（`playerAction` 的 `Date.now()`）——路由的写入被编排层用读前的旧 `record` 覆盖。见 C-113。 |
+| **C-108**：草稿接口补 300 字校验，补了用例 | **PASS（301 拒绝）/ 边界缺口非阻塞** | `src/server/routes/games.ts:114-122` 用同一个 `isWithinLimit` 拒绝 >300 字；P-R5-3 删掉这段后 `tests/server/channels.test.ts` **1 failed / 12 passed**（`:264`，`expected 200 to be 400`）。反向锁成立。未测「刚好 300 字草稿被接受」与「emoji 301 的路由级计数」，属非阻塞边界缺口。 |
+| **C-103**：生产入口按 CR-010 裁决 A 迁到 RFC-012；RFC-011 只保证「通道接口 + 服务端兑现路径」；依赖表核对 | **RFC-011 侧：一致；迁移的接收侧：不一致（C-112）** | RFC-011 侧已落地：AC-9 改写（`RFCs/RFC-011...:97`）、边界说明（`:102`）、§8.6 把生产入口归 RFC-012（`:178-185`）、`RFCS.md:75` 的依赖表 `RFC-012 | 011 | 016` 正确、`RFCS.md` 变更历史有 v2.103 记录。**但** `RFCs/RFC-012...` 只在 `:4` 写了 `Depends on: RFC-011`，其交付物（`:64-75`）与 15 条 AC（`:84-100`）**没有任何一条**承接「整局循环的生产入口」；`CHANGE-REQUEST-010:81` 自己写着「RFC-012 的 AC 里必须有一条『整局能从一个入口跑完』」，`§4` 的落地清单却只改了 RFC-011 / RFCS / CR-010。`grep -n "runGame\|forGame\|入口\|整局" RFCs/RFC-012...` **零命中**；RFC-012 里只有 `:4` 的依赖行与 `:13` / `:33` 的「复用 RFC-011」描述。因此迁移是**单边**的：RFC-011 说「归 RFC-012」，RFC-012 没有接。 |
+
+### 3. 变异探针与临时集成探针
+
+所有探针从 `/tmp/howl-rfc011-r5-probes/backup/` 的**文件备份**恢复，**未使用 `git checkout` / `git restore`**。探针前源码 SHA-256：
+
+```text
+a405a9e3...  src/server/routes/games.ts
+a671a65e...  src/server/orchestrator.ts
+4eebadb9...  src/server/channels/http.ts
+109eed96...  src/server/channels/session.ts
+efddae1f...  src/server/project/index.ts
+f4f8a60e...  src/server/view/id-card.ts
+f5b777b7...  src/server/channels/sse.ts
+```
+
+每次探针后都 `cp` 回备份并 `shasum -a 256 -c`；最后四项 `OK`，其余三文件与 Round 3/4 记录的哈希一致，`git status --porcelain` 为空。临时探针 `tests/server/__r5_probe.test.ts` 已删除；探针后（写评审文件前）全量 **75 files / 622 tests** 绿；没有 `git commit`。
+
+| 探针 | 注入 / 场景 | 定向测试 | 结果 | 证明 |
+|---|---|---|---|---|
+| **P-R5-1** | `routes/games.ts` 把 `channels.submit` 改回 `registry.submit` **之前**（无条件） | `tests/server/channels.test.ts` | **1 failed / 12 passed**；`:240` 收到 `{ kind: 'speak', text: '我先说' }` | C-107 的「被拒绝不通知」有反向锁 |
+| **P-R5-2** | 删掉接受分支的 `channels.submit` 整段 | **全量** `pnpm test` | **75 files / 622 tests 仍全绿** | AC-9「接受后通知」没有任何回归锁；旧的正向用例在 Round 4 已被替换成负向用例 |
+| **P-R5-3** | 删掉 `/input` 的 `isWithinLimit` 校验 | `tests/server/channels.test.ts` | **1 failed / 12 passed**；`:264` | C-108 有反向锁 |
+| **P-R5-4** | `playerAction` 的 `input.kind === 'skip'` 分支改成 `return { action: undefined }` | **全量** `pnpm test` | **75 / 622 仍全绿** | AC-7「空超时 → `SPEECH_SKIPPED` → 对局继续」没有回归锁 |
+| **P-R5-5** | `playerAction` 把 `if (input.kind === 'skip')` 改成 `if (input.kind !== 'speak')`（超时被当弃权） | **全量** `pnpm test` | **75 / 622 仍全绿** | AC-6「超时交出已输入内容并完整进入事件流」没有回归锁 |
+| **P-R5-6** | `project()` 返回值增加 `leakedRoles: [{ seat, roleId }]`（全员真实身份） | `tests/server/id-card.test.ts` + `project.test.ts` | **1 failed / 21 passed**；`:65` | AC-1 的 `roleId` 泄漏锁仍有效 |
+| **P-R5-7** | 真实 `buildApp` + 真实 `GameRegistry` 推到 `DAY_SPEECH`，启动 `runGame` 等玩家输入；由真实 `POST /actions` 兑现通道 | 临时集成探针 | 路由 **200**，响应 `SPEECH seq=15 ts=1`；`runGame` 结束后同 seq `ts=1795073117229`（`Date.now()`），text 相同 | 路由与编排层**双写**；编排层用读前的旧 record 覆盖路由写入（C-113） |
+| **P-R5-8** | `orchestrator-full.test.ts` 同样的整局（playerSeat 1 / seed 20261117），计数 `InputChannel.read` | 临时集成探针 | `status=finished`、`steps=40`、**`reads=0`** | AC-11 的完整局没有消费 stub 输入通道（C-106 仍未关） |
+| **P-R5-9** | 玩家 wolf 推进到 `DAY_SPEECH`，`runGame` 的 input 返回 `{ kind: 'skip' }` | 临时集成探针 | `reads=1`、`skipped=1`、`SPEECH_SKIPPED seat=2`、随后 `phase=DAY_VOTE`、`steps=8` | AC-7 行为可成立，但仓库无此回归锁 |
+| **P-R5-10** | 玩家提交 `SPEECH` 后，对另一席位 `project()` + `buildUserMessage` | 临时集成探针 | observer=3，`<public_utterance seat="2">玩家原话：我是好人</public_utterance>` 出现 | AC-8 行为可成立，但仓库无端到端用例 |
+| **P-R5-11** | `project()` 的键集合检查 | 临时集成探针 | `["self","phase","day","aliveSeats","deadSeats","publicEvents","privateEvents","knowledge","legalTargets","pending"]`，无 `remaining` / `startedAt` | AC-13 没有服务端可见的「剩余时间」；`remainingSeconds` 在 `src/` 无调用者 |
+| **P-R5-12** | `runGame` 的 input 返回 `{ kind: 'timeout', text: '超时草稿原话' }` | 临时集成探针 | 玩家席位的 `SPEECH.payload.text === '超时草稿原话'` | AC-6 行为可成立，但仓库无此回归锁 |
+| **P-R5-13** | `id-card.ts` 的 `card.goal = goalOf(...)` 改成 `card.goal = ''` | `tests/server/id-card.test.ts` | **1 failed / 6 passed**（`:75-77`） | AC-2 的 `goal` 锁仍有效 |
+| **P-R5-14** | `SseOutputChannel.emit` 改成空操作（直接 `return`） | **全量** `pnpm test` | **75 / 622 仍全绿** | 输出通道的 `done` / `delta` 映射没有任何回归锁（也没有生产调用者） |
+| **P-R5-15** | 玩家轮到发言时挂起 `read()`，真实 `POST /actions` 提交合法 `SPEECH` | 临时集成探针 | 路由 **200**，挂起 Promise 收到 `{ kind: 'speak', text: '我先说' }` | 「接受后通知」的行为存在，但**只有行为、没有提交的锁**（对比 P-R5-2） |
+
+### 4. 验收标准（本轮逐条）
+
+| AC | 判定 | 说明 |
+|---|---|---|
+| 1 | **PASS（P-R5-6 红）** | 9 席位循环 + 五种角色值结构检查 + `"role":` 计数 + `self.seat`；`leakedRoles[].roleId` 退化会红。残项（非阻塞）：中文 `ROLE_LABELS` 与「其他席位同角色」仍未覆盖（沿用 Round 4 P-R4-4）；`otherRoles.has(role) || otherRoles.size > 0` 里的 `has` 是死代码。 |
+| 2 | **PASS（P-R5-13 红）** | 五角色扫描、`goal`、女巫药水、狼队友、猎人开枪文案的锁成立。残项（非阻塞）：非空查验史、药水 `used`、`canShoot` 两态仍没有状态变体用例。 |
+| 3 / 4 | **DEFERRED（用户批准 D-5）** | 身份卡与输入框界面部件 / DOM 扫描归 RFC-012；按用户指示不作为缺陷。RFC-012 的交付物仍没有承接（C-99 非阻塞）。 |
+| 5 | **PASS（后端）/ 前端 deferred** | 路由 301 字 → 400 有锁（P-R2-A / `tests/server/speech.test.ts:32-59`）；草稿 301 → 400 有锁（P-R5-3）。边界缺口（非阻塞）：300 字接受、emoji 301 的路由级计数。 |
+| 6 | **PARTIAL（行为成立，无可打红的回归锁）** | `speech.test.ts:61-68` 只证明通道超时返回 `{kind:'timeout'}`；P-R5-12 证明超时文本能进 `SPEECH`，但仓库没有这条断言；P-R5-5 把超时改成弃权，**全量 622 仍绿**。AC-6 的「完整进入事件流」没有被锁。 |
+| 7 | **FAIL（无可打红的回归锁）** | `normalizeInput` 纯函数有单测；P-R5-9 证明「skip → `SPEECH_SKIPPED` → `DAY_VOTE`」行为成立，但 P-R5-4 把 skip 改成 `undefined` 后**全量 622 仍绿**。仓库没有任何编排层 / 事件流的 `SPEECH_SKIPPED` 用例。 |
+| 8 | **PARTIAL（行为成立，无端到端用例）** | P-R5-10 证明玩家提交的原文出现在他人提示的 `<public_utterance seat="...">` 里；`tests/server/llm/prompts.test.ts:125` 锁的是手工构造的事件。TEST-STRATEGY 计划中的 `tests/server/inject/current-speech.test.ts` 仍不存在（C-104）。 |
+| 9 | **PARTIAL / 回归锁 FAIL** | 静态半边成立：`tests/security/channel-isolation.test.ts:20-23` 断言 `src/engine` 不出现两个通道类型。负向半边成立（P-R5-1）。**接受半边没有锁**：P-R5-2 删掉 `channels.submit` 后全量 622 绿；**输出半边也没有锁**：P-R5-14 把 `SseOutputChannel.emit` 改成空操作后全量 622 绿。 |
+| 10 | **PASS** | `tests/security/channel-isolation.test.ts:27-33` 断言 `src/client` 不 import `@engine/`、不出现 `reduce(`；Round 1 P-6 已证明该检查能打红。本轮无相关改动。 |
+| 11 | **PARTIAL** | `tests/server/orchestrator-full.test.ts:23-49` 断言 `FINISHED` 与 seq 连续；Round 3 P-R3-2 已证明有牙。但 P-R5-8 实测整局 **`reads=0`**，stub 输入通道没有被消费（C-106 非阻塞）。 |
+| 12 | **PARTIAL（非阻塞）** | `tests/server/channels.test.ts:85-193` 的 stub 是内联对象，不是新增 `ScriptedChannel` 文件；`:113` 的 `void input` 仍在。引擎 / shared 没有被修改这一点成立，但「新增实现不改 engine/shared」没有被独立证明。 |
+| 13 | **FAIL / NOT PROVEN** | `remainingSeconds` 只有纯函数测试，`src/` 里没有调用者（`grep` 只命中 `src/server/speech.ts` 定义与测试）；`project()` 没有 `startedAt` / remaining 字段（P-R5-11）；没有「刷新后剩余时间不回满 / 超时仍按原起点」的集成用例。§8.4 却把它标成 PASS。 |
+| 14 | **PASS** | `tests/security/channel-isolation.test.ts:37-40` 断言 `src/engine` 不 import `@server/` / `@client/`；本轮无相关改动。 |
+
+### 5. 五个维度
+
+#### 5.1 RFC ADHERENCE — **NEEDS WORK**
+
+C-107 的通知顺序与 C-108 的草稿校验都真修好了（P-R5-1 / P-R5-3 会红）。迁移在 **RFC-011 侧**也一致：AC-9 已改写、§8.6 已把生产入口归 RFC-012、依赖表正确。但三件事让它还不能算「满足全部 AC」：① AC-9 新写的「接受后通知」没有任何提交的回归锁（P-R5-2 全量 622 绿），输出半边同样没有锁（P-R5-14）；② 路由 + `runGame` 仍双写，路由写入被编排层覆盖（P-R5-7），这是 C-107 原文里的 P-R4-7，不是「生产入口」迁移能顺带解决的；③ 迁移的**接收侧** RFC-012 没有对应 AC / 交付物（C-112）。AC-6 / AC-7 / AC-13 仍没有能打红的证据。
+
+#### 5.2 RULES COMPLIANCE — **NEEDS WORK**
+
+- **TEST-1**：AC-6 的超时分支、AC-7 的弃权事件、AC-9 的「接受后通知」与 `SseOutputChannel.emit`、AC-13 的刷新语义都没有对应自动化测试；其中 P-R5-2 / P-R5-4 / P-R5-5 / P-R5-14 是**全量 622 绿**的退化。这不是「测试写得不够好」，而是这五条 AC 目前无法阻止回归。
+- **DOC-1**：RFC §8.4 的 AC-9 证据只写 `channel-isolation.test.ts`，没有本轮新增的 `channels.test.ts` 负向用例，也没有「接受后通知」；AC-13 仍写 PASS，与仓库事实不符。RFCS.md 的 C-107 行写「已修复：引擎接受之后才通知通道；补用例」，但 C-107 原文里的双写没有被修、也没有在 §8.6 记录为移交项。评审开始时 RFCS.md 头部版本仍是 `v2.101`，变更历史已到 `v2.103`（本轮已把头部改为 v2.104，见 C-114）。
+- **SEC-4**：`/input` 与 `/actions` 两条外部入口都过 300 字校验，C-108 的旁路已关；`SEC-5` / `ARCH-9` 本轮没有新的投影泄漏（`ctxFor(observer)` 未动）。
+- **ARCH-1 / ARCH-9**：静态检查仍通过；本轮新增的通道逻辑都在 `src/server/`。
+
+#### 5.3 SECURITY — **PASS**
+
+- C-108 的 301 字草稿旁路已关（P-R5-3）。
+- C-107 的「被拒绝的发言也消费挂起输入」已关（P-R5-1）。
+- 未发现新的投影 / 席位越权：`POST /input` 仍校验会话拥有该局；`POST /actions` 仍有席位校验。
+- 唯一的保留意见是双写会丢一条已接受的事件（数据完整性），它不是泄漏，但会在 RFC-012 的真实回路里表现为「客户端看到成功、后来刷新却看到另一个版本」——见 C-113。
+
+#### 5.4 PERFORMANCE — **N/A**
+
+没有新增数据库或网络热路径。`ChannelRegistry` 的 Map 仍没有释放 / 淘汰逻辑（一局一个 entry），属于长期运行的内存卫生问题，不是本轮性能阻塞；`runGame` 每步一次投影，规模可忽略。
+
+#### 5.5 MAINTAINABILITY — **NEEDS WORK**
+
+- 正向用例的丢失：Round 4 把「POST 兑现挂起通道」的用例**替换**成「被拒绝不兑现」的用例，两者不是同一条断言；P-R5-2 证明正向分支现在没有锁。
+- `tests/server/channels.test.ts:113` 的 `void input` 仍在；`tests/server/orchestrator.test.ts:46-68` 的用例名仍写「从开局推进到 FINISHED」，实际 `decide` 返回 `undefined`、断言仍是 `steps >= 0`（Round 1 C-101 的旧问题）。
+- `tests/server/orchestrator-full.test.ts:37-41` 的脚本 AI 仍用 `registry.stateOf(record)` 读引擎真值来选目标，`ctx.legalTargets` 在夜间 / 投票为空；这是 C-106 的证据质量问题，本轮未修。
+- TEST-STRATEGY 的 RFC-011 小节（`TEST-STRATEGY.md:318-328`）仍全部 `proposed`，计划文件 `tests/client/id-card.test.tsx` / `speech-input.test.tsx` / `tests/server/inject/current-speech.test.ts` / `tests/meta/dependency-direction.test.ts` 都不存在；实际落地的 `tests/server/{id-card,speech,channels,orchestrator}.test.ts` 与 `tests/security/channel-isolation.test.ts` 没有登记（C-104）。
+
+### 6. 非阻塞建议
+
+1. **单一写者（修 C-113）**：在 `runGame` 的 `playerAction` / `runGame` 层先决定谁写。推荐「路由提交 + 通知，`runGame` 读到 `{kind:'speak'|'timeout'}` 后**不再 submit**」，或「有挂起 `read` 时路由只返回 202，由 `runGame` 重新读取当前 record 后 submit」。补一个真实 `buildApp` + `runGame` 的集成用例，断言只产生一条 `SPEECH`（P-R5-7 的 ts 差异是现成的断言点）。
+2. **AC-9 正向锁（修 C-109）**：把 Round 4 删掉的正向用例加回来，但先把对局推到 `DAY_SPEECH`（否则夜间会被 `REJECTED`），断言 `POST` 200 且挂起的 `read()` 收到玩家原文；对 `SseOutputChannel` 补 `bus.publish` 断言（`final` → `done`，非 final → `delta`）。
+3. **AC-6 / AC-7 编排用例（修 C-110）**：在 `orchestrator` 层加两条——`input` 返回 `{kind:'skip'}` → 事件流出现 `SPEECH_SKIPPED` 且进入下一阶段；`input` 返回 `{kind:'timeout', text:'草稿'}` → `SPEECH.payload.text === '草稿'`。这样 P-R5-4 / P-R5-5 的退化才会打红。
+4. **AC-13（修 C-111）**：二选一——在投影 / `GET /api/games/:id` 暴露服务端 `startedAt`（或 `remainingSeconds`）并补「刷新后剩余秒数不回满 / 超时仍按原起点」用例；或按用户批准的顺延把它正式交给 RFC-012（并在 §8.4 把 PASS 改成 NOT VERIFIED / DEFERRED）。目前 `remainingSeconds` 是孤儿函数。
+5. **迁移接收侧（修 C-112）**：给 RFC-012 加一条 AC「整局能从一个入口跑完」与一个交付物（谁调用 `ChannelRegistry.forGame`、谁启动 `runGame`、谁负责 `SseOutputChannel` 的 `emit`），并在 `RFCS.md` 的 Round 5 记录里指到它；否则 CR-010 的「生产入口归 RFC-012」只存在于 RFC-011 的边界说明里。
+6. **文档（修 C-114）**：RFC §8.4 的 AC-9 / AC-13 证据行、RFCS C-107 的「已修复」表述、RFCS 头部版本 `v2.101 → v2.104`、README 的「7 Reviewed / 0 Changes requested / 8 Not started」（实际 10 Reviewed / 1 Changes requested / 5 Not started）都是过期信息；C-104 的 TEST-STRATEGY 回填仍非阻塞。
+
+### 7. 结论
+
+**Overall Risk Level: High。**
+
+C-107 与 C-108 的**指定部分**真修好了：P-R5-1 / P-R5-3 都会打红。CR-010 的迁移在 RFC-011 侧也确实是照裁决落地的：AC-9 已改写、§8.6 已移交、依赖表正确。但本轮不能给 `Reviewed`，原因是**证据**而不是「又一轮实现」：AC-9 新写的「接受后通知」被 P-R5-2 从全量 622 用例里整段删掉仍全绿；`SseOutputChannel.emit` 改成空操作（P-R5-14）也全绿；AC-6 / AC-7 的编排层退化（P-R5-5 / P-R5-4）同样全绿；AC-13 没有服务端可见的剩余时间；迁移的接收侧 RFC-012 没有对应 AC；并且 P-R5-7 复现了 C-107 原文里的双写。只要其中任何一条留在 Must AC 上，「每条 AC 都有能打红的证据」就不成立。
+
+**Blocking Issues**：
+
+- **B-R5-1（C-113 / AC-9 / C-107 后半，阻塞）**：真实路由接受 `SPEECH` 后 `runGame` 用读前的旧 record 再提交一次，同 seq 覆盖路由写入（P-R5-7：路由 `ts=1` → 最终 `ts=1795073117229`）。这是 C-107 原文里的 P-R4-7，不是「生产入口」迁移能顺带解决的；§8.6 / CR-010 也没有把它记为 RFC-012 的移交项。**必须在 RFC-011 决定单一写者，或由用户明确把它写成 RFC-012 的移交并补集成用例。**
+- **B-R5-2（C-109 / AC-9，阻塞）**：AC-9 的「接受后通知」没有回归锁——P-R5-2 删掉接受分支的 `channels.submit` 后**全量 75/622 全绿**；旧的正向用例在 Round 4 被负向用例替换掉了。输出半边同样：P-R5-14 把 `SseOutputChannel.emit` 改成空操作后全量 622 绿。**补正向路由用例 + bus 断言。**
+- **B-R5-3（C-110 / AC-6 / AC-7，阻塞）**：超时文本进入事件流、`skip` → `SPEECH_SKIPPED` 都没有编排层 / 事件流用例；P-R5-5 / P-R5-4 的退化全量 622 绿。**补两条用例。**
+- **B-R5-4（C-111 / AC-13，阻塞）**：`remainingSeconds` 没有调用者，投影 / API 没有剩余时间字段（P-R5-11），§8.4 却写 PASS；**实现并测「刷新不回满」，或按用户批准的顺延正式移交 RFC-012 并把 §8.4 改成未验收。**
+- **B-R5-5（C-112 / 迁移一致性，阻塞，文档）**：CR-010 要求 RFC-012 的 AC 里必须有一条「整局能从一个入口跑完」，但 RFC-012 的 15 条 AC 与交付物都没有承接；迁移目前只落在 RFC-011 的边界说明里。**给 RFC-012 补 AC / 交付物，并在 RFCS 的 Round 5 记录里互链。**
+
+**Non-blocking**：AC-1 只认五种角色 id，不认 `ROLE_LABELS` / 同角色他人（P-R4-4）；`otherRoles` 条件里的 `has` 是死代码；AC-2 的状态变体（非空查验史 / 药水 `used` / `canShoot` 两态）；AC-5 的 300 / emoji 路由级边界；AC-8 的端到端用例（planned `current-speech.test.ts`）；AC-11 的 `reads=0`（C-106）；AC-12 的内联 stub 与 `void input`；`ChannelRegistry` 无清理；`/input` 在无通道时仍返回 200；C-99 / C-104 未重查；README / RFCS 头部版本过期。
+
+**状态**：RFC-011 → `Changes requested`。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r5-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），七个源码文件 SHA-256 与探针前一致；临时探针测试已删除；探针恢复后（写评审文件前）全量 **75 files / 622 tests** 绿、`git status --porcelain` 为空。
