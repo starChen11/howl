@@ -253,3 +253,69 @@ describe('C-111 · timer 的三种起点', () => {
     expect(res.statusCode).toBe(410);
   });
 });
+
+describe('B-R8-2 · timer 的 DAY_STARTED 起点与递减', () => {
+  async function timerTwice(
+    eventsMutator: (
+      events: import('@shared/events').EventEnvelope[],
+    ) => import('@shared/events').EventEnvelope[],
+  ) {
+    const { buildApp } = await import('@server/app');
+    const { InMemoryMetaStore } = await import('@server/store/meta-store');
+    const { GameRegistry } = await import('@server/store/game-registry');
+
+    const store = new InMemoryMetaStore();
+    const app = buildApp({ store });
+    const registry = new GameRegistry(store);
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, { mode: 'slaughter-side' });
+    await store.set(`game:${record.gameId}`, { ...record, events: eventsMutator(record.events) });
+
+    const read = async () =>
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/api/games/${record.gameId}/timer`,
+          headers: { cookie: `session=${session.id}` },
+        })
+      ).json<{ remainingSeconds: number }>().remainingSeconds;
+
+    const first = await read();
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    const second = await read();
+    return { first, second };
+  }
+
+  it('只有 DAY_STARTED 且刚发生 → 60 秒', async () => {
+    const { first } = await timerTwice((events) => [
+      ...events,
+      {
+        gameId: events[0]?.gameId ?? 'g',
+        seq: events.length + 1,
+        ts: Date.now(),
+        type: 'DAY_STARTED',
+        visibleTo: 'public',
+        payload: { day: 1, diedLastNight: [], speechStartSeat: 1 },
+      } as import('@shared/events').EventEnvelope,
+    ]);
+
+    expect(first).toBe(60);
+  });
+
+  it('两次读取之间剩余秒数递减（不是常量）', async () => {
+    const { first, second } = await timerTwice((events) => [
+      ...events,
+      {
+        gameId: events[0]?.gameId ?? 'g',
+        seq: events.length + 1,
+        ts: Date.now(),
+        type: 'DAY_STARTED',
+        visibleTo: 'public',
+        payload: { day: 1, diedLastNight: [], speechStartSeat: 1 },
+      } as import('@shared/events').EventEnvelope,
+    ]);
+
+    expect(second).toBeLessThan(first);
+    expect(second).toBeGreaterThanOrEqual(0);
+  });
+});

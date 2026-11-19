@@ -275,3 +275,14 @@ $ pnpm test → 75 files / 631 tests
 ```
 $ pnpm test → 75 files / 637 tests
 ```
+
+### 8.14 Round 8 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **B-R8-1** 最后一位发言者仍重复提交 | 路由写入后相位切到 `DAY_VOTE`，而投票第一个行动者仍是同一席位，`(seatToSpeak ?? nextActor) === seat` 仍为真 | 把守卫抽成 `isStillTheirTurn(previousPhase, latest, seat)`：**相位也必须没变**。补三条纯函数用例；去掉相位比较会红 |
+| **B-R8-2** `DAY_STARTED` 起点与递减没有锁 | 删 `DAY_STARTED` 分支仍全绿 | 补两条：只有 `DAY_STARTED`（刚发生）→ 60；两次读取之间递减。删分支会红（已实跑） |
+
+```
+$ pnpm test → 75 files / 642 tests
+```

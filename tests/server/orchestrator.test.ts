@@ -435,3 +435,38 @@ describe('C-110 · 超时提交的文本进入事件流', () => {
     expect(timedOut.length).toBeGreaterThan(0);
   });
 });
+
+describe('B-R8-1 · 重读后是否还该提交', () => {
+  const base = {
+    phase: 'DAY_SPEECH',
+    speech: { startSeat: 1, spoken: [1, 2] },
+    seats: [
+      { seat: 1, alive: true, role: 'villager' },
+      { seat: 2, alive: true, role: 'villager' },
+      { seat: 3, alive: true, role: 'villager' },
+    ],
+  };
+
+  it('同相位同席位 → 提交', async () => {
+    const { isStillTheirTurn } = await import('@server/orchestrator');
+    expect(isStillTheirTurn('DAY_SPEECH', base as never, 3)).toBe(true);
+  });
+
+  it('相位已变（最后一位说完切到投票）→ 不提交', async () => {
+    const { isStillTheirTurn } = await import('@server/orchestrator');
+    // 只留 3 号存活：投票阶段第一个行动者就是 3 号。没有相位比较的话会误判成「还该他」。
+    const voted = {
+      phase: 'DAY_VOTE',
+      speech: undefined,
+      votes: [],
+      seats: [{ seat: 3, alive: true, role: 'villager' }],
+    };
+    expect(isStillTheirTurn('DAY_SPEECH', voted as never, 3)).toBe(false);
+  });
+
+  it('席位已变（玩家已提交，轮到下一位）→ 不提交', async () => {
+    const { isStillTheirTurn } = await import('@server/orchestrator');
+    const advanced = { ...base, speech: { startSeat: 1, spoken: [1, 2, 3] } };
+    expect(isStillTheirTurn('DAY_SPEECH', advanced as never, 3)).toBe(false);
+  });
+});

@@ -94,6 +94,21 @@ export function seatToSpeak(state: {
   return ordered.find((seat) => !spoken.has(seat));
 }
 
+/**
+ * 重读之后还要不要提交（B-R8-1）。
+ *
+ * **相位也要没变**：最后一位说完后相位会切到 `DAY_VOTE`，而投票的第一个行动者
+ * 可能还是同一席位——只看「谁该行动」会重复提交一次。
+ */
+export function isStillTheirTurn(
+  previousPhase: string,
+  latest: Parameters<typeof seatToSpeak>[0] & Parameters<typeof nextActor>[0],
+  seat: number,
+): boolean {
+  if (latest.phase !== previousPhase) return false;
+  return (seatToSpeak(latest) ?? nextActor(latest)) === seat;
+}
+
 export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResult> {
   const { registry, session, input, decide } = deps;
   const maxSteps = deps.maxSteps ?? 500;
@@ -144,7 +159,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     // 等待期间玩家可能已经通过路由提交了这条发言。重读之后如果「该谁行动」变了，
     // 就不要再提交一次——否则会多出一条 `REJECTED / NOT_YOUR_TURN`（B-R7-1）。
     const latestState = registry.stateOf(latest);
-    const stillTheirTurn = (seatToSpeak(latestState) ?? nextActor(latestState)) === seat;
+    const stillTheirTurn = isStillTheirTurn(state.phase, latestState, seat);
     if (!stillTheirTurn) {
       steps += 1;
       continue;
