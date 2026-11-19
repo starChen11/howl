@@ -1,9 +1,9 @@
 # RFC-010 评审 · 流式发言、思考指示与降级
 
 > **评审会话**：独立 subagent，全新上下文；本会话没有参与本仓库任何代码 / RFC / 测试的写作。
-> **日期**：2026-11-19（Round 4；Round 3 / 2 / 1 同日）
-> **分支 / HEAD**：`main` / `c2ec4a0`
-> **结论**：**Changes requested**（Round 4）
+> **日期**：2026-11-19（Round 6；Round 5 / 4 / 3 / 2 / 1 同日）
+> **分支 / HEAD**：`main` / `be4143d`
+> **结论**：**Changes requested**（Round 6）
 > **整体风险**：**High**
 
 ## Round 1 -- 2026-11-19
@@ -1753,3 +1753,300 @@ $ pnpm test
 - **C-86 · 无正文过滤 / committed `done` / 归属**：§8.10 与 v2.80 变更记录声称「无正文事件不进发言流」，代码没有实现；P4 / P5 / P7 可复现。合并规则在同 id 有总线增量时会丢掉 committed `done`（P3）。`bus.publish` / `runTurn` / `degradeEvents` 仍无生产调用者，§8.6 仍归 RFC-012，`RFCS.md` §3 没有 RFC-011 后继，RFC-011 也不依赖 010。
 - **C-87 · 写回与交接**：预算已修且有锁（P6 / M1）；`GameRegistry` 仍无追加原始事件入口，`degradeEvents` 无法落盘，`runTurn` 无调用者；§8.4 的 AC-10 / 11 / 12 仍写 PASS，§8.6 无 RFC-011 交接。按「代码 + 实测」判为未验收。
 - **C-92（未重查，非阻塞）**：`TEST-STRATEGY.md` 的 RFC-010 小节仍全 `proposed`，文件名（`sse.test.ts` / `replay-degrade.test.ts` / `stream.spec.ts`）与实现不符；`README.md` 状态与覆盖数字仍待回写。按 Round 1 记录保持非阻塞。
+
+## Round 6 -- 2026-11-19
+
+**结论：Changes requested · Overall Risk Level: High**
+
+本轮只复核用户点名的 Round 5 五项修复：**C-86 按类型映射**、**C-86 保留 committed `done`**、**C-87 的 `speak.ts` 生产接线**、**`GameRegistry.appendEvents`**、**C-96 同 id 整段重放的客户端回归锁**。已关闭的 C-85 / C-88 / C-89 不重查；C-90 ~ C-95 的非阻塞记录保持（C-92 的文档漂移本轮仍未重查）。C-96 本轮关闭。
+
+一句话：**类型映射本身成立，C-96 的客户端锁也真的能打红；但 committed `done` 在同 id 有增量时被排到了增量之前（P-R6-1），`DEGRADED → degraded` 没有任何回归锁（M-R6-1 全量仍绿）；`speak` / `appendEvents` 的写回路径在夜晚写出不可 replay 的事件流（P-R6-2），在白天最后一位发言后不推进到投票（P-R6-3），并且与 RFC-011「引擎只接收 action」的边界冲突（C-97）。**
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。评审开始时 HEAD `be4143d`，`git status --porcelain` 为空。
+
+```
+$ pnpm typecheck
+... TYPECHECK_EXIT=0
+
+$ pnpm lint
+... LINT_EXIT=0
+
+$ pnpm format:check
+Checking formatting...
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+vite v8.3.8 building client environment for production...
+dist/server/index.js  91.29 kB │ gzip: 30.46 kB
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  69 passed (69)
+      Tests  575 passed (575)
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+```
+
+覆盖率（`coverage/coverage-summary.json`，只覆盖 `src/engine/**`）：
+
+```
+lines: 96.96% (544/561)   branches: 92.85% (364/392)
+```
+
+**Product Type**：`PRD.md` 是 **game（主）+ web app（交付形态）**。本轮检查服务端 SSE 协议、流式消息合并、降级写回路径与测试证据；**显式跳过** UI / A11Y / 响应式 / 浏览器兼容 / Playwright（A 方案把界面留给 RFC-012，`tests/e2e/` 为空）。HTTP 端点与事件流仍检查，因为它们是本 RFC 的交付物。
+
+**探针后的复跑**：所有探针都使用独立临时测试文件 `tests/server/__r6-probe.test.ts` 或从 `/tmp/howl-rfc010-r6-backup/` 的文件备份恢复；源码四处 `md5` 与备份逐一相同（见 §6），临时探针文件已删除，`git status --porcelain` 为空；恢复后 `pnpm test` 复跑 **69 files / 575 tests 全绿**。没有 `git commit`，也没有使用 `git checkout`。
+
+---
+
+### 1. C-96 · 同 id 整段重放的客户端回归锁 —— 关闭
+
+Round 5 新增的 `tests/client/use-stream.test.ts:130-142` 是有效的回归锁：先喂 `delta(15,'我')`、`delta(15,'觉得')`，再从同 id 的 `thinking(15)` 开始整段重放；断言最终正文仍是「我觉得」，不是「我觉得我觉得」。
+
+- **M-R6-3**（把 `src/client/use-stream.ts:52` 改成「只有 id 变化才重置」）：
+
+  ```
+  FAIL  tests/client/use-stream.test.ts > C-96 · 断线重连时同 id 的 thinking 重置正文（整段重放）
+  AssertionError: expected '我觉得我觉得' to be '我觉得'
+  Tests  1 failed | 10 passed (11)
+  ```
+
+  这正好覆盖了 Round 5 指出的「M5 全绿」缺口。**C-96 关闭。**
+
+- 协议文档仍是旧口径：§2.2 写「从下一个 `seq` 继续」、D-3 只描述共享 id、§8.4 的 AC-5 仍写「重连返回空（不重复）」，而实现是整段重放。行为本身已由 P1 / P2 与 M-R6-3 证明，文档同步是非阻塞的 C-92 债务，不据此重开。
+
+---
+
+### 2. C-86 · 类型映射成立；committed `done` 的合并顺序仍然反，且映射无回归锁
+
+**按事件类型映射本身成立。** `src/server/routes/stream.ts:36-55` 现在只把 `SPEECH` 映射成 `done`、`DEGRADED` 映射成 `degraded`，其余事件跳过。用真实对局验证历史路径（P-R6-4）：在 `DAY_SPEECH` 里追加 `DEGRADED(seq 15)` + 短句 `SPEECH(seq 16)`，带 `Last-Event-ID: 14` 走真实路由：
+
+```
+P-degraded messages= [ 'degraded:15', 'done:16' ]
+P-degraded finalState= {"phase":"done","seat":2,"text":"我先过。", ...}
+```
+
+这证明 AC-9 的历史补偿路径现在能到 `degraded`，短句也能到 `done`；非发言事件不再冒充空 `done`。
+
+**但 `DEGRADED → degraded` 没有任何测试锁（M-R6-1）。** 把 `routes/stream.ts` 的 `DEGRADED` 分支改回 Round 4 的空文本 `done` 后：
+
+```
+$ pnpm test
+ Test Files  69 passed (69)
+      Tests  575 passed (575)
+```
+
+全量 69/575 仍然全绿。Round 5 的核心改动（类型映射）在测试里只被 AC-5 的「只含 SPEECH」间接覆盖；`DEGRADED` 分支被改坏时没有任何用例会红。这是 TEST-1 的缺口，不是行为缺口——但鉴于本 RFC 前四轮反复出现「声称修了、实际没锁」，本轮把它列为阻塞项。
+
+**committed `done` 的保留逻辑仍然有顺序错误（P-R6-1，阻塞）。** `src/server/routes/stream.ts:104-112` 先算 `extras`，再写：
+
+```ts
+const ordered = [...extras, ...fromBus].sort((a, b) => a.id - b.id);
+```
+
+同一段发言的所有消息共享 `id = seq`，而 `Array.prototype.sort` 稳定——`extras` 里的 committed `done` 会排在总线里同 id 的 `thinking` / `delta` **之前**。用真实对局复现（真实已提交 `SPEECH` seq 15，总线里只有同 id 的 `thinking` / `delta`，带 `Last-Event-ID: 14` 重连）：
+
+```
+P3 messages= [ 'done:15', 'thinking:15', 'delta:15' ]
+P3 finalState= {"phase":"speaking","seat":2,"text":"我","lastId":15,"speechId":15,...}
+```
+
+客户端处理完重连响应后停在 `speaking` / 半句「我」，完整正文「我觉得 2 号像狼」与 `done` 的语义都被同 id 的 `thinking` / `delta` 覆盖。把这一行换成 `[...fromBus, ...extras]`（稳定排序，同 id 时总线在前）后，同一个探针变成：
+
+```
+P3 messages= [ 'thinking:15', 'delta:15', 'done:15' ]
+P3 finalState= {"phase":"done","seat":2,"text":"我觉得 2 号像狼",...}
+```
+
+这不是只影响测试的边角：`src/server/llm/speak.ts:83-109` 先 `appendEvents` 写入 `SPEECH`，再发布 `delta` / `done`；在这段窗口里重连的客户端会走到上述路径。只有后续 live `done` 才能补全，若连接再次断开 / 流结束，就永远停在半句。
+
+**现有用例覆盖不到。** `tests/server/stream.test.ts:378-400` 只断言 `ids` 排好序；它的总线消息放在 `record.events[0].seq`，与 committed 的 `SPEECH` 不同 id，既没有构造「同 id committed `done` + 部分总线增量」，也没有把响应喂给 reducer。Round 5 要求的 route → reducer 断言仍未补上。
+
+**结论**：C-86 仍 Open（阻塞）——按类型映射已实现，但 committed `done` 的顺序仍然是错的，且类型映射本身没有回归锁。AC-5（不重复、不丢失）在重连路径上仍 FAIL，AC-2（`done` 之前的中间态）在重连路径上仍 NEEDS WORK。
+
+---
+
+### 3. C-87 · `speak` / `appendEvents` 写回路径 —— 接缝存在，但不能作为可用的生产路径
+
+`src/server/llm/speak.ts` 确实把 `runTurn` → `degradeEvents` → `appendEvents` → `bus.publish` 串了起来，纯函数层面能工作：在真实 `DAY_SPEECH` 里对一个席位调用降级 `speak`，事件流 replay 通过，下一席位前进，`seq` 连续，短句 ≤10 字（P-R6-4）：
+
+```
+P-degraded-speak phase= DAY_SPEECH next= 3 degradations= [ 2 ] text= 我先过。 seq= 14 16
+```
+
+**但这条写回路径绕过了 `engine.step`，P-R6-2 / P-R6-3 证明它不能直接用于生产。**
+
+#### 3.1 P-R6-2 · 夜晚写出的 `SPEECH` 让事件流不可 replay（DATA-3）
+
+在 `createGame` 直接得到的夜晚局面调用一次正常 `speak`：
+
+```
+P-speak-night events= [ 'GAME_STARTED:1', 'SPEECH:2' ]
+P-speak-night replay ERROR= SPEECH 之前没有 DAY_STARTED，无法记录席位 3
+```
+
+降级路径同样：
+
+```
+P-speak-night-degraded replay ERROR= SPEECH 之前没有 DAY_STARTED，无法记录席位 2
+```
+
+`GameRegistry.appendEvents`（`src/server/store/game-registry.ts:232-236`）只是把事件数组拼上去、`store.set`，既不校验 `seq` / `gameId`，也不调用 `applyEvent` / `replay`；注释写「`seq` 已由调用方保证连续」，但唯一的调用方 `speak` 在开局就会写出相位非法的 `SPEECH`。更糟的是 `tests/server/speak.test.ts` 的三条用例只检查 `result.record.events` / `seen` / 调用次数，从不 `registry.stateOf(result.record)`，所以这些用例全绿；若真实调用发生在错误相位，第一次 `stateOf` / `project()` / `replay()` 才爆炸，且此时事件已经落盘。
+
+#### 3.2 P-R6-3 · 白天最后一位发言后不进入投票（AC-10 / AC-12 / NFR-10）
+
+`advanceIfDone` 只存在于 `SPEECH` / `SPEECH_SKIP` 的 action handler 里（`src/engine/phases/day.ts:118-147`）：它负责在全员发言完后发出 `PHASE_CHANGED(DAY_SPEECH → DAY_VOTE)`。`speak` 直接 `appendEvents`，不经过 handler，因此：
+
+```
+P-speak-day speakers= 8 phase= DAY_SPEECH currentSpeaker= undefined
+             lastEvents= [ 'SPEECH:19', 'SPEECH:20', 'SPEECH:21', 'SPEECH:22' ]
+```
+
+按 `speak.ts:12` 注释的既定用法（每个 AI 回合调用它），真实一局里 8 个 AI 都通过 `speak` 说完后，状态仍停在 `DAY_SPEECH`，`currentSpeaker(state)` 是 `undefined`，没有任何 `PHASE_CHANGED` 去 `DAY_VOTE`。之后 `SPEECH` / `SPEECH_SKIP` 都会因「本日全员已发言」被拒绝，也没有别的 action 能推进——**这一天会永久卡住**。这正是 AC-10「降级后对局继续推进」与 AC-12「对局未卡死」要防的情况；而 AC-12 的 `tests/server/speak.test.ts:72-98` 用的是连续四次夜晚 `speak`，事件流本身不可 replay，`calls=8` 只证明了「attempt 被调用 8 次」，没有证明对局能继续。
+
+#### 3.3 与 RFC-011 的边界冲突（新 C-97）
+
+`src/server/llm/speak.ts:12` 写「RFC-011 的 `SseOutputChannel` 负责在每个 AI 回合调用它」，但：
+
+- RFC-011 §2.3 明确「引擎**只接收 action**、产出事件」，`OutputChannel.emit(chunk)` 只负责把一段 AI 发言的**增量文本**推给 SSE；它不负责写事件流。
+- `speak` 在 `src/` 里没有调用者（`grep` 只有定义与注释）；RFC-011 尚未开工，`RFCS.md:74` 的 RFC-010 后继仍是 `—`，RFC-011 的 `Depends on` 也只有 005 / 007。
+- 因此当前既没有可用的生产调用链，也没有记录这次跨 RFC 交接的依赖变更；`speak` 不是「接线」，而是一条与 RFC-011 动作层平行的第二条写路径。
+
+**结论**：C-87 仍 Open（阻塞）。`appendEvents` 作为「追加非 action 事件」的入口本身可以保留，但 `speak` 不应同时负责写 `SPEECH` 与推进回合；建议二选一：
+
+1. **动作层方案（推荐）**：`speak` 只负责生成文本与推送增量；写回合仍走 `registry.submit(SPEECH action)`，由引擎校验当前席位、写 `SPEECH` 并在全员发完后自动发 `PHASE_CHANGED`。降级时把 `DEGRADED` 作为 server 事件追加，再用短句提交 `SPEECH` action（或给 registry 一个「append + advance」方法，内部仍调用同一个 handler）。
+2. **如果坚持 `appendEvents` 写 `SPEECH`**：`appendEvents` 必须先把事件 `applyEvent` 到一个临时 `GameState` 上（校验 seq / gameId / 相位 / 是否当前发言人），再在写完后执行 `advanceIfDone` 的同一套派生逻辑（不能复制一份判断）；`speak` 必须校验阶段。无论哪条，都要补「replay 通过」「下一席位」「最后一位进 DAY_VOTE」的端到端用例。
+
+---
+
+### 4. 逐条验收标准（只列本轮受影响的）
+
+| AC | Round 5 | Round 6 | 依据 |
+|---|---|---|---|
+| 1 | PARTIAL | **PARTIAL** | `speak` 在 attempt 之前发 `thinking`（`speak.ts:45`）；真实 p95 仍是手工项（D-6） |
+| 2 | NEEDS WORK | **NEEDS WORK** | P-R6-1 让重连后的正文停在半句；live 总线顺序正常 |
+| 3 | PARTIAL | **PARTIAL** | 真实 p95 手工项；服务端首事件时间仍未记录（C-93，未重查） |
+| 4 | PASS | **PASS（未重查）** | C-89 已关闭 |
+| 5 | FAIL | **FAIL** | P-R6-1（`done:15 → thinking:15 → delta:15`）；C-96 客户端锁已关闭 |
+| 6 | PASS | **PASS（未重查）** | Round 1 的逐字节解码用例仍有效 |
+| 7 | NEEDS WORK | **PASS（日间行为）/ NEEDS WORK（集成）** | P-R6-4 在 `DAY_SPEECH` 里证明 DEGRADED + ≤10 字短句 + seq 连续；但 `speak` 的夜晚路径不可 replay，且没有测试锁 |
+| 8 | PASS（helper） | **PASS（helper，未重查）** | 重试成功不降级的用例仍在 |
+| 9 | FAIL | **PASS（行为）/ TEST-1 缺失** | P-R6-4 历史路径能到 `degraded`；M-R6-1 把 DEGRADED 分支改回空 `done` 后全量 575 仍绿 |
+| 10 | NEEDS WORK | **FAIL** | P-R6-3：全员 `speak` 后停在 `DAY_SPEECH` / `currentSpeaker=undefined`，无 `PHASE_CHANGED` |
+| 11 | PARTIAL | **PARTIAL** | `state.degradations` 只记席位，没有轮次 / 天数标记；没有轮次级测试 |
+| 12 | PARTIAL | **NEEDS WORK** | 4 次 attempt 的计数成立，但夜晚事件流不可 replay，且最后一位会卡死；「未卡死」未被证明 |
+
+---
+
+### 5. 五个审查维度
+
+#### 5.1 RFC ADHERENCE —— **FAIL**
+
+- 用户点名的五项里：类型映射成立、C-96 回归锁成立；但 committed `done` 的合并顺序仍错（P-R6-1），生产侧 `speak` 路径不可用（P-R6-2 / P-R6-3），`DEGRADED` 映射无锁（M-R6-1）。
+- 额外实现了 RFC §3 未列出的 `speak.ts`（`appendEvents` 写回），但 RFC §8.3 的文件清单没有更新，§8.6 仍写「路由用 `reply.send` 一次写完、持续推送在 RFC-012」——这两句在 Round 2 之后就已经不成立，属于 DOC-1。
+- §8.11 声称「`extras` 保留…committed `done`」，实际保留了但顺序错误；§8.11 声称「`speak.ts` 串起生产侧」，实际没有 `src/` 调用者，且写出的流不满足 DATA-3。
+
+#### 5.2 RULES COMPLIANCE —— **NEEDS WORK**
+
+| 规则 | 结论 |
+|---|---|
+| `ARCH-1` | **PASS**：没有让 `src/engine/` import UI / server / 网络。 |
+| `ARCH-4` / `ARCH-9` | **PASS（未改）**：`runTurn` 的时钟仍由调用方注入；客户端仍不做状态机权威。 |
+| `DATA-1` | **NEEDS WORK**：正常日间路径 `seq` 连续；但 `appendEvents` 不校验，调用方在夜晚能写出相位非法的 `SPEECH`。 |
+| `DATA-3` | **FAIL**：P-R6-2 的 `stateOf()` 直接抛错；`speak` 在错误相位产出的流不可 `replay`。 |
+| `API-2` | **PASS**：SSE 消息 `id` 仍等于事件 `seq`；AC-5 的「不丢失」另判 FAIL（P-R6-1）。 |
+| `TEST-1` | **FAIL**：`DEGRADED → degraded` 无锁（M-R6-1）；`speak.test.ts` 的 AC-10 / 11 用例不 replay、不检查下一席位 / 相位；AC-9 没有 route → reducer 用例。 |
+| `TEST-2` | **PASS**：引擎覆盖率 96.96% / 92.85%，未因本 RFC 下降。 |
+| `DOC-1` | **FAIL**：§8.3 文件清单缺 `speak.ts` / `speak.test.ts`；§8.6 仍写 `reply.send` 一次写完并归 RFC-012；§8.4 的 AC-10 / 11 / 12 仍写 PASS；§8.11 的「`extras` 保留 committed done」与「生产侧」均与实测不符。 |
+| `AI-3` / `AI-7` | **未重查**：未改调用超时 / 重试配置；`raceTimeout` 超时后不取消底层请求、`speak` 未接日志的旧风险仍按 Round 5 记录。 |
+| `SEC-5` | **PASS（数据面）**：SSE 仍只发可见事件，没有直接序列化完整 `GameState`；`speak` 只发文本 / 席位。 |
+
+#### 5.3 SECURITY —— **PASS**
+
+本轮改动没有新增对外输入面、密钥或日志：`speak` 不在 HTTP 路由上，`committedMessages` 仍先过 `isVisibleTo`，路由仍在 `resolveSession` 之后校验 `session.gameIds`，`StreamBus.replay` 只重放该对局已发布的消息。C-90 的可见性回归锁仍是未重查的非阻塞项；这一点不因本轮改动而变化。
+
+#### 5.4 PERFORMANCE —— **NEEDS WORK**
+
+- `committedMessages` 每次连接都扫描全部历史事件并全量序列化，没有 200 条窗口（旧问题）。
+- P-R6-1 会把同一段发言的 committed `done` 与总线增量重复发送，重连带宽和客户端重渲染都翻倍。
+- `appendEvents` 每次写回都复制完整事件数组（`[...record.events, ...events]`），一局 n 次发言是 O(n²)；当前规模小，非阻塞。
+- `chunkText` 在完整文本生成后一次性切块，不是真实流式；`raceTimeout` 超时后底层请求仍在跑（AI-3 的后续）。
+- `PassThrough.write` 仍没有 backpressure 处理（旧非阻塞项）。
+
+#### 5.5 MAINTAINABILITY —— **NEEDS WORK**
+
+- 现在有两条写路径：`submit(action)` 负责校验 + 相位推进；`appendEvents` 负责原样写回。二者的不变量完全不同，却没有在类型 / 方法名 / 文档上说明；`speak` 同时使用后者并承担「引擎推进」的语义，正是 P-R6-3 的根因。
+- `routes/stream.ts` 的 committed / bus 合并仍是内联逻辑，没有独立可测的 merge 函数；P-R6-1 就出在这段内联的 spread 顺序里。
+- `tests/server/speak.test.ts` 的 describe 名写着「AC-10 / 11」，实际只断言事件类型 / 文本长度；不 replay、不检查下一席位 / 相位。这种「标题覆盖了、断言没覆盖」的测试比没有测试更危险。
+- `speak` 正常路径返回 `getGame(...)` 再兜底旧 record，降级路径直接返回 `appendEvents` 的结果；两条路径的 `record` 语义不一致。
+- 正向：`committedMessages` 的按类型映射代码清晰，P-R6-4 的历史 `degraded` 路径确实工作；C-96 的新 reducer 用例是一条真正会红的锁。
+
+---
+
+### 6. 变异探针与恢复
+
+备份在 `/tmp/howl-rfc010-r6-backup/`，覆盖 `src/client/use-stream.ts`、`src/server/routes/stream.ts`、`src/server/llm/speak.ts`、`src/server/store/game-registry.ts`；临时探针为 `tests/server/__r6-probe.test.ts`，跑完已删除。每个变异用 `cp` 从备份恢复，`md5` 逐项相同；**没有使用 `git checkout`**，也没有 `git commit`。
+
+| # | 探针 / 变异 | 跑什么 | 结果 |
+|---|---|---|---|
+| P-R6-1 | 真实已提交 `SPEECH` seq 15 + 总线同 id `thinking` / `delta`，带 `Last-Event-ID: 14` | 真实路由 + reducer | `[done:15, thinking:15, delta:15]` → `phase=speaking`、`text='我'`（C-86 顺序错误） |
+| P-R6-1b | 同上，把 `[...extras, ...fromBus]` 换成 `[...fromBus, ...extras]` | 真实路由 + reducer | `[thinking:15, delta:15, done:15]` → `phase=done`、正文完整（根因确认） |
+| P-R6-2 | 开局（夜晚）正常 / 降级 `speak`，再 `registry.stateOf()` | `speak` + replay | `SPEECH 之前没有 DAY_STARTED，无法记录席位 3 / 2`（DATA-3） |
+| P-R6-3 | 真实 `DAY_SPEECH`，8 个 AI 席位全部经 `speak` 发言 | `speak` + replay | `phase=DAY_SPEECH`、`currentSpeaker=undefined`、最后四条都是 `SPEECH`，无 `PHASE_CHANGED` |
+| P-R6-4 | `DAY_SPEECH` 里降级 `speak`；以及已提交 `DEGRADED:15` + `SPEECH:16` 走路由 | `speak` / 路由 + reducer | 降级：下一席位 3、`degradations=[2]`、`seq 14→16`、短句 ≤10；路由：`[degraded:15, done:16]` → `phase=done`、`text='我先过。'` |
+| M-R6-1 | 把 `routes/stream.ts` 的 `DEGRADED` 分支改回空文本 `done` | 全量 `pnpm test` | **69 files / 575 tests 全绿**（DEGRADED 映射无锁） |
+| M-R6-2 | 把 `ordered` 改成 `[...fromBus, ...extras]` | P-R6-1 探针 | 变绿（顺序即根因） |
+| M-R6-3 | `use-stream.ts:52` 改成「只有 id 变化才重置」 | `tests/client/use-stream.test.ts` | **1 failed / 10 passed**（C-96 有锁） |
+
+**恢复校验**：
+
+```
+$ md5 -q src/client/use-stream.ts src/server/routes/stream.ts src/server/llm/speak.ts src/server/store/game-registry.ts
+c952aa1d8d3d3ee6d4e896f850c2bffb
+7019be5e13b8ef3951543c66b39ded09
+7cf3fb5e266a72071d020db9ac4e6b78
+9758257b0723985d95805aa9acb9c828
+
+$ md5 -q /tmp/howl-rfc010-r6-backup/{use-stream.ts,stream.ts,speak.ts,game-registry.ts}
+c952aa1d8d3d3ee6d4e896f850c2bffb
+7019be5e13b8ef3951543c66b39ded09
+7cf3fb5e266a72071d020db9ac4e6b78
+9758257b0723985d95805aa9acb9c828
+
+$ git status --porcelain
+（空）
+
+$ pnpm test
+ Test Files  69 passed (69)
+      Tests  575 passed (575)
+```
+
+---
+
+### 7. 结论
+
+- **Overall Risk Level: High**
+- **Summary**：`committedMessages` 的按类型映射与 C-96 的客户端回归锁是本轮两项真实的修复，M-R6-3 会打红，P-R6-4 也证明历史 `degraded` 路径能工作；但 committed `done` 在合并时被排到同 id 增量之前，重连后仍会停在半句，且 `DEGRADED` 映射被改坏时全量 575 仍绿。`speak` / `appendEvents` 的写回路径在夜晚写出不可 replay 的事件流，在白天最后一位发言后不推进投票，并与 RFC-011 的动作层边界冲突（C-97）；它不是可用的生产接线。
+- **Blocking Issues**：
+  1. **C-86 · committed `done` 顺序**：P-R6-1，`[...extras, ...fromBus]` 让 `done:15` 排在 `thinking:15` / `delta:15` 之前；应改为同 id 时总线在前（或按 id 分组后把 committed `done` 追加在该组末尾），并补 route → reducer 用例。
+  2. **C-86 · 类型映射无锁**：M-R6-1 把 `DEGRADED` 分支改回空 `done` 后全量 69/575 仍绿；补「历史 `DEGRADED` → `degraded` → 短句 `done`」的 route → reducer 用例。
+  3. **C-87 / C-97 · `speak` 写回路径**：P-R6-2（夜晚 `SPEECH` 不可 replay）与 P-R6-3（全员发言后停在 `DAY_SPEECH`，无 `PHASE_CHANGED`）。`speak` 不应绕过 `submit` 写 `SPEECH`；降级写回要么走「append DEGRADED + submit 短句 SPEECH」，要么给 `appendEvents` 加 applyEvent 校验与同一套 `advanceIfDone` 派生逻辑。
+  4. **DOC-1 · 交接与文档**：`speak.ts` / `speak.test.ts` 未进 §8.3；§8.6 仍写 `reply.send` 一次写完并归 RFC-012；§8.4 的 AC-10 / 11 / 12 仍写 PASS；`RFCS.md:74` 的 RFC-010 后继仍是 `—`，RFC-011 也不依赖 010。
+- **Improvement Suggestions**：① 把 committed / bus 合并抽成可单测的 `mergeMessages(committed, replayable, lastEventId)`，用一个显式的「同 id 组」规则，而不是依赖 spread + 稳定排序的隐含顺序。② `appendEvents` 先 `applyEvent` 到临时状态，失败即不落盘；`speak` 进入前校验 `phase === 'DAY_SPEECH'` 且 `currentSpeaker === seat`。③ 给 `raceTimeout` 接 `AbortSignal`，超时后取消底层请求（AI-3 / AI-7 的后续）。④ 补 AC-10 / 12 的端到端用例：一局 8 个 AI 全部经生产路径发言后必须进入 `DAY_VOTE`，且中途一次降级不改变下一席位。⑤ AC-11 的「轮次」标记与 `degradations` 的持久化仍需在 RFC-014 前定案（当前只有席位列表）。⑥ 下一次 docs 提交同步 §2.2 / §8.3 / §8.4 / §8.6 / `TEST-STRATEGY.md`（C-92，非阻塞）。
+- **Suggested status**：**`Changes requested`**。
+
+---
+
+### 8. Open conflicts（登记到 `RFCS.md` §8.31 Round 6 段）
+
+- **C-97（新增，阻塞）· RFC-010 `speak` vs RFC-011「引擎只接收 action」**：`src/server/llm/speak.ts:12` 声称 RFC-011 的 `SseOutputChannel` 每回合调用它；RFC-011 §2.3 说 `OutputChannel` 只 `emit` 增量文本，引擎只接收 action。`speak` 直接 `appendEvents` 写 `SPEECH` 并跳过 `advanceIfDone`，与 RFC-011 §2.3 / `src/engine/phases/day.ts:118-147` 冲突。需决定：`speak` 只产出文本、写回合走 `submit`；或给 `appendEvents` 增加 applyEvent 校验与派生推进。
+- **C-86（仍阻塞）· committed `done` 与总线顺序**：§8.10 / §8.11 声称合并已按 id 排序、同 id 不重复、committed `done` 保留；实测 P-R6-1 仍得到 `done → thinking → delta`，且 `DEGRADED` 映射无锁（M-R6-1）。这是实现与文档的不一致，不是新的规则冲突。
+- **C-87（仍阻塞）· 生产路径与交接**：`appendEvents` / `speak` 已存在，但没有 `src/` 调用者；§8.4 的 AC-10 / 11 / 12 仍为 PASS，§8.6 的 `reply.send` 一次写完 / RFC-012 归属与代码相反；`RFCS.md` §3 没有 RFC-011 后继，RFC-011 的 `Depends on` 也没有 010。若正式交给 RFC-011，按 `AGENTS.md` 硬规则 6 同步依赖表与 §8.6；若不交，AC-10 / 12 必须在本 RFC 内端到端证明。
+- **C-96（Round 6 关闭）· 协议文档仍旧口径**：§2.2 / D-3 / §8.4 AC-5 仍写「从下一个 `seq` 继续 / 重连返回空」，实现是整段重放；行为与测试已成立，文档同步归 C-92 非阻塞。
+- **C-92（未重查，非阻塞）**：`TEST-STRATEGY.md` 的 RFC-010 小节仍全 `proposed`，文件名（`sse.test.ts` / `replay-degrade.test.ts` / `stream.spec.ts`）与实现不符；`README.md` 状态与覆盖数字仍待回写。
