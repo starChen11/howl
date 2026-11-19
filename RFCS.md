@@ -47,7 +47,7 @@
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
-| [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
+| [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Implemented |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
@@ -704,6 +704,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.94 | RFC-011 实现完成（Status → Implemented）：通道抽象（`HttpInputChannel` / `SseOutputChannel`）、编排层 `runGame`、身份卡（只读投影）、发言规则纯函数；界面部件留 RFC-012（用户选 A） |
 | 2026-11-19 | v2.93 | RFC-010 Round 11 复核（Status → `Reviewed`）：C-98 回归锁关闭——真实链路刷新用例（`speak` 走完一天、最后一位降级 → 同 store / 新总线 → 真实路由 → `streamReducer`）断言唯一 `degraded:24 === DEGRADED.seq`、正文 `我先过。`、`lastId 24`；M-R11-1 删 committed `DEGRADED` 映射 → 1 failed，M-R11-2 清空正文 → 1 failed，M-R11-3 id 偏移 → 1 failed。门禁 69/587 全绿、覆盖率 96.96 / 92.85；探针从 `/tmp/howl-rfc010-r11-backup/` 文件备份恢复、`md5` 一致、临时探针已删除、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-010.md`](reviews/REVIEW-RFC-010.md) Round 11 |
 | 2026-11-19 | v2.92 | RFC-010 Round 10 修复（Status → Implemented）：刷新终态用例改成真实链路（speak → 新总线 → 真实路由 → reducer） |
 | 2026-11-19 | v2.91 | RFC-010 Round 10 复核（Status → `Changes requested`）：C-98 代码修复关闭（P-R10-B：事件 `SPEECH:22 / PHASE_CHANGED:23 / DEGRADED:24`，bus `done:22 / degraded:24`，fresh / reconnect 各只有一条 `degraded:24`，终态 `degraded` / `我先过。` / `lastId 24`；M-R10-1 回退 `nextSeq + 1` → 最后一位用例 1 failed，expected 24 received 23）；但新刷新用例是总线级手工消息，未写入 `record`、未走 `committedMessages` / `Last-Event-ID`，M-R10-3 删掉 committed `DEGRADED` 映射后仍绿，Round 9 的真实路由刷新 / 重连锁仍缺；§8.12:244 / `turn.ts:131` 旧顺序为非阻塞债务。门禁 69/586 全绿、覆盖率 96.96 / 92.85；探针从 `/tmp/howl-rfc010-r10-backup/` 文件备份恢复、`md5` 一致、临时探针已删除、代码工作树 clean（写入评审前）；无 commit。详见 [`reviews/REVIEW-RFC-010.md`](reviews/REVIEW-RFC-010.md) Round 10 |

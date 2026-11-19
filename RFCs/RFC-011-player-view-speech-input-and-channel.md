@@ -114,3 +114,69 @@ interface OutputChannel {
 | Q-011-1 | 倒计时 60 秒 / 300 字 | **(assumption)** 采用 PRD OQ-12 的假设值，可配置 |
 | Q-011-2 | 超时后是否允许撤回已自动提交的内容 | **(assumption)** 不允许；提交即生效 |
 | Q-011-3 | 通道接口是否需要支持「中途打断」 | **(assumption)** v1 不支持；语音接入时再扩展接口 |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。前置 RFC-005 / RFC-007 均已 `Reviewed`。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| 客户端范围 | **A 方案**（用户选）：服务端的通道、编排、玩家视图与发言规则先做；身份卡与输入框两个界面部件留到 RFC-012 |
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+| **D-1** | 发言规则（字数、弃权、倒计时）做成 `src/server/speech.ts` 的**纯函数** | 前端限制与后端校验要共用同一组判据（SEC-4）；纯函数现在就能测，也方便界面直接导入 |
+| **D-2** | `HttpInputChannel` 用注入的单调时钟，超时用 `setTimeout` | 「刷新不回满」的前提是起点在服务端；用 `setInterval` 累加会在后台标签页漂移 |
+| **D-3** | 身份卡 `buildIdCard(ctx)` **只读投影** | UI-1 / SEC-5：玩家能看到的只能是投影里有的。另写一套裁剪逻辑就等于开了第二个真相来源 |
+| **D-4** | 编排层 `runGame` 通过注入的 `decide` 拿 AI 决策，**不在这一层判断角色** | 引擎与通道都只认 action；决策来源（模型 / 脚本）属于可替换件 |
+| **D-5** | 界面部件与 DOM 断言（AC-3 / AC-4）不在本 RFC | 用户选 A；`tests/client/` 目前仍是无 DOM 环境 |
+| **D-6** | `seatToAct` 从公开事件的发言游标推断「轮到谁」 | 投影的 `publicEvents` 里有 `SPEECH` / `SPEECH_SKIPPED`；不另传一份游标，避免第三份真相 |
+
+### 8.3 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 共享新增 | `src/shared/channels.ts`（`InputChannel` / `OutputChannel` / `PlayerInput`） |
+| 服务端新增 | `src/server/speech.ts`、`src/server/channels/{http,sse}.ts`、`src/server/orchestrator.ts`、`src/server/view/id-card.ts` |
+| 测试新增 | `tests/server/{channels,speech,id-card,orchestrator}.test.ts`、`tests/security/channel-isolation.test.ts` |
+| 文档 | 本文件 §8、`RFCS.md`、`TEST-STRATEGY.md`、`README.md` |
+
+### 8.4 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `id-card.test.ts` · 9 个席位的投影里 `"role":` 只出现一次 | PASS |
+| 2 | 同上 · 预言家查验史 / 女巫两瓶药 / 狼人队友 / 猎人开枪条件 | PASS |
+| 3 | — | 推迟到 RFC-012（D-5） |
+| 4 | — | 推迟到 RFC-012（D-5） |
+| 5 | `speech.test.ts` · emoji 算一个字符；300 可、301 不可 | PASS（后端判据；前端限制在 RFC-012） |
+| 6 | `speech.test.ts` + `channels.test.ts` · 超时用已输入内容（`normalizeInput` 的 `timeout` 分支） | PASS |
+| 7 | 同上 · 超时且为空 → `skip`，编排层产出 `SPEECH_SKIP` | PASS |
+| 8 | `channels.test.ts` · 玩家发言原样进入事件流（`SPEECH` 事件） | PASS |
+| 9 | `channel-isolation.test.ts` · `src/engine` 里没有 `InputChannel` / `OutputChannel` | PASS |
+| 10 | 同上 · `src/client` 不 import `@engine/`、不出现 `reduce(` | PASS |
+| 11 | `channels.test.ts` + `orchestrator.test.ts` · stub 通道驱动，无浏览器、无 LLM | PASS |
+| 12 | `channels.test.ts` · 脚本化 `InputChannel` 推进对局，引擎零改动 | PASS |
+| 13 | `speech.test.ts` · `remainingSeconds` 只由服务端起点决定；`HttpInputChannel.submit` 兑现挂起 Promise | PASS |
+| 14 | `channel-isolation.test.ts` · `src/engine` 不 import `@server/` / `@client/` | PASS |
+
+### 8.5 验证输出（实跑）
+
+```
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → Test Files 74 passed (74) · Tests 613 passed (613)
+```
+
+### 8.6 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| 界面部件 | `IdCard.tsx` / `SpeechInput.tsx` 与 DOM 扫描（AC-3 / AC-4） | RFC-012 |
+| 编排层的完整循环 | `runGame` 的 AI 决策目前由注入的 `decide` 提供；真正把 `speak`（RFC-010）接进每个 AI 回合是 RFC-012/013 的事 | RFC-012 |
+| 播报超时 | `HttpInputChannel` 超时时交出空文本（没有增量缓存）；要「自动提交已输入内容」需要前端把草稿同步到服务端 | RFC-012 |
