@@ -95,3 +95,86 @@ describe('C-111 · 服务端的剩余秒数端点', () => {
     expect(body.phase.length).toBeGreaterThan(0);
   });
 });
+
+describe('C-111 · timer 用事件流起点，不是常量', () => {
+  it('一条很旧的发言会让剩余秒数为 0（常量实现会返回 60）', async () => {
+    const { buildApp } = await import('@server/app');
+    const { InMemoryMetaStore } = await import('@server/store/meta-store');
+    const { GameRegistry } = await import('@server/store/game-registry');
+    const { project } = await import('@server/project');
+
+    const store = new InMemoryMetaStore();
+    const app = buildApp({ store });
+    const registry = new GameRegistry(store);
+    const session = await registry.createSession();
+
+    // 找一局已经到白天的记录（用注册表推进），再把它的一条 SPEECH 改成 120 秒前
+    const record0 = await registry.createGame(session, { mode: 'slaughter-side', seed: 15 });
+    void project;
+    let current = record0;
+    const stateOf = () => registry.stateOf(current);
+    while (stateOf().phase === 'NIGHT_WOLF_CHAT') {
+      const state = stateOf();
+      const speaker = state.seats.find(
+        (wolf) =>
+          wolf.alive &&
+          wolf.role === 'wolf' &&
+          !(state.wolfChat ?? []).some((entry) => entry.seat === wolf.seat),
+      )?.seat;
+      if (speaker === undefined) break;
+      const r = await registry.submit(
+        session,
+        current,
+        {
+          type: 'WOLF_CHAT',
+          ts: 1,
+          seat: speaker,
+          text: '',
+        } as never,
+        state.seq,
+      );
+      if (!r.ok) break;
+      current = r.record;
+    }
+    for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
+      const state = stateOf();
+      if (state.phase === 'DAY_SPEECH') break;
+      const actor =
+        type === 'WOLF_KILL'
+          ? state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat
+          : type === 'SEER_CHECK'
+            ? state.seats.find((seat) => seat.alive && seat.role === 'seer')?.seat
+            : state.seats.find((seat) => seat.alive && seat.role === 'witch')?.seat;
+      if (actor === undefined) break;
+      const action =
+        type === 'WITCH_ACT'
+          ? { type, ts: 1, seat: actor, potion: 'none' }
+          : {
+              type,
+              ts: 1,
+              seat: actor,
+              target: state.seats.find((seat) => seat.alive && seat.seat !== actor)?.seat,
+            };
+      const r = await registry.submit(session, current, action as never, state.seq);
+      if (!r.ok) break;
+      current = r.record;
+    }
+
+    // 把最后一条发言事件的 ts 改成 120 秒前，再放回存储
+    const events = current.events.map((event) =>
+      event.type === 'SPEECH' || event.type === 'SPEECH_SKIPPED'
+        ? { ...event, ts: Date.now() - 120_000 }
+        : event,
+    );
+    await store.set(`game:${current.gameId}`, { ...current, events });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/games/${current.gameId}/timer`,
+      headers: { cookie: `session=${session.id}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ remainingSeconds: number }>().remainingSeconds).toBe(0);
+  });
+});

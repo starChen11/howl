@@ -243,3 +243,195 @@ describe('C-113 · 编排层不能覆盖路由写入的发言', () => {
     );
   });
 });
+
+describe('C-110 · 玩家 skip 与超时在事件流上可见', () => {
+  it('输入跳过 → 产出 SPEECH_SKIPPED', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    // 玩家坐 wolf 位：夜里不会被狼刀，白天一定有发言机会
+    let game;
+    for (let seat = 1; seat <= 9; seat += 1) {
+      game = await registry.createGame(session, {
+        mode: 'slaughter-side',
+        seed: 15,
+        playerSeat: seat as never,
+      });
+      if (registry.stateOf(game).seats.find((candidate) => candidate.isPlayer)?.role === 'wolf') {
+        break;
+      }
+    }
+    if (game === undefined) throw new Error('没有创建对局');
+
+    // 把这一夜走完（编排层只从白天验证，夜间行动由 RFC-012 的目标选择承担）
+    let current = game;
+    const stateOf = () => registry.stateOf(current);
+    while (stateOf().phase === 'NIGHT_WOLF_CHAT') {
+      const state = stateOf();
+      const speaker = state.seats.find(
+        (wolf) =>
+          wolf.alive &&
+          wolf.role === 'wolf' &&
+          !(state.wolfChat ?? []).some((entry) => entry.seat === wolf.seat),
+      )?.seat;
+      if (speaker === undefined) break;
+      const result = await registry.submit(
+        session,
+        current,
+        {
+          type: 'WOLF_CHAT',
+          ts: 1,
+          seat: speaker,
+          text: '',
+        } as never,
+        state.seq,
+      );
+      if (!result.ok) break;
+      current = result.record;
+    }
+    for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
+      const state = stateOf();
+      if (state.phase === 'DAY_SPEECH') break;
+      const actor =
+        type === 'WOLF_KILL'
+          ? state.seats.find((candidate) => candidate.alive && candidate.role === 'wolf')?.seat
+          : type === 'SEER_CHECK'
+            ? state.seats.find((candidate) => candidate.alive && candidate.role === 'seer')?.seat
+            : state.seats.find((candidate) => candidate.alive && candidate.role === 'witch')?.seat;
+      if (actor === undefined) break;
+      const action =
+        type === 'WITCH_ACT'
+          ? { type, ts: 1, seat: actor, potion: 'none' }
+          : {
+              type,
+              ts: 1,
+              seat: actor,
+              target: state.seats.find((candidate) => candidate.alive && candidate.seat !== actor)
+                ?.seat,
+            };
+      const result = await registry.submit(session, current, action as never, state.seq);
+      if (!result.ok) break;
+      current = result.record;
+    }
+
+    // 用一个「按需返回」的输入通道：跳过一轮，再来一轮带文本
+    const answers: PlayerInput[] = [{ kind: 'skip' }];
+    let answerIndex = 0;
+    const input: InputChannel = {
+      async read(): Promise<PlayerInput> {
+        const answer = answers[answerIndex] ?? { kind: 'skip' };
+        answerIndex += 1;
+        return answer;
+      },
+      close() {},
+    };
+
+    const result = await runGame({
+      registry,
+      session,
+      input,
+      output: stubOutput().channel,
+      decide: async ({ seat, ctx }) => {
+        if (ctx.phase !== 'DAY_SPEECH') return { action: undefined };
+        return { action: { type: 'SPEECH', ts: 1, seat: seat as never, text: '我过了。' } };
+      },
+      maxSteps: 40,
+    });
+
+    const skipped = result.record.events.filter((event) => event.type === 'SPEECH_SKIPPED');
+    expect(skipped.length).toBeGreaterThan(0);
+  });
+});
+
+describe('C-110 · 超时提交的文本进入事件流', () => {
+  it('输入是 timeout 时，产出带该文本的 SPEECH', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+
+    // 玩家坐 wolf 位并推进到白天（复用上面的做法：夜里不会被刀）
+    let game;
+    for (let seat = 1; seat <= 9; seat += 1) {
+      game = await registry.createGame(session, {
+        mode: 'slaughter-side',
+        seed: 15,
+        playerSeat: seat as never,
+      });
+      if (registry.stateOf(game).seats.find((candidate) => candidate.isPlayer)?.role === 'wolf') {
+        break;
+      }
+    }
+    if (game === undefined) throw new Error('没有创建对局');
+
+    let current = game;
+    const stateOf = () => registry.stateOf(current);
+    while (stateOf().phase === 'NIGHT_WOLF_CHAT') {
+      const state = stateOf();
+      const speaker = state.seats.find(
+        (wolf) =>
+          wolf.alive &&
+          wolf.role === 'wolf' &&
+          !(state.wolfChat ?? []).some((entry) => entry.seat === wolf.seat),
+      )?.seat;
+      if (speaker === undefined) break;
+      const result = await registry.submit(
+        session,
+        current,
+        {
+          type: 'WOLF_CHAT',
+          ts: 1,
+          seat: speaker,
+          text: '',
+        } as never,
+        state.seq,
+      );
+      if (!result.ok) break;
+      current = result.record;
+    }
+    for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
+      const state = stateOf();
+      if (state.phase === 'DAY_SPEECH') break;
+      const actor =
+        type === 'WOLF_KILL'
+          ? state.seats.find((candidate) => candidate.alive && candidate.role === 'wolf')?.seat
+          : type === 'SEER_CHECK'
+            ? state.seats.find((candidate) => candidate.alive && candidate.role === 'seer')?.seat
+            : state.seats.find((candidate) => candidate.alive && candidate.role === 'witch')?.seat;
+      if (actor === undefined) break;
+      const action =
+        type === 'WITCH_ACT'
+          ? { type, ts: 1, seat: actor, potion: 'none' }
+          : {
+              type,
+              ts: 1,
+              seat: actor,
+              target: state.seats.find((candidate) => candidate.alive && candidate.seat !== actor)
+                ?.seat,
+            };
+      const result = await registry.submit(session, current, action as never, state.seq);
+      if (!result.ok) break;
+      current = result.record;
+    }
+
+    const result = await runGame({
+      registry,
+      session,
+      input: {
+        async read() {
+          return { kind: 'timeout', text: '我还没来得及说完' };
+        },
+        close() {},
+      },
+      output: stubOutput().channel,
+      decide: async ({ seat, ctx }) =>
+        ctx.phase === 'DAY_SPEECH'
+          ? { action: { type: 'SPEECH', ts: 1, seat: seat as never, text: '我过了。' } }
+          : { action: undefined },
+      maxSteps: 30,
+    });
+
+    const timedOut = result.record.events.filter(
+      (event) =>
+        event.type === 'SPEECH' && (event.payload as { text?: string }).text === '我还没来得及说完',
+    );
+    expect(timedOut.length).toBeGreaterThan(0);
+  });
+});

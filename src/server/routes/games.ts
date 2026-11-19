@@ -134,18 +134,28 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       return reply.code(404).send({ error: 'GAME_NOT_FOUND', message: '对局不存在' });
     }
 
-    // 起点来自事件流：最近一次 `DAY_STARTED` 或最近一条发言事件的 `ts`。
+    if (record.events.length === 0) {
+      return reply.code(410).send({ error: 'GAME_EXPIRED', message: '对局已释放' });
+    }
+
+    // 起点来自事件流：最近一次 `DAY_STARTED`，或最近一条**开始新一轮**的发言事件
+    // （`SPEECH` / `SPEECH_SKIPPED` 都算——跳过也是说完了，下一位的 60 秒重新计时）。
     const state = registry.stateOf(record);
     const startEvent = [...record.events]
       .reverse()
-      .find((event) => event.type === 'DAY_STARTED' || event.type === 'SPEECH');
+      .find(
+        (event) =>
+          event.type === 'DAY_STARTED' ||
+          event.type === 'SPEECH' ||
+          event.type === 'SPEECH_SKIPPED',
+      );
 
     return reply.send({
       phase: state.phase,
       startedAt: startEvent?.ts ?? null,
       remainingSeconds:
         startEvent === undefined
-          ? remainingSeconds({ startedAt: 0, now: 0 })
+          ? 0
           : remainingSeconds({ startedAt: startEvent.ts, now: Date.now() }),
     });
   });

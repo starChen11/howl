@@ -251,3 +251,15 @@ $ pnpm test → 75 files / 622 tests
 ```
 $ pnpm test → 75 files / 628 tests
 ```
+
+### 8.12 Round 6 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **B-R6-1** 双写仍存在 | 重读发生在 `await playerAction` **之前**，等待期间路由写入的发言仍被覆盖 | 改成**提交前**重读：`latest = getGame()` → 用 `stateOf(latest).seq` 提交。补「编排层不缩短/改写已有事件」用例 |
+| **B-R6-2** AC-6/7 没有编排层证据 | 只测了通道层，把 `skip` 分支改成 `undefined`、把超时当弃权都全绿 | 补两条编排层用例：①输入 `skip` → 事件流出现 `SPEECH_SKIPPED`（反向探针会红）；②输入 `timeout` 带文本 → 事件流出现该文本的 `SPEECH` |
+| **B-R6-3** timer 不可信 | 只断 200 / `>=0`，常量 60 也绿；忽略 `SPEECH_SKIPPED`；已释放对局 500 | 起点也看 `SPEECH_SKIPPED`；释放局返回 410；补「120 秒前的发言 → 剩余 0」用例（常量实现会红） |
+
+```
+$ pnpm test → 75 files / 631 tests
+```

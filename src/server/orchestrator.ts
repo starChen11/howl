@@ -138,7 +138,15 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
         : await decide({ seat, ctx: ctxFor(seat) });
     if (action.action === undefined) break;
 
-    const result = await registry.submit(session, record, action.action, state.seq);
+    // **提交前再读一次**：等玩家输入的那段时间里，路由可能已经写入了别的动作
+    // （比如玩家自己 POST 上来的发言）。用等待前的 `record` 提交会把它覆盖掉（B-R6-1）。
+    const latest = (await registry.getGame(record.gameId)) ?? record;
+    const result = await registry.submit(
+      session,
+      latest,
+      action.action,
+      registry.stateOf(latest).seq,
+    );
     if (!result.ok) break;
     record = result.record;
     steps += 1;
