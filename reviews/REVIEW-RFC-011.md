@@ -1317,3 +1317,143 @@ C-115 是三项里真正修好的：`POST SPEECH_SKIP` 兑现挂起通道、空�
 **Non-blocking**：C-115 的测试只靠「测试超时 = 读取超时」打红（M-R8-H 在 8 秒超时下通过）；timer 新用例把 `SPEECH` 塞进夜间事件流、事件流不可 replay；旧用例 `speech.test.ts:100` 名不副实；`channels.test.ts` 的夜间推进代码重复；`timerFor` 的 `record` 返回值未用；RFC §8.13 的措辞需要按本轮证据修正。
 
 **状态**：RFC-011 → `Changes requested`。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r8-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），六个文件 SHA-256 与探针前一致；临时探针测试已删除；探针恢复后全量 **75 files / 637 tests** 绿、`git status --porcelain` 为空。
+
+## Round 9 — 2026-11-19
+
+> 被评审提交：`14fc853 fix(rfc-011): 守卫含相位比较、timer 起点锁（Round 8）`
+> 评审方式：全新上下文的 subagent，只读仓库文件后实跑；本会话没有写过 RFC-011 的实现代码。
+> 结论：**Changes requested**
+> 范围：按用户指示只复核 **B-R8-1 / B-R8-2**（C-113 / C-111）。已关闭项（C-99 ~ C-112、C-114、C-115）与非阻塞文档项本轮不重查；AC-1 / 2 / 5 / 6 / 7 / 8 / 10 / 11 / 12 / 14 本轮无相关改动，沿用前判。AC-3 / AC-4 的界面顺延是用户批准的 D-5，不作为缺陷。
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · 评审开始时 HEAD `14fc853`，工作树 clean。
+
+```text
+$ pnpm typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+✓ 14 modules transformed (client)
+✓ 46 modules transformed (server)
+dist/server/index.js  97.94 kB │ gzip: 32.37 kB
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  75 passed (75)
+      Tests  642 passed (642)
+   Duration  24.20s
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+
+$ pnpm selfplay
+pnpm selfplay 未实现（RFC-015）
+SELFPLAY_EXIT=1
+```
+
+`pnpm selfplay` 的 exit 1 是 RFC-015 的占位，按 RFC-011 的范围记 **N/A**，不是本轮回归。
+
+### 1. 产品类型与跳过项
+
+`PRD.md` 的 **Product Type** 是 **game（主）+ web app（交付形态）**。本轮采用 game 的状态机 / 数据完整性检查、web app 的 HTTP 输入与路由检查。UI、无障碍与响应式检查随 AC-3 / AC-4 顺延到 RFC-012，**显式跳过**；`tests/e2e/` 为空，e2e 也显式跳过。本轮不冒充已检查。
+
+### 2. 用户列出的两项逐条复核
+
+| 用户声明 | 判定 | 一手证据 |
+|---|---|---|
+| **B-R8-1**：守卫抽成 `isStillTheirTurn(previousPhase, latest, seat)`，**相位也必须没变**；补三条纯函数用例，去掉相位比较会红 | **PARTIAL（行为修复与纯函数锁成立；Round 8 要求的端到端回归锁仍缺）** | 行为 P-R9-A / P-R9-B / P-R9-C 成立：真实 `buildApp` + `ChannelRegistry` + `runGame`，第一位发言、最后一位发言（`SPEECH`）与最后一位弃权（`SPEECH_SKIP`）都只产生一条玩家事件，**没有任何 `REJECTED`**。纯函数锁 M-R9-1 成立：删掉 `src/server/orchestrator.ts:108` 的相位比较后 `tests/server/orchestrator.test.ts -t 'B-R8-1'` **1 failed / 2 passed / 6 skipped**（`:464` 期望 `false` 收到 `true`）。**但仓库里没有任何 `buildApp` + `runGame` 的并发路由用例**：三处 `isStillTheirTurn` 断言只是纯函数调用（`tests/server/orchestrator.test.ts:439-473`）。M-R9-2 把调用点换回旧表达式（保留 `isStillTheirTurn` 本身）后 **全量 75 files / 642 tests 仍绿**；M-R9-3 在同样的调用点回退下运行 Round 8 那套集成探针，原缺陷立即回来：最后一位发言者 `REJECTED seq24 PHASE_MISMATCH`（`visibleTo: self:1`）、最后一位弃权同样 `REJECTED seq24`。行为是对的，但「删掉守卫 / 换回旧条件」的回归不会被全量测试发现。 |
+| **B-R8-2**：补「只有 `DAY_STARTED` → 60」与「两次读取递减」两条用例；删 `DAY_STARTED` 分支会红 | **PASS（关闭）** | 两条用例在 `tests/server/speech.test.ts:257-321`，都走真实 `buildApp` + `GET /timer`（不是纯函数）：`:289` 只有 `DAY_STARTED`（刚发生）→ `first === 60`；`:305` 同一夹具两次读取相隔 1.1 秒，断言 `second < first`。M-R9-4 删掉 `src/server/routes/games.ts:149` 的 `event.type === 'DAY_STARTED' ||` 后 **2 failed / 12 passed**（`:302` `expected 0 to be 60`；`:318` `expected 0 to be less than 0`）。M-R9-5 把路由的剩余秒数改成常量 `60` 后递减用例 **1 failed**（`:318` `expected 60 to be less than 60`），而单看「刚发生 → 60」一条仍会绿——两条合起来才同时锁住「起点分支存在」与「不是常量」。行为与锁都对。 |
+
+**小结**：B-R8-2 按声明完成，可关闭。B-R8-1 的守卫逻辑与纯函数锁都成立，行为也已修好；但 Round 8 阻塞项的后半句——用真实 `buildApp` + `runGame` 覆盖「第一位发言」与「最后一位发言 / 第一位投票」——没有落地，因此这个数据完整性缺陷仍可在全量 642 绿的情况下回归。
+
+### 3. 变异探针与临时集成探针
+
+所有探针从 `/tmp/howl-rfc011-r9-probes/backup/` 的**文件备份**恢复，**未使用 `git checkout` / `git restore`**。探针前的源码 / 测试 SHA-256：
+
+```text
+b8fa54c34cd65961d1dd5288b3931712a2e3425321960d8b36ff43748c962c7a  src/server/orchestrator.ts
+d5711265d1f7bd5f35a12878ea3bb6482aa9189e64d441a0c5853c99351ef0a2  src/server/routes/games.ts
+74733242c1471ebbdd759426ba9f82a06252a1562b714fc33f98d9f2d48c3a0c  tests/server/orchestrator.test.ts
+c16ec83c6838bb7c014eff7e14e8a9b3ba3621591f4879314822baa3bb14f87e  tests/server/speech.test.ts
+```
+
+每次探针后都 `cp` 回备份并用 `shasum -a 256 -c` 验证；最后一次四个文件全部 `OK`。临时探针 `tests/server/__r9_probe.test.ts`（由 Round 8 的 `__r8_probe.test.ts` 复用）已删除；恢复后全量 **75 files / 642 tests** 绿，`git status --porcelain` 为空，没有 `git commit`。
+
+| 探针 | 注入 / 场景 | 定向测试 | 结果 | 证明 |
+|---|---|---|---|---|
+| **P-R9-A** | seed 2、狼刀 9，玩家 1 号是当天第一位发言者；挂起输入通道后真实 `POST /actions` 写 `SPEECH '路由原话'` | 临时集成探针 | 事件 `seq15 SPEECH{seat:1,'路由原话'}` → `seq16-22` AI 发言 → `seq23 PHASE_CHANGED`；**没有 `REJECTED`** | B-R8-1 的常见路径成立 |
+| **P-R9-B** | seed 4、狼刀 2 → `speechStartSeat=3`，存活 `[1,3..9]`；玩家 1 号是**最后一位**发言者；路由 `POST SPEECH` | 临时集成探针 | `seq22 SPEECH{seat:1}`；`seq23 PHASE_CHANGED DAY_SPEECH→DAY_VOTE`；**没有 `REJECTED`** | Round 8 的 P-R8-B 已修 |
+| **P-R9-C** | 同 P-R9-B，路由 `POST SPEECH_SKIP` | 临时集成探针 | `seq22 SPEECH_SKIPPED{seat:1}`；`seq23 PHASE_CHANGED`；**没有 `REJECTED`** | Round 8 的 P-R8-C 已修 |
+| **M-R9-1** | `src/server/orchestrator.ts:108` 删掉 `if (latest.phase !== previousPhase) return false;` | `orchestrator.test.ts -t 'B-R8-1'` | **1 failed / 2 passed / 6 skipped**（`:464` 期望 `false` 收到 `true`） | 相位比较的纯函数锁有牙 |
+| **M-R9-2** | 调用点换回旧表达式 `(seatToSpeak(latestState) ?? nextActor(latestState)) === seat`（`isStillTheirTurn` 本身保留，纯函数用例仍绿） | 全量 `pnpm test` | **75 files / 642 tests 全绿** | **Round 8 要求的端到端回归锁缺失**：缺陷可静默回归。另一种等价回退「把 `state.phase` 换成 `latestState.phase`」也是 75/642 全绿，排除了 lint 干扰 |
+| **M-R9-3** | 在 M-R9-2 的状态下运行 P-R9-B / P-R9-C 集成探针 | 临时集成探针 | **2 failed / 1 passed**；`REJECTED seq24 PHASE_MISMATCH`（`self:1`），最后一位发言与最后一位弃权各一条 | 缺失的锁可以精确捕获这个缺陷，修复方向明确 |
+| **M-R9-4** | `src/server/routes/games.ts:149` 删掉 `event.type === 'DAY_STARTED' ||` | `speech.test.ts` | **2 failed / 12 passed**（`:302` `expected 0 to be 60`；`:318` `expected 0 to be less than 0`） | `DAY_STARTED` 起点锁有牙 |
+| **M-R9-5** | 路由剩余秒数改成常量 `60` | `speech.test.ts -t 'B-R8-2'` | **1 failed / 1 passed / 12 skipped**（`:318` `expected 60 to be less than 60`） | 递减锁有牙；单条「刚发生 → 60」不足以锁常量 |
+
+### 4. 验收标准（本轮范围）
+
+| AC | 判定 | 说明 |
+|---|---|---|
+| 9 | **NEEDS WORK** | 单写者 / 接受后通知的行为有 P-R9-A/B/C 证明，B-R8-1 也已有纯函数锁；但缺 Round 8 明确要求的 `buildApp` + `runGame` 端到端回归锁（M-R9-2 全量 642 绿，M-R9-3 复现 `REJECTED seq24`）。这是 B-R9-1，只需补测试。 |
+| 13 | **PASS** | `DAY_STARTED` 起点与「两次读取递减」都是真实路由用例；删分支 2 红、常量实现递减用例红。 |
+| 3 / 4 | **DEFERRED（用户批准 D-5）** | 身份卡与输入框界面部件 / DOM 扫描归 RFC-012，不重开。 |
+| 其余 AC | **未重查（沿用前判）** | AC-1 / 2 / 5 / 6 / 7 / 8 / 10 / 11 / 12 / 14 本轮无相关改动。 |
+
+### 5. 五个维度
+
+#### 5.1 RFC ADHERENCE — **NEEDS WORK**
+
+B-R8-1 的守卫方向与实现（相位比较 + 席位判断）正确，P-R9-A/B/C 证明行为已修；B-R8-2 的两条用例与 Round 8 的修复记录一致。残项是 B-R8-1 的验证方式：Round 8 要求的是「真实 `buildApp` + `runGame`，两种起点，一条发言事件且无 `REJECTED`」，提交里只有三条纯函数用例，端到端行为仅靠探针验证，仓库无锁。
+
+#### 5.2 RULES COMPLIANCE — **NEEDS WORK**
+
+- **TEST-1**：B-R8-1 的修复没有端到端自动化测试。M-R9-2 把调用点换回旧表达式后 **全量 75 files / 642 tests 仍绿**——这是「测试存在但不锁行为」的典型；B-R8-2 的两条用例满足 TEST-1。
+- **DOC-1**：RFC §8.14 的表述本身不假（「补三条纯函数用例；去掉相位比较会红」确有其事），但没有记录「Round 8 要求的集成用例未补」，读者会误以为 B-R8-1 已完整闭环；建议在 §8.14 补一行说明当前只有纯函数锁。
+- **SEC-4 / SEC-5 / ARCH-9**：本轮没有新的投影泄漏、输入校验退化或客户端状态机；`isStillTheirTurn` 只在服务端使用。
+- **UI-4**：timer 的 `DAY_STARTED` 起点已有真实路由用例，满足本轮要求。
+
+#### 5.3 SECURITY — **PASS**
+
+没有新的身份 / 投影泄漏或越权。B-R8-1 修复消除的是 `visibleTo: self:1` 的重复 `REJECTED`（数据完整性 / 体验），不构成泄密；空文本 400、席位绑定与 `project()` 观察者逻辑本轮未动。
+
+#### 5.4 PERFORMANCE — **N/A**
+
+没有新增数据库 / 网络热路径。timer 仍是内存事件流的反向线性扫描；`isStillTheirTurn` 是 O(n) 的纯函数，规模可忽略。
+
+#### 5.5 MAINTAINABILITY — **NEEDS WORK**
+
+- `src/server/orchestrator.ts:159-160` 的注释只提「B-R7-1」「该谁行动变了」，没有提本轮新增的相位条件；下一轮容易只看「席位」而再次漏掉相位。
+- `isStillTheirTurn` 的测试里，「席位已变」用例（`tests/server/orchestrator.test.ts:467-472`）在 `DAY_SPEECH` 且全部已发言时 `seatToSpeak` 与 `nextActor` 都是 `undefined`，它只覆盖「返回 false」，没有覆盖「`?? nextActor` 落到另一个席位」；补集成用例时可以顺带补一个 `DAY_VOTE` / `nextActor` 返回不同席位的纯函数用例。
+- B-R8-2 的两条用例把 `DAY_STARTED` 直接塞进一局仍处于 `NIGHT_WOLF_CHAT` 的事件流（该流不可 replay）；它们覆盖的是 timer 路由的查找逻辑，不是「真实白天」的端到端。行为已被 P-R8-D 证明，但夹具仍建议按 Round 8 的非阻塞建议改为真实提交。
+
+### 6. 非阻塞建议
+
+1. **补 B-R8-1 的集成用例（阻塞项，只需要测试）**：在 `tests/server/orchestrator.test.ts` 增加一个 describe，用 `buildApp` + `ChannelRegistry` + `runGame`，复用 P-R9-B 的 seed 4 / 狼刀 2 夹具；`input.read` 先挂起，收到信号后真实 `POST /actions` 写 `SPEECH`，再让挂起 Promise 返回 `{kind:'skip'}` 或放行；断言最终事件里只有一条玩家 `SPEECH`、没有 `REJECTED`。再补 seed 2 的第一位发言者版本，以及最后一位的 `SPEECH_SKIP` 版本（P-R9-C）。
+2. **B-R8-2 的 `toBe(60)`**：`:302` 的精确 60 依赖「事件写入到 `app.inject` 返回 < 1 秒」；正常 CI 没问题，但在极慢机器上有偶发 59 的风险。改成 `toBeGreaterThanOrEqual(59)` / `toBeLessThanOrEqual(60)`，或用注入的 `now` 固定时钟，能保留语义又去抖。
+3. **注释与文档**：`orchestrator.ts:159-160` 改为「换人或换相位都跳过（B-R7-1 / B-R8-1）」；RFC §8.14 补一句「本轮只有纯函数锁，端到端用例见下一轮」会更诚实。
+4. **纯函数用例补强**：「席位已变」那条没有验证 `?? nextActor` 的 fallback。补一个 `DAY_VOTE` 用例（例如 `votes: [1]`、`seat: 2`，期望 `false`），可防止 `seatToSpeak` 从 `DAY_SPEECH` 迁到 `DAY_VOTE` 时把 fallback 写坏。
+
+### 7. 结论
+
+**Overall Risk Level: Medium。**
+
+B-R8-2 按声明修好并锁住：两条 `DAY_STARTED` 用例走真实路由，删分支 2 红，常量实现递减用例红，行为与证据都成立。B-R8-1 的守卫与行为也已修好：`isStillTheirTurn` 要求相位不变，P-R9-A/B/C 证明第一位发言、最后一位发言、最后一位弃权都不再产生 `REJECTED`；删相位比较会让纯函数用例红。但 Round 8 的阻塞项还要求端到端集成用例，仓库里没有：M-R9-2 把调用点换回旧表达式后全量 642 绿，M-R9-3 用同一回退复现了 `REJECTED seq24 PHASE_MISMATCH`。修好的是代码，未锁住的是这个代码不被改回去。
+
+**Blocking Issues**：
+
+- **B-R9-1（C-113 / AC-9 / TEST-1，阻塞；只需补测试）**：B-R8-1 的行为修复成立，但缺真实 `buildApp` + `runGame` 的端到端回归锁。当前只有 `tests/server/orchestrator.test.ts:439-473` 的三条纯函数用例；M-R9-2 把 `src/server/orchestrator.ts:162` 换回旧的席位判断后 **75 files / 642 tests 全绿**，M-R9-3 证明原缺陷会回来（`REJECTED seq24 PHASE_MISMATCH`，最后一位发言与弃权各一条）。补齐 P-R9-A/B/C 对应的提交测试即可关闭，不需要改生产代码。
+
+**Non-blocking**：`toBe(60)` 的精确断言有慢机偶发风险；`orchestrator.ts:159-160` 的注释没有提相位条件；「席位已变」纯函数用例没有覆盖 `?? nextActor` fallback；B-R8-2 的夹具把 `DAY_STARTED` 塞进不可 replay 的夜间事件流；RFC §8.14 未记录「集成用例未补」。
+
+**状态**：RFC-011 → `Changes requested`。本轮没有 `git commit`；探针源码已从 `/tmp/howl-rfc011-r9-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），四个文件 SHA-256 与探针前一致；临时探针测试已删除；探针恢复后全量 **75 files / 642 tests** 绿、`git status --porcelain` 为空。
