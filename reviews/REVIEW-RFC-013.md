@@ -764,3 +764,170 @@ P-R3-8 dead wolf actions [ '袭击了 3 号', '袭击了 2 号' ]
 ### 10. 结论
 
 **Changes requested。** 本轮确实关掉了 C-134 / C-140 / C-142 / C-148，并且用户点名的 App 级定位、观战内容、记事板 `draft`、`lynch`/`shoot`、客户端 `truth` 契约代码都已落地；C-137 / C-139 / C-143 按指示未重查。但 **C-135 / C-136 / C-138 / C-141（AC-7）/ C-149 / C-151** 仍没有能在行为退化时变红的验收证据：其中 C-138 是 Round 2 明确要求的「事件流快照相等」，C-151 是 `API-1` 的服务端一半，C-136/C-135 是用户可见路径的客户端断言。现在不能标 `Reviewed`。
+
+## Round 4 -- 2026-11-19
+
+> 被评审提交：`1d09e38 fix(rfc-013): 零副作用快照、双端 schema 与终局观战用例（Round 3）`
+> 评审方式：全新上下文的 subagent，只读仓库文件 + 实跑 + 文件备份变异探针；本会话没有写过 RFC-013 的实现代码。
+> 环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · HEAD `1d09e38` · 评审开始时工作树 clean。
+> 结论：**Reviewed**。Round 3 的六条阻塞项 **C-135 / C-136 / C-138 / C-141 / C-149 / C-151 全部闭合**，C-154 闭合。新发现 **C-155（非阻塞）**：C-150 的「死亡天数」修复对**夜间死亡**系统性偏早一天（第一夜显示「第 0 天」），且没有测试。C-137 / C-139 / C-143 与其余已关闭项按用户指示未重查。
+
+### 0. 用户点名项：直接回答
+
+| 点名项 | 结论 | 最短证据 |
+|---|---|---|
+| **C-138 事件流快照相等** | **已修，关闭** | `tests/server/truth.test.ts:184-200` 先读 `JSON.stringify((await registry.getGame(...))?.events)`，注入 `/truth` 后再读并 `toBe`。把路由改成真的 `registry.appendEvents(record, [额外一条事件])`（M-R4-6）→ `truth.test.ts` **1 failed**（`expected ... to be ...`，多出 `seq 15` 的事件）。 |
+| **C-141 FINISHED App 级用例** | **已修，关闭** | `spectator.test.tsx:276-307` 渲染 `phase:'FINISHED'` 的 `App`，断言「这局打完了」「公开事件」标题与「你已出局，正在观战」。FINISHED 时隐藏观战条 / feed / panel（M-R4-4）→ **1 failed**（找不到发言）。 |
+| **C-151 双端 schema** | **已修，关闭；服务端 parse 本身无回归锁（非阻塞）** | 服务端 `routes/games.ts:147` 已 `TruthViewSchema.parse(...)`；`api.test.ts:22-42` 三条用例。去掉客户端 `safeParse`（M-R4-5）→ **1 failed**（「缺字段返回 null」拿到半个对象）。去掉服务端 `parse`（M-R4-7）→ `truth + api` **10/10 仍绿**，见 §5.2。 |
+| **C-136 真相动作/死因渲染** | **已修，关闭** | `spectator.test.tsx:309-320` 打开真相后断言 `袭击了 1 号` 与 `第 2 天，wolf`。删掉 App 的 `actions` / `deaths` 两段 JSX（M-R4-3）→ **1 failed**。 |
+| **C-135 锚点主路径** | **已修，关闭（覆盖方式见下）** | `event-panel.test.tsx:181-211`：`SPEECH seq2` + `VOTE_REVEALED seq3` + `SPEECH seq5`，断言 `anchor === 2`。`anchorFor` 改成永远取最后一条发言（M-R4-1）→ **1 failed**。Round 3 要求的「App 级点击主路径」没有逐字添加：现有 App 级用例覆盖「点击 → 高亮 + `scrollIntoView`」的回退分支（`spectator.test.tsx:147-191`），主路径的锚点值由新用例锁定，二者组合覆盖 AC-4。 |
+| **C-149 重复 key 回归锁** | **已修，关闭** | `event-panel.test.tsx:213-235` 真实 `render(<EventPanel .../>)` 并捕获 `console.error`。key 回退成 `${seq}-${kind}`（M-R4-2）→ **1 failed**（React `Encountered two children with the same key ... 1-death`）。 |
+| **C-154 死狼不再记「袭击」** | **已修，关闭** | `truth.ts:38-58` 记录每个席位的首个 `PLAYER_DIED.seq`，`aliveAt` 过滤死后事件；`truth.test.ts:223-241` 覆盖。去掉狼刀的 `aliveAt` 守卫（M-R4-8）→ **1 failed**（死狼仍得到 `['袭击了 3 号']`）。 |
+| **C-150 死亡天数** | **部分修复，未达预期；新 C-155（非阻塞）** | 代码按「此前最后一个 `DAY_STARTED`」实现（`truth.ts:80-91`），但夜间 `PLAYER_DIED` 发生在同夜 `DAY_STARTED` **之前**：P-R4-1 真实夜间死亡得到 `day: 0`（`DAY_STARTED` day 1）；P-R4-2 合成第 2 夜死亡得到 `day: 1`（随后 `DAY_STARTED` day 2）。也没有测试：回退成 `day: state.day`（M-R4-9）→ `truth.test.ts` **7/7 仍绿**。详见 §5.1。 |
+
+### 1. STEP 0 · 实跑门禁
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+vite v8.3.8 building client environment for production...
+✓ built in ...
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  85 passed (85)
+      Tests  720 passed (720)
+TEST_EXIT=0
+
+$ pnpm test:e2e
+  9 passed (5.1s)
+E2E_EXIT=0
+```
+
+与 RFC §8.9 的「85 files / 720 tests」「9 passed」一致；`README.md:11` 的 720 也已同步。工作树在评审开始时 clean。
+
+### 2. 产品类型
+
+`PRD.md` 的 **Product Type** 为 **game（主）+ web app（交付形态）**。本轮按 game 的「玩家真的能继续看/继续玩、公开信息完整、真相数据准确」和 web app 的「内容隔离、DOM 行为、真实浏览器」检查；mobile app / library / CLI / service 的检查不适用，跳过。没有真机与屏幕阅读器证据，本轮不宣称这两项通过。
+
+### 3. 全量验收标准对照（Round 4）
+
+| AC | 结果 | 证据 / 缺口 |
+|---|---|---|
+| 1 · 三类公开事件、按 seq | **PASS（继承 + C-149）** | Round 3 已关闭 C-134；本轮 C-149 的真实渲染用例锁住同 seq 双死者 key。排序的显式 `sort` 仍是已知非阻塞（C-144），未重查。 |
+| 2 · 不显示角色/夜间细节 | **PASS（继承）** | Round 3 已核；未重查。 |
+| 3 · seq + 第 N 天 | **PASS（继承）** | Round 3 已核；新 C-135 用例不影响。 |
+| 4 · 点击面板条目定位到发言流 | **PASS** | App 级点击/高亮/`scrollIntoView` 在回退分支有牙（M-R4-1 只变异锚点算法仍能打红主路径断言）；主路径锚点由 `event-panel.test.tsx:181-211` 锁定。残余：没有「主路径 + App 点击」的单条用例（非阻塞）。 |
+| 5 · 出局后仍见后续发言与公开事件 | **PASS（继承）** | Round 3 已核（M-R3-8）；未重查。 |
+| 6 · 输入区不可用 + 提示 | **PASS（继承）** | Round 3 已核；未重查。 |
+| 7 · 观战态推进到 FINISHED | **PASS** | 新 App 级 `FINISHED` 用例（`spectator.test.tsx:276-307`）+ M-R4-4 打红；服务端推进由 `game-loop.test.ts` 继承。 |
+| 8 · 默认关闭 + 只含公开信息 | **PASS（继承）** | Round 2 已关闭 C-137；未重查。 |
+| 9 · 所有席位角色 + 夜间行动 | **PASS** | 服务端动作归因（C-148 继承）+ 本轮客户端 `actions`/`deaths` 渲染断言（C-136 关闭）；女巫/猎人分支有官方用例。C-155 影响的是死亡天数显示，不影响角色/动作。 |
+| 10 · 关闭后立即恢复 | **PASS（继承）** | Round 2 已关闭 C-137；未重查。 |
+| 11 · 切换不产生任何事件 | **PASS** | 服务端 `/truth` 前后事件流 JSON 相等（C-138 关闭，M-R4-6 打红）；客户端 `submits` / `drafts` 为 0。客户端没有断言 `publicEvents.length`（非阻塞，见 §5.2）。 |
+| 12 · 对局中无入口 + 请求被拒 | **PASS（继承）** | Round 2 已关闭 C-139；未重查。 |
+| 13 · 其他席位投影不含记事板 | **PASS（继承）** | Round 3 已关闭 C-140；未重查。残余：只构造一个 observer（非阻塞）。 |
+| 14 · 提示词不含记事板 | **PASS（继承）** | Round 3 已关闭 C-140；未重查。 |
+| 15 · 刷新后仍在 | **PASS（继承）** | Round 1 已接受等价覆盖；未重查。 |
+
+**总览**：15/15 PASS；无阻塞项。C-155 是 AC 之外的真相数据质量问题。
+
+### 4. Round 3 阻塞项双向复核
+
+| # | Round 3 状态 | Round 4 状态 | 本轮证据 |
+|---|---|---|---|
+| **C-134** | Closed | **Closed（继承）** | 按用户指示未重查。 |
+| **C-135** | Open（主路径测试） | **Closed** | 新主路径锚点用例；M-R4-1 → **1 failed**。 |
+| **C-136** | Open（客户端断言） | **Closed** | 新真相渲染用例；M-R4-3 → **1 failed**。 |
+| **C-137** | Closed（Round 2） | **Closed（继承）** | 按用户指示未重查。 |
+| **C-138** | Open | **Closed** | 新事件流快照用例；M-R4-6 → **1 failed**。 |
+| **C-139** | Closed（Round 2） | **Closed（继承）** | 按用户指示未重查。 |
+| **C-140** | Closed | **Closed（继承）** | 按用户指示未重查。 |
+| **C-141** | Open（AC-7） | **Closed** | 新 `FINISHED` App 用例；M-R4-4 → **1 failed**。 |
+| **C-142** | Closed | **Closed（继承）** | 按用户指示未重查。 |
+| **C-143** | Closed（Round 2） | **Closed（继承）** | 按用户指示未重查。 |
+| **C-148** | Closed | **Closed（继承）** | 按用户指示未重查。 |
+| **C-149** | Open（仅测试） | **Closed** | 真实渲染 + `console.error`；M-R4-2 → **1 failed**。 |
+| **C-150** | Open（非阻塞） | **Open（非阻塞，改为 C-155）** | 夜间死亡天数偏早一天；无测试（M-R4-9 全绿）。 |
+| **C-151** | Open | **Closed** | 服务端 `parse` + 客户端三条用例；M-R4-5 → **1 failed**；服务端 parse 无回归锁（非阻塞）。 |
+| **C-152** | Open（非阻塞） | **Open（非阻塞，未重查）** | 文档漂移仍在；见 §5.2。 |
+| **C-153** | Open（非阻塞） | **Open（非阻塞，未重查）** | `anchorFor` 的「此前最近 / 之后第一条」语义仍未统一；新用例只锁主路径。 |
+| **C-154** | Open（非阻塞） | **Closed** | 死后动作过滤 + 用例；M-R4-8 → **1 failed**。 |
+
+### 5. 新发现
+
+#### 5.1 C-155 · 夜间死亡的天数系统性偏早一天（非阻塞，数据质量）
+
+`truth.ts:80-91` 对每条 `PLAYER_DIED` 取**此前**最后一个 `DAY_STARTED` 的 `day`。夜间死亡的排布恰好相反：`resolveNightEntry` 先产出 `PLAYER_DIED`（`visibleTo:'server'`），再经 `DAY_ANNOUNCE` 产出 `DAY_STARTED`（`night.ts:55-80`、`day.ts:59-77`）。所以夜 N 的死者拿到的是夜 N-1 的 `DAY_STARTED`：
+
+- **P-R4-1**（真实对局 seed 15，玩家 3 号第一夜被刀）：`state.day = 1`、`DAY_STARTED` 天数为 `[1]`，`buildTruth(...).deaths` 为 `[{"seat":3,"day":0,"cause":"wolf"}]` → UI 渲染成「第 0 天」。
+- **P-R4-2**（合成第 2 夜）：第 2 夜被刀者 `day: 1`，紧随其后的 `DAY_STARTED` 是 `day 2`；App 在 `App.tsx:196` 写「第 1 天」，事件面板在 `EventPanel.tsx:43` 写「第 2 天」，同一名死者两处矛盾。
+
+影响：第一夜死亡（最常见的出局方式之一）显示「第 0 天」；其余夜间死亡显示前一天。白天的放逐/枪杀不受影响（`PLAYER_DIED` 在当天 `DAY_STARTED` 之后）。这条不在任何 AC 的字面里，按 C-150 的历史口径仍归**非阻塞**，但建议在标 `Reviewed` 后尽快修。修法：别取「此前最后一个」，而是维护「夜 N = 第 N 天」的计数器——`GAME_STARTED` 后为 1，遇到 `PHASE_CHANGED(to: 'NIGHT_WOLF_CHAT')` 递增（与 `apply.ts:127-138` 的 `day` 语义一致），`PLAYER_DIED` 直接用当前值；这样夜间游戏结束（没有后续 `DAY_STARTED`）也不会退化成 0。补一条真实对局用例：第 1 夜死者 `day:1`、第 2 夜死者 `day:2`。
+
+#### 5.2 非阻塞残余
+
+- **服务端 `TruthViewSchema.parse` 没有回归锁**：M-R4-7 删掉 `routes/games.ts:147` 的 `parse` 后 `truth + api` **10/10 仍绿**。代码本身符合 API-1，客户端 `safeParse` 也锁住了共享 schema；但「服务端这一行」可以静默消失。建议补一条路由级契约用例（例如 mock `buildTruth` 返回坏 shape，断言 500 / 或至少断言 `parse` 在调用链上）。
+- **C-138 的客户端半边**：`spectator` 的真相开关用例断言了 `submits === 0`、`drafts === 0`、`truth === 1`，但没有断言 `ctx.publicEvents.length` 不变。服务端快照是权威，客户端也拿不到事件流写入口；这是理论风险，非阻塞。
+- **C-135 的 App 级主路径**：Round 3 要求「`SPEECH seq1` + `DAY_STARTED seq2` + `SPEECH seq3`，点击后高亮 `data-seq=1`」的用例没有逐字添加；现有 App 用例只走回退分支。主路径锚点值已被单测锁定，App 的点击/高亮路径也被回退分支锁定，组合上覆盖 AC-4；若想完全照 Round 3 的清单，可再补一条，非阻塞。
+- **C-152 文档漂移（未重查）**：`TEST-STRATEGY.md:353-358` 仍是 `proposed` 且文件名是 `truth-guard.test.ts` / `notepad.test.tsx`；RFC §8.4 第 1 行仍写「面板只有 `death` / `vote` 两类（放逐由相位触发）」、§8.6 仍写「真相里的夜间行动结果 当前只给角色」；`README.md:11,37` 仍写「11 Reviewed、1 Changes requested」与「剩余：013 …」。本轮 `Reviewed` 后这两处会再漂一格。均不影响本轮结论。
+- **C-153 语义**：`anchorFor` 的注释写「此前最近」，没有更早发言时回退 `speeches[0]`；新用例只覆盖主路径，回退语义仍未由产品拍板。
+- **C-144**：`buildPanelEntries` 仍没有显式 `sort((a,b)=>a.seq-b.seq)`，测试只喂顺序输入；条目仍没有 RFC §4 的「阶段」标记。未重查，非阻塞。
+
+### 6. 审查维度
+
+| 维度 | 结论 | Findings | Suggestions |
+|---|---|---|---|
+| **1. RFC ADHERENCE** | **PASS** | 15 条 AC 均有本轮或此前已复核的证据；六条 Round 3 阻塞项全部闭合并经变异探针确认。C-155 是 AC 之外的真相数据质量问题（非阻塞）。 | 修 C-155 的夜间死亡天数并补用例；其余 AC 无需补测。 |
+| **2. RULES COMPLIANCE** | **PASS** | API-1：共享 `TruthViewSchema` 现在服务端 `parse`、客户端 `safeParse`；TEST-1：六条阻塞项都补了会红的测试；DOC-1：§8.9 的八条处理与实测一致。残余：服务端 parse 无回归锁、C-152 文档漂移（非阻塞）。ARCH-1 / SEC-1 / SEC-5 未见新增违规。 | 补路由级 schema 用例；回填 C-152 的文档与测试文件名。 |
+| **3. SECURITY** | **PASS** | `/truth` 仍只对已出局者返回（`canSeeTruth` + 403 `TRUTH_LOCKED`，Round 2 证据未重查）；记事板仍只写 `localStorage`，`src/server` 无对应字段；本轮新增的 `TruthViewSchema.parse` 只收窄响应形状，不扩大可见范围。没有观察到新的越权、投影或提示词泄漏。 | 无。 |
+| **4. PERFORMANCE** | **PASS** | `buildTruth` 现在对事件流做两次线性扫描 + 每刀遍历 9 席；真相只在开关时请求一次；面板构建线性。没有新增 N+1、缓存或轮询问题（App 的 1s 轮询是 RFC-012 遗留）。 | 无。 |
+| **5. MAINTAINABILITY** | **PASS** | 新增测试都直接断言用户可见行为，不再自算 key / 只测回调；死狼与死因等数据修正有回归锁。残余：C-155 的日期算法与「夜 N = 第 N 天」语义不一致且无测试、服务端 parse 无回归锁。 | 把死亡天数统一成单一日计数器；补 schema 回归锁。 |
+
+**Overall Risk Level：Low。** 六条阻塞项的实现都已由「会红的测试」锁住，且本轮每条探针都在官方套件里打红；安全边界没有变化。剩余风险集中在一处非阻塞数据质量问题（夜间死亡天数）和几处已知文档/测试残余。
+
+### 7. 阻塞问题（合并前必须修复）
+
+无。
+
+### 8. 非阻塞建议
+
+1. **C-155**：把死亡天数改成「夜 N = 第 N 天」的计数器（或对 `server` 可见的夜间死亡取下一条 `DAY_STARTED`），补真实对局断言；第一夜不应出现「第 0 天」。
+2. **服务端 schema 回归锁**：补一条 `/truth` 的路由级契约用例，避免 `TruthViewSchema.parse` 被静默删掉。
+3. **C-152**：回填 `TEST-STRATEGY.md:353-358` 的 `Exists?` 与实际文件名（`truth.test.ts` / `event-panel.test.tsx` / `spectator.test.tsx` / `notepad-isolation.test.ts`），修正 RFC §8.4 / §8.6 与 `README.md:11,37` 的计数/状态。
+4. **可选**：补 Round 3 原清单中的「App 级主路径」用例（点击死亡条目 → 高亮 `data-seq=1` + `scrollIntoView(1)`），让 AC-4 的单条证据更直观。
+5. **C-153 / C-144**：明确 `anchorFor` 的回退语义；补显式 `sort` 与乱序夹具。
+
+### 9. 探针与恢复记录
+
+所有源码探针都从 `/tmp/howl-rfc013-r4/backup/` 的**文件备份**恢复，**未使用 `git checkout` / `git restore`**。每个探针前都断言目标字符串恰好存在一次；恢复后 `shasum -a 256 -c` 五个文件全部 `OK`；临时探针测试 `tests/server/__probe-r4.test.ts` 与 `__probe-r4b.test.ts` 已删除；探针全部恢复后（写本评审文件之前）`git status --porcelain` 为空；没有 `git commit`。评审只新增/修改了 `reviews/REVIEW-RFC-013.md` 与 `RFCS.md` 两处文档。
+
+| 探针 | 改动 | 结果 | 结论 |
+|---|---|---|---|
+| **M-R4-1** | `anchorFor` 永远返回最后一条发言 | `event-panel.test.tsx` **1 failed | 9 passed**（`anchor` 期望 2，实得 5） | C-135 主路径有牙 |
+| **M-R4-2** | `EventPanel` key 回退成 `${seq}-${kind}` | `event-panel.test.tsx` **1 failed | 9 passed**（React duplicate key `1-death`） | C-149 有牙 |
+| **M-R4-3** | 删除 App 的 `actions` / `deaths` JSX | `spectator.test.tsx` **1 failed | 8 passed**（找不到 `袭击了 1 号`） | C-136 有牙 |
+| **M-R4-4** | `FINISHED` 时隐藏观战条 / feed / panel | `spectator.test.tsx` **1 failed | 8 passed**（找不到「这局打完了」） | C-141 有牙 |
+| **M-R4-5** | 去掉 `ApiClient.truth` 的 `safeParse` | `api.test.ts` **1 failed | 2 passed**（缺字段返回非 null） | C-151 客户端有牙 |
+| **M-R4-6** | `/truth` 返回前 `registry.appendEvents(record, [额外事件])` 真写回 store | `truth.test.ts` **1 failed | 6 passed**（事件流多出 `seq 15`） | C-138 有牙 |
+| **M-R4-7** | 去掉服务端 `TruthViewSchema.parse` | `truth + api` **10/10 passed** | 服务端 parse 无回归锁（非阻塞） |
+| **M-R4-8** | 去掉狼刀的 `aliveAt` 守卫 | `truth.test.ts` **1 failed | 6 passed**（死狼仍得到 `袭击了 3 号`） | C-154 有牙 |
+| **M-R4-9** | `deaths.day` 回退成 `state.day` | `truth.test.ts` **7/7 passed** | C-150/C-155 无测试（非阻塞） |
+
+两个不改源码的探针：
+
+- **P-R4-1**（真实对局 seed 15，玩家 3 号第一夜被刀）：`state.day = 1`，`DAY_STARTED` 天数为 `[1]`，`truth.deaths = [{"seat":3,"day":0,"cause":"wolf"}]`。
+- **P-R4-2**（合成第 1 天放逐 + 第 2 夜狼刀 + `DAY_STARTED day 2`）：`truth.deaths = [{"seat":2,"day":1,"cause":"lynch"},{"seat":3,"day":1,"cause":"wolf"}]`，夜间死者与随后的 `DAY_STARTED day 2` 相差一天。
+
+### 10. 结论
+
+**Reviewed。** Round 3 的六条阻塞项全部闭合：C-138 的事件流快照、C-141 的 `FINISHED` App 用例、C-151 的双端 schema、C-136 的真相渲染断言、C-135 的锚点主路径、C-149 的真实渲染 key 告警，每一条都在对应变异下打红；C-154 的死狼归因也已修复并锁定。C-137 / C-139 / C-143 及已关闭项按指示未重查。唯一实质残余是 **C-155**：C-150 的「死亡天数」修复对夜间死亡偏早一天（第一夜显示第 0 天）且无测试，归非阻塞。RFC-013 可以标 `Reviewed`；建议下一轮顺手清掉 C-155、服务端 schema 回归锁与 C-152 文档漂移。
