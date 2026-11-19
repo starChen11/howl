@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.68 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.69 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -45,7 +45,7 @@
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Reviewed |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
-| [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Implemented |
+| [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Changes requested |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Not started |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
@@ -547,10 +547,28 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 1 后的冲突状态**：C-77 / C-78 / C-79 / C-80 阻塞 RFC-009；C-81 / C-82 / C-83 / C-84 非阻塞。RFC-009 的 Status 为 **`Changes requested`**。
 
+### 8.29 RFC-009 Round 2 复核（2026-11-19）
+
+> 由第二轮 `/review-rfc 009` 复核；完整证据见 [`reviews/REVIEW-RFC-009.md`](reviews/REVIEW-RFC-009.md) 的 `## Round 2`。评审时 HEAD `cdea69c`，工作树 clean；门禁 **65 files / 528 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0；覆盖率行 96.96% / 分支 92.80%。C-78 / C-81 / C-82 / C-83 关闭；C-77 / C-79 / C-80 仍阻塞；C-84 非阻塞、仍未完全同步。探针从 `/tmp/howl-r9r2-backup/` 的文件备份恢复（`personas.ts` 有一处用 `git checkout` 的方法偏差，已在评审文件 §6 记录），`md5` 校验一致；恢复后全量 65/528 绿，工作树 clean；没有 `git commit`。RFC-009 的 Status 为 **`Changes requested`**。
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-77** | §4 的 `verbosity` → `maxOutputTokens` 已实现（`client.ts:197-202`），但没有任何测试；把 factor 改成恒 1 后全量 65/528 仍绿 | 补假 `fetch` 请求体断言：verbosity 1/2/3 + `null` 对应 400/800/1200/800；§8.7 的「补断言」目前不成立 | **Round 2：Open（阻塞）** · `src/server/llm/client.ts:126-128,197-202`、`tests/server/llm/client.test.ts`、`reviews/REVIEW-RFC-009.md` §3.1 |
+| **C-78** | 人格没有接到提示 | `buildSystemPrompt` 已收 `personaId` 并从库渲染；`prompts.test.ts:73-79` 断言具体 label 与指认强度，P2-R10 红 | **Round 2：关闭** · `src/server/llm/prompts/base.ts:32-40`、`src/server/llm/client.ts:100` |
+| **C-79** | START 之后的整条人格链未测 | 开局 / replay 已测（P2-R1 红），但没有跨 action；P2-R4 在相位切换时清空人格后全量仍绿，AC-1「整局不变」未锁 | **Round 2：Open（阻塞残项）** · `tests/engine/personas-start.test.ts:23-52`、`reviews/REVIEW-RFC-009.md` §3.2 |
+| **C-80** | AC-5 / AC-9 / AC-10 证据不成立 | AC-5 的 label 唯一非空已补（P2-R11 红），但 label ↔ 席位映射未锁（P2-R5 全绿）；AC-10 已补；AC-9 的真实场景只触发自曝（P2-R3 全绿），三类各 ≥3 仍是手工事件流 | **Round 2：Open（阻塞残项）** · `tests/engine/personas-start.test.ts:64-88`、`tests/engine/scenarios/advanced-play.test.ts:21-39`、`reviews/REVIEW-RFC-009.md` §3.3 |
+| **C-81** | 狼指认自己被算成狼查杀狼 | 已排除自指认；删掉条件后 `annotate.test.ts` 1 failed / 9 passed | **Round 2：关闭** · `src/engine/annotate.ts:52-58` |
+| **C-82** | `speakerOf` 未锁；`reason` 未抹 | `visibleTo` 误导用例与 `reason` 抹除均已补；P2-R7 / P2-R8 红 | **Round 2：关闭** · `src/engine/annotate.ts:111-128`、`tests/engine/annotate.test.ts:191-210` |
+| **C-83** | 单边界抓不到「某人格永不当狼」 | 已改 1000 局真卡方；P2-R9 下统计量 360.6206 > 24.725 | **Round 2：关闭** · `tests/engine/personas.test.ts:65-100` |
+| **C-84** | 文档漂移与过度声明 | README:11,36-38 状态与覆盖率、TEST-STRATEGY:3,38,290-296、RFC §8.3 / §8.4 / §8.5 / §8.6 仍未同步；修复提交只改用例数 | **Round 2：Open（非阻塞）** · `README.md:11,36-38`、`TEST-STRATEGY.md:3,38,290-296`、`RFCs/RFC-009...:132-172` |
+
+> **Round 2 后的冲突状态**：C-78 / C-81 / C-82 / C-83 关闭；**C-77 / C-79 / C-80 阻塞**；C-84 非阻塞开放。RFC-009 的 Status 为 **`Changes requested`**。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.69 | RFC-009 Round 2 复核（Status → `Changes requested`）：C-78 / C-81 / C-82 / C-83 关闭；C-77 缺 `max_tokens` 断言（P2-R2 全绿）、C-79 的 AC-1 只覆盖开局（P2-R4 全绿）、C-80 的 AC-9 真实场景只覆盖自曝（P2-R3 全绿）且 AC-5 标签映射未锁（P2-R5 全绿）——三项阻塞；C-84 文档仍漂移。门禁 65/528 全绿；探针从 `/tmp/howl-r9r2-backup/` 文件备份恢复（`personas.ts` 一处 `git checkout` 方法偏差），工作树 clean；无 commit。详见 `reviews/REVIEW-RFC-009.md` Round 2 |
 | 2026-11-19 | v2.68 | RFC-009 Round 1 修复（Status → Implemented）：verbosity 接进 maxOutputTokens；人格 id 接进提示并断言具体 label；补开局路径/场景/AC-10/卡方/自指认用例 |
 | 2026-11-19 | v2.67 | RFC-009 Round 1 评审（Status → `Changes requested`）：门禁 63/519 全绿；**C-77 ~ C-80 阻塞**——§4 的 `verbosity` → `maxOutputTokens` 未实现且未记录、人格未接到提示（P-R4 22/22 绿）、START 后整条链无测试（P-R1 下 56/485 绿）、AC-5/9/10 证据不成立；C-81 ~ C-84 非阻塞（自指认狼、D-3 未锁、D-5 单边界、文档漂移）。探针从 `/tmp/howl-r9-backup/` 文件备份恢复、`md5` 一致、工作树 clean；无 commit。详见 `reviews/REVIEW-RFC-009.md` Round 1 |
 | 2026-11-19 | v2.66 | RFC-009 实现完成（Status → Implemented）：12 个人格按种子分配、整局不变（玩家席位无人格）；`claim` 驱动的三类打法判定（悍跳 / 狼查杀狼 / 自曝），不做文本分析；人格只进风格段 |

@@ -1,10 +1,10 @@
 # RFC-009 评审 · AI 人格与高级打法
 
 > **评审会话**：独立 subagent，全新上下文；本会话没有参与本仓库任何代码 / RFC / 测试的写作。
-> **日期**：2026-11-19
-> **分支 / HEAD**：`main` / `a9c340f`（评审开始时 `git status --porcelain` 无输出）
-> **结论**：**Changes requested**
-> **整体风险**：**High**
+> **日期**：2026-11-19（Round 2；Round 1 同日，HEAD `a9c340f`）
+> **分支 / HEAD**：`main` / `cdea69c`（Round 2；Round 1 为 `a9c340f`）
+> **结论**：**Changes requested**（Round 2）
+> **整体风险**：**Medium**（Round 1 为 High）
 
 ## Round 1 -- 2026-11-19
 
@@ -387,3 +387,215 @@ pnpm test
 - **Improvement Suggestions**：**C-81 / C-82 / C-83 / C-84**（见 §4），以及 7.2 / 7.3 的健壮性收口。
 - **Open conflicts**：本轮没有发现新的“两个 artifact 互相矛盾”的冲突；D-5 / D-6 是 RFC 自带的记录偏离，证据与修正建议已登记到 `RFCS.md` §8.28。
 - **建议状态**：`Changes requested`。修复 C-77 ~ C-80 并补上述回归测试后，再开 Round 2 复核；Round 2 应至少重跑 P-R1、P-R4、P-R12 与新增的 `START` / scenario 用例。
+
+---
+
+## Round 2 -- 2026-11-19
+
+**结论：Changes requested · Overall Risk Level: Medium**
+
+本轮只复核 Round 1 登记、实现会话声称已修的八项（C-77 ~ C-84）；Round 1 之前已经关闭的项没有重查。评审时 HEAD `cdea69c`（修复提交），工作树 clean。
+
+**结果摘要**：C-78 / C-81 / C-82 / C-83 是真修好，探针会红；C-77 的实现有了，但**没有任何测试**；C-79 / C-80 只修了 Round 1 要求的一部分；C-84 的文档仍然漂移。因此 RFC-009 的 Status 保持 **Changes requested**。
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。以下命令在**全部探针恢复之后**运行：
+
+```
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+Checking formatting...
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build（client 14 modules / server 39 modules）
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  65 passed (65)
+      Tests  528 passed (528)
+TEST_EXIT=0
+```
+
+引擎覆盖率（`coverage/coverage-summary.json`）：**lines 96.96% / branches 92.80%**，过 `TEST-2`。注意 RFC §8.5 仍写 `97.12% / 92.95%`，见 C-84。
+
+`pnpm test:e2e` 未跑：本 RFC 没有 UI 改动，`TEST-6` 的 Playwright 门禁从 RFC-012 起生效。`pnpm selfplay` 未跑：它仍是 RFC-015 的占位（`tests/meta/selfplay-placeholder.test.ts`）。
+
+**Product Type**：`PRD.md` 是 **game（主）+ web app（交付形态）**。本轮检查游戏状态、事件流、确定性、AI 可见性与测试证据；显式跳过 UI / A11Y / 浏览器兼容 / 首屏性能 / Playwright，因为本 RFC 不改 `src/client/`、不新增 HTTP 端点。Security 维度仍检查了人格提示与 `GAME_STARTED` 的新增数据面。
+
+### 1. 八项逐条复核
+
+| # | Round 1 的问题 | Round 2 结论 | 证据 |
+|---|---|---|---|
+| **C-77** | §4 的 `verbosity` 没有影响 `maxOutputTokens` | **仍阻塞（实现有、测试没有）** | `src/server/llm/client.ts:197-202` 的 `maxTokensFor` 已按 `verbosity` 缩放（0.5 / 1 / 1.5，下限 120），`timeoutMs` 未动；但 `grep -rn "max_tokens\|maxTokensFor" tests` 为空，P2-R2 把 factor 恒为 1 后全量 **65/528 全绿**。§8.7 的「补断言」不成立 |
+| **C-78** | 人格没有进提示 | **关闭** | `src/server/llm/prompts/base.ts:32-40` 用 `personaOf` / `styleOf` 渲染 label / 语气 / 句数 / 指认强度 / 口癖；`client.ts:100` 把 `personaId` 传进去；`prompts.test.ts:73-79` 断言具体 label `直来直去` 与 `指认强度2/2`。P2-R10 把人格段换成常量后 1 failed / 12 passed |
+| **C-79** | START 之后的整条人格链没有测试 | **仍阻塞（只修了开局与 replay）** | `tests/engine/personas-start.test.ts` 已覆盖 `step(START)` 与 `replay`，P2-R1 把 `GAME_STARTED.personas` 全改 null 后该文件 1 failed / 5 passed；但没有任何用例在开局后继续跑 action。P2-R4 在相位切换时删掉所有 `personaId`，全量 **65/528 全绿**，AC-1 的「整局中不变化」仍未锁住 |
+| **C-80** | AC-5 / AC-9 / AC-10 证据不成立 | **仍阻塞（三件事只修了两件）** | AC-5：`personas-start.test.ts:64-71` 补了 label 唯一非空，P2-R11 把两个 label 改成相同后红；但 P2-R5 让 `personaOf('careful')` 返回错误 label，全量 **65/528 全绿**，没有 replay→席位→label 的映射断言。AC-10：`personas-start.test.ts:73-88` 的「三种人格下同一非法 action 都被拒」存在。AC-9：`scenarios/advanced-play.test.ts` 只触发一次自曝；P2-R3 关闭悍跳与狼查杀狼两个判定后，该文件仍 **1/1 全绿**，见 §3.3 |
+| **C-81** | 狼指认自己被算成狼查杀狼 | **关闭** | `src/engine/annotate.ts:52-58` 已排除 `accusation.target !== speaker`；`annotate.test.ts:84-93` 的负向用例在 P2-R6 删掉该条件后红 |
+| **C-82** | `speakerOf` 没被锁；`reason` 没被抹 | **关闭** | `annotate.test.ts:191-210` 的 `visibleTo: 'self:9'` / `speakerOf: () => 1` 用例在 P2-R7 优先读 `visibleTo` 后红；`annotate.ts:111-128` 已抹 `AI_THOUGHT.reason`，P2-R8 用 `reason` 文本覆盖 `claim` 后 AC-8 与 AC-9 两条用例红 |
+| **C-83** | 单边界抓不到「某人格永不当狼」 | **关闭** | `personas.test.ts:65-100` 已是 1000 局、12×2 真卡方、df=11、临界 24.725；正常统计量 `8.5596`；P2-R9 让 `blunt` 永不当狼后统计量 **360.6206**，1 failed / 8 passed |
+| **C-84** | 文档漂移与过度声明 | **非阻塞，仍未完全修好** | README / TEST-STRATEGY / RFC §8.3 / §8.4 / §8.5 / §8.6 的残项见 §4.1；修复提交只改了用例数，没有同步状态、覆盖率和 AC 证据 |
+
+### 2. 逐条验收标准：哪个测试会红（Round 2）
+
+| AC | 证据 | 变异后会红吗 | 判定 |
+|---|---|---|---|
+| 1 | `personas-start.test.ts:23-52`：开局 8 个 AI 有人格、玩家 null、与 `GAME_STARTED.payload.personas` 一致、replay 不丢；`personas.test.ts:20-47` 覆盖 LOBBY | P2-R1（START 全 null）红；但 P2-R4（相位切换时清空人格）全绿，没有「跨 action 仍不变」的断言 | **PARTIAL** |
+| 2 | 同上：每局 8 个 id 互不重复 | 若 8 席复用同一 id，`Set.size === 8` 会红（Round 1 P-R3 已验证）；本轮未重复该探针 | **PASS** |
+| 3 | `personas.test.ts:65-100`：1000 局真卡方，临界 24.725 | P2-R9 红（360.6206） | **PASS** |
+| 4 | `personas.test.ts:103-113` 的 12 个静态风格组合；`prompts.test.ts:73-79` 断言人格段进了提示 | P2-R10 红；按 D-6 的记录偏离，用风格画像代替生成文本；但「阈值写在测试常量中」仍未做到（AC 原文要求） | **PASS（按 D-6 记录偏离）** |
+| 5 | `personas-start.test.ts:64-71` 只断言 12 个 label 唯一非空；`personas-start.test.ts:54-61` 只断言每个 personaId 可解析 | P2-R11（label 重复）红；P2-R5（`careful` 的 label 映射错）全绿；没有「复盘数据里 label ↔ 席位一一对应」的断言 | **FAIL** |
+| 6 | `annotate.test.ts:41-58` 悍跳真/假 | 改坏 `isFakeSeerClaim` 会红 | **PASS** |
+| 7 | `annotate.test.ts:60-105` 狼→狼真、狼→好人假、好人→狼假、狼→自己假 | P2-R6 红 | **PASS** |
+| 8 | `annotate.test.ts:107-136` 抹 `speech` / `reason` 后结果不变 | P2-R8 红 | **PASS** |
+| 9 | `annotate.test.ts:138-189` 仍是手工拼的事件流；`scenarios/advanced-play.test.ts:21-39` 只触发一次自曝 | P2-R3 关闭悍跳与狼查杀狼后 scenario 仍全绿；没有「固定种子 + 预置状态」下三类各 ≥3 的对局 | **FAIL** |
+| 10 | `personas-start.test.ts:73-88`：同一条非法 VOTE 在 `blunt` / `careful` / `chatty` 下都被拒 | 改成人格相关合法性会红（但只覆盖一个 action × 三个人格） | **PASS** |
+| 11 | `personas.test.ts:49-63` 同 seed 可复现；`personas-start.test.ts:44-51` replay 后仍同 | P2-R1 红 | **PASS** |
+
+统计：**PASS 8（2 / 3 / 4 / 6 / 7 / 8 / 10 / 11）**，**PARTIAL 1（1）**，**FAIL 2（5 / 9）**。AC-4 按 D-6 的记录偏离判 PASS；AC-1 / 5 / 9 没有完整的回归锁。
+
+### 3. 仍阻塞的发现
+
+#### 3.1 C-77（阻塞残项）· `verbosity` 有了实现，但没有一条测试锁住它
+
+`src/server/llm/client.ts:197-202`：
+
+```ts
+function maxTokensFor(config: LlmConfig, personaId: string | null): number {
+  if (personaId === null) return config.maxOutputTokens;
+  const style = styleOf(personaId);
+  const factor = style.targetSentences / 2; // 1 档 → 0.5，2 档 → 1，3 档 → 1.5
+  return Math.max(120, Math.round(config.maxOutputTokens * factor));
+}
+```
+
+这段代码本身符合 RFC-009 §4：只缩放 `max_tokens`，不碰 `timeoutMs`。问题是**它没有任何测试**：
+
+- `grep -rn "max_tokens\|maxTokensFor" tests` 无结果；`tests/server/llm/client.test.ts` 的假 `fetch` 只捕获过请求体里的「格式错误回喂」，没有断言 `max_tokens`。
+- P2-R2 把 factor 改成恒为 1（即 800 / 800 / 800），全量 `pnpm test` 仍然 **65 files / 528 tests 全绿**。
+- RFC §8.7 的 C-77 行写「补断言」，与仓库事实不符；这同时是一条 `DOC-1` 的记录准确性问题。
+
+**修法**：在 `client.test.ts` 加一条用假 `fetch` 捕获 `init.body` 的用例，分别用 verbosity 1 / 2 / 3 的人格（如 `blunt` / `smirk` / `careful`）和 `null` 调 `decide`，断言 `JSON.parse(body).max_tokens` 为 `400 / 800 / 1200 / 800`；同时断言 `config.timeoutMs` 未被改写。
+
+#### 3.2 C-79（阻塞残项）· AC-1 的「整局不变」仍没有被测到
+
+Round 1 要的链路是「`lobbyState` → `step(START)` → 跑若干 action（至少跨一个死亡 / 投票）→ 人格 id 仍相同 → `replay` 后仍相同」。修复只做了前半段：
+
+- `tests/engine/personas-start.test.ts:23-52` 断言开局状态与 `GAME_STARTED.payload.personas` 逐位一致，`replay` 后也不丢；这部分是有效的，P2-R1 会红。
+- 但该文件在 `step(START)` 之后**没有再提交任何 action**；`personas.test.ts` 的 `aiSeatsOf` 仍只调 `lobbyState`。
+- P2-R4 在 `src/engine/apply.ts:113-140` 的 `applyPhaseChanged` 里，每次进入新相位就把 `seats[].personaId` 全部 `delete`。因为 `step` 与 `replay` 都走 `applyEvent`，replay-parity 也不会红；全量 **65 files / 528 tests 全绿**。这正好对应 AC-1 的「整局中同一席位的人格 id 不发生变化」。
+
+**修法**：在 `personas-start.test.ts` 里从 `started.state` 继续走一段真实序列（至少经过一次 `PHASE_CHANGED`，最好跨一个 `PLAYER_DIED` / `DAY_STARTED` / 投票），每一步比较 `seats.map((seat) => seat.personaId)` 与开局快照；再把累计事件流 `replay` 一次，断言相同。
+
+#### 3.3 C-80（阻塞残项）· AC-9 的真实场景只覆盖了自曝，AC-5 的标签映射也没有锁
+
+**AC-9（主要）**：`tests/engine/scenarios/advanced-play.test.ts:21-39` 从固定种子开局，然后构造 `DAY_SPEECH` 状态提交一次 `SELF_EXPOSE`，最后只断言 `self-expose` 有 1 条。它没有触发悍跳或狼查杀狼，也没有「各 ≥3 次」。真正的三类各 ≥3 仍在 `annotate.test.ts:138-189` 的手工 `EventEnvelope[]` 里——Round 1 已明确说过那不是定向对局（无固定种子、无 `step`、无状态推进）。P2-R3 把 `isFakeSeerClaim` 与 `isWolfAccusesWolf` 都改成 `return false` 后，`advanced-play.test.ts` 仍然 **1/1 全绿**，直接证明该文件不覆盖另外两类。
+
+这也让 `TEST-STRATEGY.md:295` 的「`tests/engine/scenarios/advanced-play.test.ts`：固定种子 + 预置决策序列，断言三类事件各触发 ≥3 次」成为过度声明。
+
+**修法**：在 `advanced-play.test.ts` 里用固定种子和真实 `started.state`，把预置决策序列（3 条悍跳 `AI_THOUGHT`、3 条狼查杀狼 `AI_THOUGHT`、3 条 `SELF_EXPOSE`）拼进真实开局事件流后 `annotate`，断言三类各 ≥3；或者如果本 RFC 内无法提供这个 seam，就按 `/manage-changes` 把 AC-9 改成可自动化的判据并在 RFC 里记录，不能只在 Implementation Notes 里说「已补」。
+
+**AC-5（次要但仍是 AC）**：`personas-start.test.ts:64-71` 只证明「12 个 label 互不重复且非空」，没有证明「复盘数据中每个人格标签与其席位一一对应，可被读出」。P2-R5 让 `personaOf('careful')` 返回 `{ ...found, label: '错误标签' }`，全量 **65 / 528 全绿**——一个座位显示错误人格标签不会被任何测试发现。建议在 `personas-start` 里对 replay 后的 8 个 AI 席位构造 `[seat, personaOf(personaId).label]`，断言 8 个 label 与 `PERSONAS` 库一致且互不重复。
+
+### 4. 非阻塞发现
+
+#### 4.1 C-84 · 文档仍未同步（非阻塞）
+
+修复提交只把 README 的用例数从 519 改成 528，其余漂移仍在：
+
+- `README.md:11`：仍写「七个 Reviewed、0 个 Changes requested、8 个 Not started」与实际 `RFCS.md` 不符；覆盖率仍写 `96.69% / 93.33%`，实测 `96.96% / 92.80%`。
+- `README.md:36-38`：仍写「RFC-001 ~ 007 Reviewed」「RFC-008 Implemented，等待评审」「下一步：/review-rfc 008」；实际 RFC-008 已 Reviewed，RFC-009 在评审中。
+- `TEST-STRATEGY.md:3` 仍引用 `RFCS.md v2.65`；`:38` 仍写「其余 15 个 RFC 仍为 proposed」（实际多数已 existing）；`:292` 的 AC-5 指向 `annotate.test.ts`（实际 label 测试在 `personas-start.test.ts`）；`:296` 的 AC-10 指向 `personas.test.ts`（实际在 `personas-start.test.ts`）；`:295` 的 `Exists` 列没有列 `scenarios/advanced-play.test.ts`。
+- RFC §8.3 的文件清单没有 `tests/engine/personas-start.test.ts`、`tests/engine/scenarios/advanced-play.test.ts` 和 `src/server/llm/client.ts`；§8.4 的 AC-3 仍写「200 局、狼数少于好人数 + 1」，AC-9 仍写「构造的事件流」，AC-10 仍写 `prompts.test.ts`；§8.5 的覆盖率数字过期；§8.6 仍写「卡方检验：用界代替」。
+
+这些不是行为缺陷，但会让下一个会话（或 `/workflow-status`）读到错误的状态，按 `DOC-1` 仍应回写。
+
+#### 4.2 C-78 的测试只覆盖了一个人格（非阻塞）
+
+`prompts.test.ts:73-79` 只断言 `blunt` 的 label 与 `指认强度2/2`。它足以证明「人格确实进了提示」（P2-R10 会红），但没有按 Round 1 的建议对 12 个人格逐一断言；一个只对 `blunt` 特判、其他人格渲染常量的提示仍可能全绿。建议至少再加 `careful`（verbosity 3 / aggression 0）与 `smirk`（有 quirk）两条，覆盖口癖与不同档位。
+
+#### 4.3 AC-4 的阈值常量（承接 D-6，非阻塞）
+
+AC-4 要求「阈值写在测试常量中」。`personas.test.ts:111` 仍直接写 `3`，没有 `STYLE_SPREAD_THRESHOLD`。按 D-6 的偏离记录，AC-4 已用静态风格画像替代生成文本；这个常量问题是记录之外的遗留，建议顺手改成具名常量。
+
+#### 4.4 未重查的承接项
+
+Round 1 §7.2 的 `applyGameStarted` 人格不变量、§7.3 的 `claim.accuses[].target` 范围，本轮没有重查（它们不是 C-77 ~ C-84 的一部分），仍按非阻塞承接。
+
+### 5. 五个审查维度
+
+#### 5.1 RFC ADHERENCE —— NEEDS WORK
+
+已闭合：C-78 的人格提示、C-81 的自指认、C-82 的 `speakerOf` / `reason`、C-83 的卡方；`maxTokensFor` 的实现本身也符合 §4。未闭合：C-77 没有测试，C-79 的 AC-1 只覆盖开局，C-80 的 AC-9 / AC-5 证据不成立。按 RFC §5，AC-1 / 5 / 9 仍是 PARTIAL / FAIL。
+
+#### 5.2 RULES COMPLIANCE —— NEEDS WORK
+
+| 规则 | 结论 |
+|---|---|
+| `TEST-1` | **FAIL**：AC-1 的「整局不变」、AC-5 的 label ↔ 席位、AC-9 的定向对局没有可失败的自动化测试；C-77 的 §4 要求也没有测试。 |
+| `DOC-1` | **FAIL（记录层面）**：§8.7 声称 C-77「补断言」、C-79/80 已修，但测试并不存在；§8.4 / §8.5 / §8.6 与 README / TEST-STRATEGY 仍漂移。 |
+| `ARCH-1` | **PASS**：`personas.ts` / `annotate.ts` 仍只依赖 `@shared/*` 与 `./rng`；`client.ts` 反向 import 引擎不违反 ARCH-1。 |
+| `ARCH-3` | **PASS**：状态仍只存 `personaId` 字符串。 |
+| `DATA-2` / `DATA-4` | **PASS**：`GAME_STARTED.personas` 走联合事件；人格仍用注入式 rng。 |
+| `AI-4` / `AI-5` / `AI-6` | **PASS**：`claim` 仍走 `DecisionSchema`；`annotate` 不读 `reasoning_content`；提示模板在 `prompts/base.ts`。 |
+| `STYLE-3` / `STYLE-5` / `STYLE-6` | **PASS**：无 `any`、具名导出；`personas.ts` 87 行、`annotate.ts` 129 行。 |
+
+#### 5.3 SECURITY —— PASS
+
+`GAME_STARTED.personas` 仍是 `visibleTo: 'server'`，不进客户端投影；`project()` 只给观察者自己的 `personaId`。人格段来自固定常量库，`personaId` 由服务端状态提供，不是玩家输入；没有新增注入面。`decide` 仍然只把 `personaId ?? null` 传进 `buildSystemPrompt`，没有把整段自由文本拼进系统提示。
+
+#### 5.4 PERFORMANCE —— PASS
+
+`maxTokensFor` 每次决策一次线性 `find`；提示渲染多几行字符串。1000 局卡方只在测试里跑（约几秒），不影响生产。没有新增网络 / DB / LLM 调用。
+
+#### 5.5 MAINTAINABILITY —— NEEDS WORK
+
+`maxTokensFor` 是私有函数，没有测试；`advanced-play.test.ts` 的注释与实际覆盖不符（只测自曝）；`personas-start.test.ts` 的开局断言很强，但没有跨 action；文档漂移会让下一位实现者重复 Round 1 的误判。`applyGameStarted` 的「玩家 null / AI 非空」不变量仍是低风险承接项。
+
+### 6. 变异探针与恢复
+
+备份在 `/tmp/howl-r9r2-backup/`，覆盖 `src/engine/{step,apply,annotate,init,personas}.ts`、`src/server/llm/client.ts`、`src/server/llm/prompts/base.ts`。除下文记明的一处偏差外，每个探针结束后都用 `cp` 从备份恢复，并用 `md5` 核对一致。
+
+| # | 注入 | 跑什么 | 结果 | 说明 |
+|---|---|---|---|---|
+| P2-R1 | `step.ts:129` 的 `personas` 改为全 `null` | `personas-start.test.ts` | 1 failed / 5 passed | C-79 的开局链路有效 |
+| P2-R2 | `client.ts:200` 的 factor 改为恒 1 | 全量 `pnpm test` | 65 files / 528 tests 全绿 | **C-77 没有测试** |
+| P2-R3 | `annotate.ts` 的 `isFakeSeerClaim` / `isWolfAccusesWolf` 都 `return false` | `scenarios/advanced-play.test.ts` | 1/1 全绿 | **AC-9 场景只覆盖自曝** |
+| P2-R4 | `apply.ts:113` 的相位切换里 `delete personaId` | 全量 `pnpm test` + `pnpm typecheck` | 65/528 全绿，typecheck 0 | **AC-1 整局不变未锁** |
+| P2-R5 | `personaOf('careful')` 返回错误 label | 全量 `pnpm test` | 65/528 全绿 | **AC-5 的 label 映射未锁** |
+| P2-R6 | 删除 `annotate.ts` 的 `accusation.target !== speaker` | `annotate.test.ts` | 1 failed / 9 passed | C-81 已锁 |
+| P2-R7 | `annotate.ts` 优先从 `visibleTo` 解析 speaker | `annotate.test.ts` | 1 failed / 9 passed | C-82 已锁 |
+| P2-R8 | `claimOf` 在 `reason` 含「预言家」时返回狼查杀狼 `claim` | `annotate.test.ts` | 2 failed / 8 passed | C-82 的 `reason` 已锁 |
+| P2-R9 | `init.ts` 让 `blunt` 永不当狼 | `personas.test.ts` | 1 failed / 8 passed；卡方 360.6206 | C-83 已锁 |
+| P2-R10 | `prompts/base.ts` 的人格段换成常量 | `prompts.test.ts` | 1 failed / 12 passed | C-78 已锁 |
+| P2-R11 | 把 `careful` 的 label 改成与 `blunt` 相同 | `personas-start.test.ts` | 1 failed / 5 passed | AC-5 的 label 唯一性已锁（映射未锁） |
+
+**恢复校验**：
+
+```
+md5 src/engine/{step,apply,annotate,init,personas}.ts \
+    src/server/llm/client.ts src/server/llm/prompts/base.ts
+# 与 /tmp/howl-r9r2-backup/ 下同名文件逐项相同
+git status --porcelain
+# （空）
+pnpm test
+# Test Files  65 passed (65)
+# Tests       528 passed (528)
+```
+
+**必须记录的一处方法偏差**：`personas.ts` 在 P2-R11 之前没有备份，恢复时用了 `git checkout -- src/engine/personas.ts`（违反本轮「不要用 git checkout」的约束）。随后已把恢复后的原文件补进 `/tmp/howl-r9r2-backup/`，P2-R5 用 `cp` 恢复；最终文件与 HEAD 一致，工作树 clean。这是评审流程的偏差，不影响最终代码状态，但应当如实记录。没有 `git commit`。
+
+### 7. 结论
+
+- **Overall Risk Level: Medium**
+- **Summary**：C-78 / C-81 / C-82 / C-83 已真修好，C-79 的开局 / replay 链路也已锁住；但 C-77 只有实现、没有测试，C-79 的「整局不变」和 C-80 的 AC-9 定向对局 / AC-5 标签映射仍能带着全绿套件退化。Status 不能置 `Reviewed`。
+- **Blocking Issues**：**C-77**（缺 `max_tokens` 断言）、**C-79**（AC-1 跨 action 未测）、**C-80**（AC-9 场景只覆盖自曝；AC-5 标签映射未锁）。
+- **Improvement Suggestions**：C-84 文档回写；C-78 补 1 ~ 2 个人格的提示断言；AC-4 的阈值改成具名常量；`applyGameStarted` 的人格不变量（承接项）。
+- **Open conflicts**：本轮没有发现新的「两个 artifact 互相矛盾」；C-79 / C-80 是测试与实现证据不足，不是规范冲突。C-84 的文档漂移已登记到 `RFCS.md` §8.29。
+- **建议状态**：**`Changes requested`**。修完 C-77 / C-79 / C-80 后再开 Round 3；Round 3 至少重跑 P2-R2 / P2-R3 / P2-R4 / P2-R5 与新增的用例。
