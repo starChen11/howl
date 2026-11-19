@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.76 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.77 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -46,7 +46,7 @@
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
-| [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Implemented |
+| [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Changes requested |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
@@ -600,6 +600,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 | **C-93** | **p95 测量口径不完整**：服务端首 SSE 事件时间未记录；`firstDeltaAt` 只在 null 时赋值、不按发言重置（P8）；`useReducer` 无法传 `now`；没有 per-speech 样本数组。D-6 接受「不接真实模型 / p95 手工验收」，但当前代码拿不到手工验收所需的两个时间点。 | **非阻塞。** 把 `receivedAt` 放进 reducer 的 action（或外层按发言记录样本）；服务端在写第一帧时记录 `startedAt`；补 30 次发言的采样测试。 | **Open（非阻塞）** · `src/client/use-stream.ts:37-58`、`src/server/routes/stream.ts:78`、`RFCs/RFC-010...:161`；`reviews/REVIEW-RFC-010.md` C-93 |
 | **C-94** | **`parseSseLine` 绕过 Zod**：`src/server/llm/stream.ts:36-52` 只检查 `type` 存在，缺 `id` / `seat` / `text` 的 `{"type":"delta"}` 也返回 `StreamMessage`（P6）；`src/shared/stream.ts:42-50` 的 `parseSseData` 同一输入返回 `undefined`。 | **非阻塞。** 复用 `StreamMessageSchema`（或直接调 `parseSseData`），补 schema 非法行的测试。 | **Open（非阻塞）** · `src/server/llm/stream.ts:36-52`、`src/shared/stream.ts:42-50`、P6；`reviews/REVIEW-RFC-010.md` C-94 |
 | **C-95** | **维护性小项**：`degradeSentence` 的 ≤10 字检查在取值时而非模块构造时，`throw` 分支无测试；`markUnstable` 硬编码 3，不引用 `UNSTABLE_AFTER`；`shouldAttempt` 无生产调用者；`messagesFor` 用 `as never` 绕过 `SeatId` 且重复 `visibleEventsOf`；`SPEECH_SKIPPED` / `PHASE_CHANGED` / `GAME_ENDED` 被映射成空文本 `done`。 | **非阻塞。** 模块初始化时校验常量；共享阈值；去掉类型逃逸；过滤非发言事件。 | **Open（非阻塞）** · `src/server/llm/degrade.ts:19-26`、`src/client/use-stream.ts:77-80`、`src/server/routes/stream.ts:28-46`；`reviews/REVIEW-RFC-010.md` C-95 |
+| **C-96** | **发言中途断线丢增量（Round 3 新增，阻塞）**：D-3 让同一段发言的多个 `delta` 共享 `id = seq`，但 AC-5 / API-2 要求「每条消息 `id` 等于事件 `seq`，带 `Last-Event-ID` 从下一个 `seq` 继续」。客户端收到首个 `delta` 后 `lastId = seq`，断线重连带 `Last-Event-ID: seq`，路由的 `message.id > lastEventId` 会过滤掉该发言剩余的 `delta` 与 `done`（P11：SPEECH seq 15，重连带 15，响应只有 id 23，没有 id 15）。 | **阻塞。** 改 id 方案（每个 `delta` 单调递增的 SSE id，`done` 用 `seq`），或增加「当前未完成发言从起点重放」的协议信号并让客户端按信号重置 `text`；同步 §2.2 / §4 / D-3 / AC-5 与 `TEST-STRATEGY.md`，走 `/manage-changes` 或正式登记偏离。 | **Open（阻塞）** · `src/client/use-stream.ts:43-44,107-109`、`src/server/stream/bus.ts:53-60`、`src/server/routes/stream.ts:82-86`、`RFCs/RFC-010...:33-35,66,117`、P11；`reviews/REVIEW-RFC-010.md` Round 3 C-96 |
 
 > **Round 1 后的冲突状态**：C-85 ~ C-89 阻塞 RFC-010；C-90 ~ C-95 非阻塞。RFC-010 的 Status 为 **`Changes requested`**。
 
@@ -613,10 +614,20 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 - **C-86 持续推送判断**：**端点实时能力必须在本 RFC 内完成；生产侧 `SseOutputChannel` 属 RFC-011，不是 RFC-012。** 理由：RFC-010 §2.1 / §2.2 / §4 / §6 与 AC-1/2/4/5/9 都要求实时增量；§8.1 批准的 A 方案是「服务端全做」；RFC-011 §2.3 明确 `SseOutputChannel` 推到 RFC-010 的端点；RFC-012 只是界面。若正式改派，按 `AGENTS.md` 硬规则 6 走 `/manage-changes` 并同步 `RFCS.md` §3 依赖表，不能在 §8.6 记一句缺口后标 `Reviewed`。
 - **门禁**：`typecheck` / `lint` / `format:check` / `build` 全 exit 0；`pnpm test` **68 files / 559 tests**；`pnpm test:e2e` 跳过；覆盖率行 96.96% / 分支 92.85%。探针从 `/tmp/howl-rfc010-r2-backup/` 的文件备份恢复（**未用 `git checkout`**），四处 `md5` 一致，工作树 clean，无 commit。
 
+**Round 3 复核（2026-11-19，HEAD `066f554`，证据见 [`reviews/REVIEW-RFC-010.md`](reviews/REVIEW-RFC-010.md) Round 3）**：
+
+- **C-86 仍 Open（阻塞）**：`StreamBus` + `PassThrough` 的实时推送成立（`tests/server/stream.test.ts:245-273`），但补偿 / 重连仍把每个可见事件映射成 `done`（P4）；客户端仍吞掉下一段 `done`（P1），真实路由回放 P10 后 `text=''`；committed 与总线增量按「先 A 后 B」拼接，同一发言的 `done` 先于 `delta`（P3）；`bus.publish` 仍无 `src/` 调用者，§8.6 仍写 `reply.send` 一次写完并归 RFC-012。
+- **C-96（新增，阻塞）**：D-3「delta 共享 id」与 AC-5「从下一个 seq 续传」在发言中途断线时冲突；P11 带 `Last-Event-ID: 15` 重连收不到 id 15 的剩余增量。
+- **C-87 仍 Open（阻塞）**：接住抛错（`tests/server/degrade.test.ts:193-233`）与 `degradeEvents` 真实信封（P5：`seq=16, spoken=[2], degradations=[2]`）成立；但 P6（30s 上限、每次 20s）仍到 40s；`GameRegistry` 无追加原始事件入口、`runTurn` 无调用者，RFC-011 交接未登记。
+- **C-88 关闭**：走路由的超窗用例（`tests/server/stream.test.ts:275-293`）断言 MIME 与 body；M1 把 `bus.ts:58` 的 `undefined` 改成 `[]` → 1 红。遗留「无 `Last-Event-ID` 且总线已满 → `SNAPSHOT_REQUIRED`」（P9）为非阻塞策略项。
+- **C-89 仍 Open（阻塞）**：delta 开头的 `sawThinking` 重置已加，但 `done` 分支不重置 `sawThinking` / `firstDeltaAt`（P2b）；M2 删掉该行后 7/7 全绿，说明无回归锁。
+- **门禁**：`typecheck` / `lint` / `format:check` / `build` 全 exit 0；`pnpm test` **68 files / 564 tests**；`pnpm test:e2e` 跳过；覆盖率行 96.96% / 分支 92.85%。探针从 `/tmp/howl-rfc010-r3-backup/` 的文件备份恢复（**未用 `git checkout`**），四处 `md5` 一致，工作树 clean，无 commit。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.77 | RFC-010 Round 3 复核（Status → `Changes requested`）：C-88 关闭（走路由超窗用例 + MIME，M1 红）；C-86 / C-87 / C-89 仍阻塞——committed 与总线增量未合并（P3 / P10）、客户端吞下一段 `done`（P1）、全事件映射 `done`（P4）、20s+20s 突破 30s 预算（P6）、done-only 不重置 `sawThinking`（P2b/M2）；新增 C-96（发言中途断线丢增量，D-3 vs AC-5）。门禁 68/564 全绿、覆盖率 96.96 / 92.85；探针从 `/tmp/howl-rfc010-r3-backup/` 文件备份恢复、`md5` 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-010.md`](reviews/REVIEW-RFC-010.md) Round 3 |
 | 2026-11-19 | v2.76 | RFC-010 Round 2 修复（Status → Implemented）：`StreamBus` 承载增量、SSE 改长连接；`runTurn` 接住抛错并守整体预算；超窗用例走路由 |
 | 2026-11-19 | v2.75 | RFC-010 Round 2 复核（Status → `Changes requested`）：C-85 关闭；C-86 / C-87 / C-88 / C-89 仍阻塞（第二段 `done` 被吞、路由全 `done`、真实失败抛出 / 超时预算、`degradeEvents` 不可写入、超窗测试未打到路由 / MIME、`sawThinking` 跨段）；持续推送判断为「端点在 010、生产侧在 011」。门禁 68/559 全绿、覆盖率 96.96 / 92.85；探针从文件备份恢复、`md5` 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-010.md`](reviews/REVIEW-RFC-010.md) Round 2 |
 | 2026-11-19 | v2.74 | RFC-010 Round 1 修复（Status → Implemented）：`DEGRADED` 折叠；`runTurn` 重试/降级编排；SSE 超窗报 `SNAPSHOT_REQUIRED`；客户端跨发言重置 |
