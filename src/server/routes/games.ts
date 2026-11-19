@@ -112,6 +112,15 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       }
 
       const text = typeof request.body?.text === 'string' ? request.body.text : '';
+      // 草稿也是玩家输入，同样要过 300 字上限（SEC-4）；否则超时提交会绕过 AC-5。
+      if (!isWithinLimit(text)) {
+        return reply.code(400).send({
+          error: 'VALIDATION_FAILED',
+          message: '发言超过 300 字',
+          issues: ['text'],
+        });
+      }
+
       channels.setDraft(record.gameId, text);
       return reply.send({ ok: true });
     },
@@ -154,11 +163,6 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       });
     }
 
-    // 玩家在等发言时，这句话先交给挂起的输入通道（RFC-011 的编排回路）。
-    if (parsed.data.action.type === 'SPEECH') {
-      channels.submit(record.gameId, parsed.data.action.text);
-    }
-
     const result = await registry.submit(
       session,
       record,
@@ -171,6 +175,15 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
         message: result.code === 'ALREADY_APPLIED' ? '该动作已经应用过' : '版本不匹配',
         version: result.version,
       });
+    }
+
+    // 引擎**接受**之后才把这句话交给挂起的输入通道：先通知再提交的话，
+    // 被引擎拒绝（夜间提交发言）也会让编排层以为玩家说过话（C-107）。
+    if (
+      parsed.data.action.type === 'SPEECH' &&
+      !result.events.some((event) => event.type === 'REJECTED')
+    ) {
+      channels.submit(record.gameId, parsed.data.action.text);
     }
 
     // B1：只回该席位可见的事件。`step` 的原始事件里含 `server` 可见的死亡与夜间相位。

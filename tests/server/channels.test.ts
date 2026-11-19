@@ -192,8 +192,8 @@ describe('AC-12 · 新通道实现不需要改引擎', () => {
   });
 });
 
-describe('AC-6 / AC-9 · 生产接线：POST 兑现挂起的输入通道', () => {
-  it('POST /actions 的发言会兑现挂起的 HttpInputChannel', async () => {
+describe('AC-6 / AC-9 · 生产接线：被拒绝的发言不会通知编排层', () => {
+  it('夜间提交 SPEECH：引擎拒绝，挂起通道仍未被兑现', async () => {
     const { buildApp } = await import('@server/app');
     const { ChannelRegistry } = await import('@server/channels/session');
     const { StreamBus } = await import('@server/stream/bus');
@@ -201,6 +201,7 @@ describe('AC-6 / AC-9 · 生产接线：POST 兑现挂起的输入通道', () =>
     const bus = new StreamBus();
     const channels = new ChannelRegistry(bus);
     const app = buildApp({ store: new InMemoryMetaStore(), bus, channels });
+
     const created = await app.inject({
       method: 'POST',
       url: '/api/games',
@@ -212,10 +213,13 @@ describe('AC-6 / AC-9 · 生产接线：POST 兑现挂起的输入通道', () =>
     const { gameId } = created.json<{ gameId: string }>();
     const version = created.json<{ version: number }>().version;
 
-    // 先挂起一次「等玩家说话」，再由 POST 兑现
-    const pending = channels
+    let resolved: PlayerInput | undefined;
+    void channels
       .forGame(gameId)
-      .input.read({ seat: 1 as never, timeoutMs: 5_000, kind: 'speech' });
+      .input.read({ seat: 1 as never, timeoutMs: 5_000, kind: 'speech' })
+      .then((value) => {
+        resolved = value;
+      });
 
     const res = await app.inject({
       method: 'POST',
@@ -227,16 +231,48 @@ describe('AC-6 / AC-9 · 生产接线：POST 兑现挂起的输入通道', () =>
       },
     });
 
-    expect([200, 409]).toContain(res.statusCode);
-    // 关键：挂起的通道拿到的是玩家敲的那句话，不是空
-    expect(await pending).toEqual({ kind: 'speak', text: '我先说' });
+    // 夜间发言被引擎拒绝：响应里是 REJECTED，挂起通道**不能**被兑现
+    expect(res.statusCode).toBe(200);
+    expect(
+      res.json<{ events: { type: string }[] }>().events.some((e) => e.type === 'REJECTED'),
+    ).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(resolved).toBeUndefined();
+    channels.forGame(gameId).input.close();
+  });
 
-    const draft = await app.inject({
+  it('草稿接口也校验 300 字上限（不能绕过 AC-5）', async () => {
+    const { buildApp } = await import('@server/app');
+    const app = buildApp({ store: new InMemoryMetaStore() });
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side' },
+    });
+    const raw = created.headers['set-cookie'];
+    const header = Array.isArray(raw) ? raw[0] : raw;
+    const cookie = String(header).split(';')[0] ?? '';
+    const { gameId } = created.json<{ gameId: string }>();
+
+    const res = await app.inject({
       method: 'POST',
       url: `/api/games/${gameId}/input`,
       headers: { cookie },
-      payload: { text: '草稿' },
+      payload: { text: '字'.repeat(301) },
     });
-    expect(draft.statusCode).toBe(200);
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('通道注册表本身能兑现挂起的输入（生产回路的单元证据）', async () => {
+    const { ChannelRegistry } = await import('@server/channels/session');
+    const { StreamBus } = await import('@server/stream/bus');
+    const channels = new ChannelRegistry(new StreamBus());
+
+    const pending = channels
+      .forGame('g')
+      .input.read({ seat: 1 as never, timeoutMs: 5_000, kind: 'speech' });
+    expect(channels.submit('g', '我来说')).toBe(true);
+    expect(await pending).toEqual({ kind: 'speak', text: '我来说' });
   });
 });
