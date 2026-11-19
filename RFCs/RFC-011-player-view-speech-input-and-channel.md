@@ -237,3 +237,17 @@ $ pnpm test → 75 files / 620 tests
 ```
 $ pnpm test → 75 files / 622 tests
 ```
+
+### 8.11 Round 5 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-113** 双写丢更新 | 路由写入的 `SPEECH` 被编排层用读前的旧记录覆盖 | `runGame` **每轮从存储重读记录**再推进；补用例断言编排层不会缩短或改写已有事件 |
+| **C-109** 接受分支没有正向锁 / 输出通道没人测 | 删掉接受分支的 `channels.submit` 全量仍绿；`SseOutputChannel.emit` 改成空操作也全绿 | 补两条：①真实路由 + 真实白天发言 → 挂起通道收到原话（删掉通知接线会超时红）；②`SseOutputChannel` 推 `delta` 与 `done`（空实现会红） |
+| **C-110** AC-6 / AC-7 无锁 | 超时当弃权、`skip` 分支都无用例 | 补「超时且有草稿 → `timeout` 分支；草稿为空 → `skip`」的用例 |
+| **C-111** AC-13 没有服务端路径 | `remainingSeconds` 在 `src/` 无调用者 | 新增 `GET /api/games/:id/timer`：起点来自事件流（最近 `DAY_STARTED` / `SPEECH` 的 `ts`），返回剩余秒数；补路由用例 |
+| **C-112** 迁移接收侧缺失 | RFC-012 没有承接 | RFC-012 的验收标准补两条（整局入口 + 不与 `POST /actions` 双写） |
+
+```
+$ pnpm test → 75 files / 628 tests
+```

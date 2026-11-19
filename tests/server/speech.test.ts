@@ -67,3 +67,31 @@ describe('AC-5 / AC-6 的后端保障', () => {
     expect(await pending).toEqual({ kind: 'timeout', text: '我说到一半' });
   });
 });
+
+describe('C-111 · 服务端的剩余秒数端点', () => {
+  it('GET /timer 返回剩余秒数与起点', async () => {
+    const { buildApp } = await import('@server/app');
+    const { InMemoryMetaStore } = await import('@server/store/meta-store');
+    const app = buildApp({ store: new InMemoryMetaStore() });
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side' },
+    });
+    const raw = created.headers['set-cookie'];
+    const header = Array.isArray(raw) ? raw[0] : raw;
+    const cookie = String(header).split(';')[0] ?? '';
+    const { gameId } = created.json<{ gameId: string }>();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/games/${gameId}/timer`,
+      headers: { cookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ remainingSeconds: number; phase: string }>();
+    expect(body.remainingSeconds).toBeGreaterThanOrEqual(0);
+    expect(body.phase.length).toBeGreaterThan(0);
+  });
+});

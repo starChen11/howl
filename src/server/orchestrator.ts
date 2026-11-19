@@ -105,6 +105,10 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
   let skipped = 0;
 
   while (steps < maxSteps) {
+    // 每轮都从存储重读：路由可能刚写入了玩家的发言，用读前的旧记录提交会把它覆盖掉
+    // （评审 C-113 的双写丢更新）。
+    const fresh = await registry.getGame(record.gameId);
+    if (fresh !== undefined) record = fresh;
     const state = registry.stateOf(record);
     if (state.phase === 'FINISHED') break;
 

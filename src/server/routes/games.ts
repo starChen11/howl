@@ -12,7 +12,7 @@ import type { ProjectedContext } from '@shared/project';
 import type { PendingDecision } from '@shared/project';
 
 import { project } from '../project';
-import { isWithinLimit } from '../speech';
+import { isWithinLimit, remainingSeconds } from '../speech';
 import { resolveSession } from '../session';
 import type { GameRegistry } from '../store/game-registry';
 import type { ChannelRegistry } from '../channels/session';
@@ -125,6 +125,30 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       return reply.send({ ok: true });
     },
   );
+
+  // 倒计时以服务端为准：刷新页面后剩余时间不回满（AC-13）。
+  app.get<{ Params: { id: string } }>('/api/games/:id/timer', async (request, reply) => {
+    const { session } = await resolveSession(registry, request, reply, production);
+    const record = await registry.getGame(request.params.id);
+    if (record === undefined || !session.gameIds.includes(record.gameId)) {
+      return reply.code(404).send({ error: 'GAME_NOT_FOUND', message: '对局不存在' });
+    }
+
+    // 起点来自事件流：最近一次 `DAY_STARTED` 或最近一条发言事件的 `ts`。
+    const state = registry.stateOf(record);
+    const startEvent = [...record.events]
+      .reverse()
+      .find((event) => event.type === 'DAY_STARTED' || event.type === 'SPEECH');
+
+    return reply.send({
+      phase: state.phase,
+      startedAt: startEvent?.ts ?? null,
+      remainingSeconds:
+        startEvent === undefined
+          ? remainingSeconds({ startedAt: 0, now: 0 })
+          : remainingSeconds({ startedAt: startEvent.ts, now: Date.now() }),
+    });
+  });
 
   app.post<{ Params: { id: string } }>('/api/games/:id/actions', async (request, reply) => {
     const parsed = SubmitActionBodySchema.safeParse(request.body);

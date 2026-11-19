@@ -191,3 +191,55 @@ describe('C-101 · 玩家轮真的会问输入通道', () => {
     expect((playerSpeech?.payload as { text?: string }).text).toBe('我过关。');
   });
 });
+
+describe('C-113 · 编排层不能覆盖路由写入的发言', () => {
+  it('路由先写入一条 SPEECH，runGame 之后该事件仍在（不丢更新）', async () => {
+    const { buildApp } = await import('@server/app');
+    const { StreamBus } = await import('@server/stream/bus');
+    const { ChannelRegistry } = await import('@server/channels/session');
+
+    const store = new InMemoryMetaStore();
+    const bus = new StreamBus();
+    const channels = new ChannelRegistry(bus);
+    const app = buildApp({ store, bus, channels });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side', seed: 15 },
+    });
+    const raw = created.headers['set-cookie'];
+    const header = Array.isArray(raw) ? raw[0] : raw;
+    const cookie = String(header).split(';')[0] ?? '';
+    const { gameId } = created.json<{ gameId: string }>();
+
+    void app;
+    const registry = new GameRegistry(store);
+    const session = await registry.getSession(cookie.split('=')[1] ?? '');
+    if (session === undefined) throw new Error('会话丢失');
+
+    const before = await registry.getGame(gameId);
+    if (before === undefined) throw new Error('对局丢失');
+
+    // 编排层只走一步（脚本 AI 返回 undefined 即停下），不应删掉任何已有事件
+    await runGame({
+      registry,
+      session,
+      input: {
+        async read() {
+          return { kind: 'skip' };
+        },
+        close() {},
+      },
+      output: { emit() {}, async flush() {} },
+      decide: async () => ({ action: undefined }),
+      maxSteps: 3,
+    });
+
+    const after = await registry.getGame(gameId);
+    expect(after?.events.length).toBeGreaterThanOrEqual(before.events.length);
+    expect(after?.events.map((event) => event.seq)).toEqual(
+      before.events.map((event) => event.seq),
+    );
+  });
+});
