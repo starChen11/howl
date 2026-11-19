@@ -44,7 +44,7 @@
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Reviewed |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Reviewed |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
-| [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Implemented |
+| [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Changes requested |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Not started |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Not started |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
@@ -418,10 +418,26 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 1 后的冲突状态**：C-59 / C-60 / C-61 / C-62 阻塞 RFC-008；C-63 / C-64 非阻塞。RFC-008 的 Status 为 **`Changes requested`**。上一轮没有 RFC-008 的评审记录，本轮是 Round 1。
 
+### 8.21 RFC-008 Round 2 评审登记的冲突（2026-11-19）
+
+> 由第二轮 `/review-rfc 008` 登记；完整证据见 [`reviews/REVIEW-RFC-008.md`](reviews/REVIEW-RFC-008.md) 的 `## Round 2`。评审时 HEAD `25bfa3a`，工作树 clean；门禁 **58 files / 482 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0。Round 1 的 B1 / B2 / B3 行为修复成立，B5 的「保留记录 + 410」与 retention 作用域也成立；但 B1 HTTP 回归测试无效、B5 超限释放反复释放第 1 局，C-61 / B4 仍未闭合。所有探针从 `/tmp/howl-probe-backup-round2-src/` 的文件备份恢复（未用 `git checkout`），探针后全量套件复跑 58/482 绿，工作树 clean；没有 `git commit`。
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-65** | **B1 的 HTTP 回归测试无效。** 把 `routes/games.ts:146` 改回 `events: result.events` 后 `resume + store` 14/14 绿；真实女巫（seed 15，座位 1 女巫）提交自己的 `WITCH_ACT` 时，raw 响应含 `PLAYER_DIED`（`server`，死因）与 `PHASE_CHANGED`（`server`），过滤后只剩 3 条 public。`tests/server/resume.test.ts:170-194` 只提交首条 `WOLF_CHAT`，无论玩家是不是狼都不会产出 `server` 事件，因此该断言恒真。 | **阻塞 RFC-008（SEC-5 / TEST-1 回归锁）**。用「女巫自己的 `WITCH_ACT` 产生 `PLAYER_DIED`」这条真实路径做 HTTP 断言，或只返回 `version` 让客户端重新 GET `project()`；不要只测 helper。 | **Open（阻塞）** · `src/server/routes/games.ts:143-147`、`src/server/store/game-registry.ts:149-159`、`tests/server/resume.test.ts:170-194`、`tests/server/store.test.ts:124-183`、`reviews/REVIEW-RFC-008.md` Round 2 §1.1 / P-R2-1 / T-R2-1 |
+| **C-66** | **B5 超限释放反复释放 `gameIds[0]`。** `createGame` 每次都释放 `session.gameIds[0]`，但列表从不缩短；第 22 局创建后第 2 局仍保留 events。24 局实测事件数 `[0,1,1,…]`、`gameIds` 24 条；按 Q-008-3 应前 4 局都被释放。连续开 100 个未终局对局会留下 99 份事件流，违反 F37 AC-3 的「内存不随局数线性增长」。 | **阻塞 RFC-008**。释放「最旧的未释放局」（如 `gameIds[gameIds.length - MAX_GAMES_PER_SESSION - 1]`）或维护 released 游标；补 22 / 100 局用例。 | **Open（阻塞）** · `src/server/store/game-registry.ts:121-129`、`RFCs/RFC-008...:146-148`、`FEATURES.md:126`、`reviews/REVIEW-RFC-008.md` Round 2 §1.4 / T-R2-2 |
+| **C-67** | **B4 / C-61 未闭合。** AC-2 / 3 / 7 / 8 / 13 / 14 / 15 的测试在对应行为退化时仍绿（P-R2-6/7/8/9/10/11）；AC-13 仍断言 `release()` 后 `stateOf` 抛错，与「重新 replay 得同一状态」相反；AC-11 只在 registry 层跑 `MockStore`，路由测试仍用 `InMemoryMetaStore`。`RFCS.md` 的 C-61 仍为 **Open（阻塞）**。 | **阻塞 RFC-008（TEST-1）**。按 §8.4 重写为真实路径断言；C-61 关闭前不得把 RFC 标为 Reviewed。 | **Open（阻塞）** · `tests/server/session.test.ts:56-92,157-181`、`tests/server/resume.test.ts:55-99`、`tests/server/store.test.ts:49-58,73-121`、`RFCS.md:C-61`、`reviews/REVIEW-RFC-008.md` Round 2 §2 / §3 |
+| **C-68** | **retention 跨会话隔离没有回归测试。** 实现正确（会话 A 的一局终局后，B 打完 4 局，A 的 `events.length` 仍为 1），但把 `enforceRetention` 改回扫全局 `game:` 键后 `session + store` 16/16 仍绿。 | **非阻塞（测试证据）**：补「A 一局终局 + B 四局终局」的双会话用例。 | **Open（非阻塞）** · `src/server/store/game-registry.ts:225-240`、`reviews/REVIEW-RFC-008.md` Round 2 §1.4 / P-R2-5 / T-R2-3 |
+| **C-69** | **文档漂移（非阻塞）。** ① `RFCs/RFC-008...:228` 引用不存在的 `§8.8`；② `§8.4` 的 AC-2 / 3 / 8 / 11 / 13 / 14 / 15 证据强于测试实际断言；③ D-1 仍缺 `DOC-1` 要求的「用户是否同意」；④ `SESSION_TTL_MS` 只用于 cookie 的 `Max-Age`，服务端没有 7 天清理；⑤ 响应类型仍无 Zod；⑥ `TEST-STRATEGY.md:32-37` 仍写 449 / 「其余 15 个 RFC proposed」，`:460` 写 477，实际 482；`README.md` 仍写 RFC-008 Round 1。 | **非阻塞**。下一次 docs / 实现提交按实际测试重写 §8.4、删除或补齐 §8.8、补 D-1 同意与 7 天清理口径、同步 TEST-STRATEGY / README。 | **Open（非阻塞）** · `RFCS.md` C-63 / C-64、`RFCs/RFC-008...:184-203,228`、`TEST-STRATEGY.md:32-37,460`、`src/shared/api.ts:23-41`、`README.md:37-38`、`reviews/REVIEW-RFC-008.md` Round 2 §5.1 / §5.5 |
+| **C-70** | **动作响应返回整局可见历史，不是本次动作的增量。** `visibleEventsOf(result.record, ...)` 从第一局事件开始过滤，响应 `events` 会包含之前动作的事件；RFC §2.2 的 `{ version, events }` 没有明确是增量还是全量。没有私有事件泄漏，但客户端若按「本次事件」消费会重复应用，且响应大小随局长度线性增长。 | **非阻塞（契约 / 性能）**。明确契约，或只返回 `result.events` 的可见子集；补相应 HTTP 用例。 | **Open（非阻塞）** · `src/server/routes/games.ts:143-147`、`src/server/store/game-registry.ts:149-159`、`RFCs/RFC-008...:45-50`、`reviews/REVIEW-RFC-008.md` Round 2 §5.1 / §5.4 |
+
+> **Round 2 后的冲突状态**：C-65 / C-66 / C-67 阻塞 RFC-008；C-68 / C-69 / C-70 非阻塞。C-59 / C-60 / C-63 的代码部分在行为上复核通过（见 Round 2 §1.1–1.4）；C-61 仍 Open（阻塞）；C-62 的原问题关闭，但新登记 C-66。RFC-008 的 Status 为 **`Changes requested`**。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.53 | RFC-008 Round 2 复核（Status → `Changes requested`）：B1 / B2 / B3 行为修复成立，B5 的「保留记录 + 410」与 retention 作用域成立；但 B1 HTTP 回归测试无效（路由回退 14/14 绿）、B5 超限反复释放第 1 局（24 局探针）、C-61 / B4 仍未闭合，新登记 C-65 / C-66 / C-67（阻塞）与 C-68 / C-69 / C-70（非阻塞）。门禁 58 files / 482 tests 全绿；探针从文件备份恢复、工作树 clean、无 commit。详见 `reviews/REVIEW-RFC-008.md` Round 2 |
 | 2026-11-19 | v2.52 | RFC-008 Round 1 修复（Status → Implemented）：动作响应按 `isVisibleTo` 过滤；动作路由绑定玩家席位（403）；生产 cookie 带 `Secure`；超限只释放不删除、retention 限定会话内 |
 | 2026-11-19 | v2.51 | RFC-008 Round 1 评审（Status → `Changes requested`）：门禁 58 files / 477 tests 全绿；**C-59 / C-60 / C-61 / C-62 阻塞**——动作响应泄漏 `server` / 私有事件、动作席位可替任意角色提交、AC-13 证据与 AC 相反且无缓存回归锁、20 局上限与全局 retention 违反 §2.5 / Q-008-3；C-63（手写 cookie / 依赖表 / 生产 `Secure` 未接线）与 C-64（文档基线 / 7 天清理 / 响应 schema）非阻塞。探针全部从文件备份恢复、工作树 clean、无 commit。详见 `reviews/REVIEW-RFC-008.md` Round 1 |
 | 2026-11-19 | v2.50 | RFC-008 实现完成（Status → Implemented）：`MetaStore`（唯一出口，返回副本）+ `GameRegistry`（事件流为唯一权威、按需 replay）+ 四个对局路由 + 会话 cookie；幂等按 `(gameId, expectedVersion, type, seat)` 区分重试与冲突；保留最近 3 局完整事件 |
