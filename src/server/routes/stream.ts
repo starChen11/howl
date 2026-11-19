@@ -26,22 +26,32 @@ export interface StreamRoutesOptions {
   production: boolean;
 }
 
-/** 把已提交事件里对玩家可见的，转成 `done` 消息。 */
+/**
+ * 把已提交事件转成流消息。
+ *
+ * **按类型映射，不能一律 `done`**：`DEGRADED` 要变成 `degraded`（前端据此显示提示），
+ * 而阶段切换、投票这类没有正文的事件根本不属于发言流——它们会给客户端塞一条空
+ * `done`，把上一段的正文抹掉，还会把 `lastId` 推高、让后续实时消息被丢弃（C-86）。
+ */
 export function committedMessages(
   record: GameRecord,
   state: ReturnType<GameRegistry['stateOf']>,
 ): StreamMessage[] {
-  return record.events
-    .filter((event) => isVisibleTo(event, record.playerSeat, state))
-    .map((event) => {
-      const payload = event.payload as { seat?: number; text?: string };
-      return {
-        type: 'done' as const,
-        id: event.seq,
-        seat: (payload.seat ?? record.playerSeat) as never,
-        text: payload.text ?? '',
-      };
-    });
+  const messages: StreamMessage[] = [];
+
+  for (const event of record.events) {
+    if (!isVisibleTo(event, record.playerSeat, state)) continue;
+    const payload = event.payload as { seat?: number; text?: string };
+    const seat = (payload.seat ?? record.playerSeat) as never;
+
+    if (event.type === 'SPEECH') {
+      messages.push({ type: 'done', id: event.seq, seat, text: payload.text ?? '' });
+    } else if (event.type === 'DEGRADED') {
+      messages.push({ type: 'degraded', id: event.seq, seat });
+    }
+  }
+
+  return messages;
 }
 
 export function registerStreamRoutes(app: FastifyInstance, options: StreamRoutesOptions): void {
@@ -85,9 +95,19 @@ export function registerStreamRoutes(app: FastifyInstance, options: StreamRoutes
     // 「刷新看到历史、实时看到增量」两路不重复、且整体按 id 递增。
     const fromBus = [...replayable];
     const busIds = new Set(fromBus.map((message) => message.id));
-    const extras = committedMessages(record, registry.stateOf(record)).filter(
-      (message) => message.id > lastEventId && !busIds.has(message.id),
+    const committed = committedMessages(record, registry.stateOf(record)).filter(
+      (message) => message.id > lastEventId,
     );
+
+    // 同一段发言可能「总线只有部分增量、committed 已有完结的 done」。
+    // 这时不能把 committed 整条丢掉，否则客户端停在 speaking 半句。
+    const extras = committed.filter((message) => {
+      if (!busIds.has(message.id)) return true;
+      return (
+        message.type === 'done' &&
+        !fromBus.some((bus) => bus.id === message.id && bus.type === 'done')
+      );
+    });
 
     const ordered = [...extras, ...fromBus].sort((a, b) => a.id - b.id);
     for (const message of ordered) stream.write(encodeSseFrame(message));

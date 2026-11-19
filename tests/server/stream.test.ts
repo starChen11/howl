@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildApp } from '@server/app';
 import { StreamBus } from '@server/stream/bus';
+import { currentSpeaker } from '@engine/phases/day';
 import { GameRegistry } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 import { IncrementalDecoder, consumeStream, parseSseLine } from '@server/llm/stream';
@@ -80,9 +81,27 @@ async function setup() {
   const session = await registry.createSession();
   const record = await registry.createGame(session, { mode: 'slaughter-side', seed: 15 });
   const advanced = await advanceToDay(registry, session, record);
+
+  // 补一条真实发言：发言流只含有正文的 SPEECH，没有发言时为空是合法的，
+  // 但这里要断言「id 等于 seq」，需要有东西可断言。
+  let withSpeech = advanced;
+  const atSpeech = registry.stateOf(withSpeech);
+  if (atSpeech.phase === 'DAY_SPEECH') {
+    const speaker = currentSpeaker(atSpeech);
+    if (speaker !== undefined) {
+      const spoken = await registry.submit(
+        session,
+        withSpeech,
+        { type: 'SPEECH', ts: 1, seat: speaker, text: '我先说一句' } as never,
+        atSpeech.seq,
+      );
+      if (spoken.ok) withSpeech = spoken.record;
+    }
+  }
+
   const bus = new StreamBus();
   const app = buildApp({ store, bus });
-  return { app, bus, session, record: advanced };
+  return { app, bus, session, record: withSpeech };
 }
 
 /** SSE 是长连接：发起请求后主动结束流，才能拿到完整响应。 */
@@ -114,8 +133,11 @@ describe('AC-5 · SSE 的 id 等于事件 seq，重连从下一个 seq 继续', 
       if (line === undefined) throw new Error('缺少 id 行');
       return Number(line.slice(4));
     });
+    // 发言流只含有正文的 SPEECH（DEGRADED 会变成 degraded 消息）
     expect(ids).toEqual(
-      record.events.filter((event) => event.visibleTo === 'public').map((event) => event.seq),
+      record.events
+        .filter((event) => event.type === 'SPEECH' && event.visibleTo === 'public')
+        .map((event) => event.seq),
     );
 
     const lastId = ids[ids.length - 1] as number;
@@ -226,9 +248,9 @@ describe('C-85 / C-88 · DEGRADED 可被折叠；断线超出窗口显式报错'
         gameId: record.gameId,
         seq: index + 1,
         ts: 0,
-        type: 'DAY_STARTED',
+        type: 'SPEECH',
         visibleTo: 'public',
-        payload: { day: 1, diedLastNight: [] },
+        payload: { seat: 1, text: `第 ${index + 1} 句` },
       })),
     };
 

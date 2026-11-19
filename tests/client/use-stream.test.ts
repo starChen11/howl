@@ -126,3 +126,18 @@ describe('C-89 · done 也要按段重置，且不抹掉已收到的正文', () 
     expect(state.speechId).toBe(9);
   });
 });
+
+describe('C-96 · 断线重连时同 id 的 thinking 重置正文（整段重放）', () => {
+  it('重放同一段发言不会把正文接成两遍', () => {
+    let state = streamReducer(initialStreamState, { type: 'delta', id: 15, seat: 3, text: '我' });
+    state = streamReducer(state, { type: 'delta', id: 15, seat: 3, text: '觉得' });
+
+    // 整段重放：先来同 id 的 thinking，再来同样的 delta
+    state = streamReducer(state, { type: 'thinking', id: 15, seat: 3 });
+    state = streamReducer(state, { type: 'delta', id: 15, seat: 3, text: '我' });
+    state = streamReducer(state, { type: 'delta', id: 15, seat: 3, text: '觉得' });
+
+    expect(state.text).toBe('我觉得');
+    expect(state.phase).toBe('speaking');
+  });
+});

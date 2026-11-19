@@ -220,3 +220,17 @@ $ pnpm test → 68 files / 568 tests
 ```
 $ pnpm test → 68 files / 571 tests
 ```
+
+### 8.11 Round 5 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-86** 无正文过滤**没真的改** | 上一轮声称加了过滤，`committedMessages` 仍是一律 `done`；`DEGRADED` 变成空 `done`，阶段切换把 `lastId` 推高、后续实时消息被丢 | 改成按类型映射：`SPEECH → done`（带正文）、`DEGRADED → degraded`、其余跳过。同步 AC-5 的期望（发言流只含 `SPEECH`） |
+| **C-86** committed `done` 被 `busIds` 滤掉 | 同 id 有部分增量时，已提交的 `done` 也丢了，客户端停在 speaking 半句 | `extras` 保留「总线里还没有 `done` 的同 id committed `done`」 |
+| **C-86** 生产侧零调用 | `bus.publish` 在 `src/` 无调用者 | 新增 `src/server/llm/speak.ts`：把 `runTurn` + `degradeEvents` + `appendEvents` + `bus.publish` 串成一次完整发言（thinking → delta → 落盘 → done）。RFC-011 的 `SseOutputChannel` 每回合调用它 |
+| **C-87** 没有追加原始事件的入口 | 降级事件不是玩家动作，`submit` 走不通 | `GameRegistry.appendEvents()`：不经过动作校验，只追加已编号的事件 |
+| **C-96** 客户端回归锁缺失 | 改坏「同 id `thinking` 重置」全量仍绿 | 补 reducer 用例：同 id 整段重放后正文仍是「我觉得」，不是「我觉得我觉得」 |
+
+```
+$ pnpm test → 69 files / 575 tests
+```

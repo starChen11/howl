@@ -223,6 +223,18 @@ export class GameRegistry {
     return { ok: true, record: updated, events: result.events, version: result.state.seq };
   }
 
+  /**
+   * 追加一批**原始事件**（不经过 `step`）。
+   *
+   * 降级轮的事件（`DEGRADED` + 短句 `SPEECH`）由服务端直接产出，不是玩家动作，
+   * 所以需要一个不经过动作校验的入口（C-87）。`seq` 已由调用方保证连续。
+   */
+  async appendEvents(record: GameRecord, events: EventEnvelope[]): Promise<GameRecord> {
+    const updated: GameRecord = { ...record, events: [...record.events, ...events] };
+    await this.store.set(gameKey(record.gameId), updated);
+    return updated;
+  }
+
   /** 释放：只保留最近 `KEEP_FULL_EVENTS` 局的完整事件流（§2.5）。 */
   async release(gameId: string): Promise<void> {
     const record = await this.store.get<GameRecord>(gameKey(gameId));
