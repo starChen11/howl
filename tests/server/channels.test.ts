@@ -793,6 +793,29 @@ describe('B-R9-1 · 端到端：玩家是最后一位发言者时不重复提交
       },
     });
 
+    // 发言之后可能轮到玩家投票：用真实路由投一票（路由会把目标交给挂起的输入）。
+    let settled = false;
+    void runPromise.then(() => {
+      settled = true;
+    });
+    for (let tick = 0; tick < 100 && !settled; tick += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const record = await registry.getGame(current.gameId);
+      if (record === undefined) break;
+      const state = registry.stateOf(record);
+      if (state.phase !== 'DAY_VOTE') continue;
+      const me = state.seats.find((seat) => seat.isPlayer)?.seat;
+      if (me === undefined) continue;
+      await app.inject({
+        method: 'POST',
+        url: `/api/games/${current.gameId}/actions`,
+        headers: { cookie: `session=${session.id}` },
+        payload: {
+          action: { type: 'VOTE', ts: Date.now(), seat: me, target: 'abstain' },
+          expectedVersion: record.events.length,
+        },
+      });
+    }
     await runPromise;
 
     const after = await registry.getGame(current.gameId);

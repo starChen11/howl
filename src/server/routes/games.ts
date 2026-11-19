@@ -259,6 +259,11 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
     if (accepted && parsed.data.action.type === 'SPEECH_SKIP') {
       channels.submit(record.gameId, '');
     }
+    // 投票同理：把目标席位交给挂起的投票轮（RFC-012 AC-11 的「发言 → 投票」）。
+    if (accepted && parsed.data.action.type === 'VOTE') {
+      const target = parsed.data.action.target;
+      channels.submit(record.gameId, target === 'abstain' ? '' : String(target));
+    }
 
     // B1：只回该席位可见的事件。`step` 的原始事件里含 `server` 可见的死亡与夜间相位。
     return reply.send({

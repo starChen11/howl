@@ -3,7 +3,9 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { ROLE_LABELS } from '@shared/terms';
+import { ROLE_LABELS, TERMS } from '@shared/terms';
+
+import { collectTypeScriptFiles } from '../helpers/source-scan';
 
 /**
  * RFC-001 AC-9：`src/` 下除 `terms.ts` 之外不得出现身份名的中文字面量（UI-2 / NFR-11）。
@@ -49,5 +51,23 @@ describe('AC-9 · 身份名不得硬编码', () => {
     }
 
     expect(violations).toEqual([]);
+  });
+});
+
+describe('AC-3（RFC-012 扩展）· 术语与解释来自 terms.ts', () => {
+  it('src/client 里不出现术语标签字面量（`刀` / `放逐` / `悍跳` 等）', () => {
+    const files = collectTypeScriptFiles('src/client');
+    const labels = Object.values(TERMS).map((term) => term.label);
+    const offenders: string[] = [];
+
+    for (const file of files) {
+      for (const label of labels) {
+        // 「投票」「刀」这类短词会在注释与普通叙述里出现，只拦组件里的**字符串字面量**
+        const literal = new RegExp(`['"\`]\\s*${label}\\s*['"\`]`);
+        if (literal.test(file.source)) offenders.push(`${file.relativePath}: ${label}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });

@@ -25,7 +25,15 @@ export interface BoardView {
 
 /** 公开事件里「谁说过话」。 */
 export function spokenSeats(ctx: ProjectedContext): number[] {
-  return ctx.publicEvents
+  // **只算最近一天**：跨天累加会让第二天开局时所有人都显示「已发言」（C-121）。
+  const events = ctx.publicEvents;
+  let lastDayStart = -1;
+  events.forEach((event, index) => {
+    if (event.type === 'DAY_STARTED') lastDayStart = index;
+  });
+
+  return events
+    .slice(lastDayStart + 1)
     .filter((event) => event.type === 'SPEECH' || event.type === 'SPEECH_SKIPPED')
     .map((event) => (event.payload as { seat?: number }).seat)
     .filter((seat): seat is number => typeof seat === 'number');

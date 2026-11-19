@@ -129,3 +129,29 @@ describe('AC-15 · 读屏能读出身份、阶段与轮到谁', () => {
     expect(board.speakingSeat).toBe(1);
   });
 });
+
+describe('C-116/C-119 · 焦点与对比度也有真浏览器以外的锁', () => {
+  it('输入框的提示语与 aria-describedby 不会被删掉', async () => {
+    const { SpeechInput } = await import('@client/components/SpeechInput');
+    const { cleanup } = await import('@testing-library/react');
+    cleanup();
+
+    const { getByLabelText, container } = render(
+      <SpeechInput remaining={30} onSubmit={() => undefined} onSkip={() => undefined} />,
+    );
+
+    const box = getByLabelText('你的发言');
+    expect(box.getAttribute('aria-describedby')).toBe('speech-hint');
+    expect(container.querySelector('#speech-hint')?.textContent).toContain('你怀疑谁');
+  });
+});
+
+describe('C-120 · 术语真的被界面使用', () => {
+  it('App 的提示区出现术语触发器', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync('src/client/App.tsx', 'utf8');
+
+    expect(source).toContain('<TermHint');
+    expect(source).toMatch(/termKey="(knife|vote|fakeSeerClaim)"/);
+  });
+});

@@ -58,6 +58,16 @@ export class ApiClient {
     return { ok: false, error: (await response.json()) as ApiError };
   }
 
+  /** 同步草稿：超时由服务端用最后一次草稿提交（RFC-011 AC-6）。 */
+  async draft(gameId: string, text: string): Promise<void> {
+    await this.fetchImpl(`${this.baseUrl}/api/games/${gameId}/input`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+  }
+
   /** 订阅流；`onMessage` 逐条回调。返回断开函数。 */
   openStream(gameId: string, onMessage: (message: StreamMessage) => void): () => void {
     const source = new EventSource(`${this.baseUrl}/api/games/${gameId}/stream`);

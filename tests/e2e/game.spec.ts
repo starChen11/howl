@@ -11,6 +11,7 @@ import { expect, test } from '@playwright/test';
 test.describe('整局界面', () => {
   test('主路径：能开一局、看到状态条与席位、发言区可达', async ({ page }) => {
     await page.goto('/?seed=13');
+    await expect(page.locator('.app')).toBeVisible();
 
     await expect(page.getByRole('heading', { name: 'Howl' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '席位' })).toBeVisible();
@@ -21,6 +22,9 @@ test.describe('整局界面', () => {
   test('360px 视口没有横向滚动', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 720 });
     await page.goto('/?seed=13');
+
+    // 等界面真的挂载：加载屏只有一行字，永远不会溢出（评审 C-116 的假绿）。
+    await expect(page.locator('.app')).toBeVisible();
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -45,16 +49,107 @@ test.describe('整局界面', () => {
   test('手机视口下输入区不遮挡状态条', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 700 });
     await page.goto('/?seed=13');
+    await expect(page.locator('.app')).toBeVisible();
 
-    const status = await page.getByRole('banner').boundingBox();
-    const timer = await page.getByRole('timer').boundingBox();
-    expect(status).not.toBeNull();
-    expect(timer).not.toBeNull();
-    if (status !== null && timer !== null) {
-      // 状态条与计时器在同一块里；输入区是 footer，几何不重叠
-      expect(timer.y).toBeGreaterThanOrEqual(status.y);
-      expect(timer.y + timer.height).toBeLessThanOrEqual(status.y + status.height + 1);
-    }
+    // 等到输入区真的出现（玩家轮）
+    const box = page.getByLabel('你的发言');
+    await expect(box).toBeVisible({ timeout: 25_000 });
+
+    // 三段式布局：状态条 / 主区 / 底部，互不重叠。
+    // 注意：主区内部滚动，席位可能滚到主区之外——它被主区裁剪，不算遮挡。
+    const regions = await page.evaluate(() => {
+      const rect = (selector: string) => {
+        const element = document.querySelector(selector);
+        if (element === null) return null;
+        const { top, bottom, left, right } = element.getBoundingClientRect();
+        return { top, bottom, left, right };
+      };
+      return {
+        banner: rect('.status'),
+        main: rect('.app__main'),
+        footer: rect('.app__footer'),
+      };
+    });
+
+    const overlap = (
+      a: { top: number; bottom: number; left: number; right: number } | null,
+      b: { top: number; bottom: number; left: number; right: number } | null,
+    ): number => {
+      if (a === null || b === null) return 0;
+      const vertical = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      const horizontal = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      return vertical > 0 && horizontal > 0 ? vertical : 0;
+    };
+
+    expect(overlap(regions.banner, regions.footer)).toBeLessThanOrEqual(0);
+    expect(overlap(regions.main, regions.footer)).toBeLessThanOrEqual(0);
+
+    // 底部区域里的输入框必须真的可点（没被别的东西盖住）
+    const hit = await box.evaluate((element) => {
+      const { top, left, width, height } = element.getBoundingClientRect();
+      const topElement = document.elementFromPoint(left + width / 2, top + height / 2);
+      return element.contains(topElement) || element === topElement;
+    });
+    expect(hit).toBe(true);
+  });
+
+  test('焦点可见：Tab 之后焦点元素有可见 outline', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await page.goto('/?seed=13');
+    await expect(page.locator('.app')).toBeVisible();
+
+    await page.keyboard.press('Tab');
+    const outline = await page.evaluate(() => {
+      const element = document.activeElement;
+      if (element === null) return null;
+      const style = getComputedStyle(element);
+      return { width: style.outlineWidth, style: style.outlineStyle };
+    });
+
+    expect(outline).not.toBeNull();
+    expect(Number.parseFloat(outline?.width ?? '0')).toBeGreaterThan(0);
+    expect(outline?.style).not.toBe('none');
+  });
+
+  test('对比度：正文与次要文字达到 AA', async ({ page }) => {
+    await page.goto('/?seed=13');
+    await expect(page.locator('.app')).toBeVisible();
+
+    const ratios = await page.evaluate(() => {
+      const parse = (value: string): [number, number, number] => {
+        const match = /rgba?\(([^)]+)\)/.exec(value);
+        const parts = (match?.[1] ?? '0,0,0')
+          .split(',')
+          .map((part) => Number.parseFloat(part.trim()));
+        return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+      };
+      const luminance = ([r, g, b]: [number, number, number]): number => {
+        const channel = (value: number): number => {
+          const scaled = value / 255;
+          return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+        };
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+      };
+      const ratio = (a: string, b: string): number => {
+        const [x, y] = [luminance(parse(a)), luminance(parse(b))].sort((m, n) => n - m);
+        return ((x ?? 0) + 0.05) / ((y ?? 0) + 0.05);
+      };
+
+      const samples: number[] = [];
+      for (const selector of ['.status__facts dt', '.seat__status', '.feed__seat']) {
+        const element = document.querySelector(selector);
+        if (element === null) continue;
+        const style = getComputedStyle(element);
+        const background = getComputedStyle(
+          element.closest('section, header, article') ?? document.body,
+        ).backgroundColor;
+        samples.push(ratio(style.color, background));
+      }
+      return samples;
+    });
+
+    expect(ratios.length).toBeGreaterThan(0);
+    for (const value of ratios) expect(value).toBeGreaterThanOrEqual(4.5);
   });
 
   test('键盘：Tab 能到发言区，Enter 能提交', async ({ page }) => {

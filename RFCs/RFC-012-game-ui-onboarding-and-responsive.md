@@ -189,3 +189,23 @@ $ coverage（引擎）→ 行 96.96% / 分支 92.85%
 | 深色/浅色主题 | v1 只有深色，对比度按深色背景验证 | 后续（Q-012-2） |
 | 真实模型端到端 | e2e 用脚本替身；真模型只在手工验收 | 手工 |
 | 投票 UI | 目前只有发言输入；投票走 API | RFC-013 |
+
+### 8.7 Round 1 回应（Changes requested）
+
+评审的 8 条阻塞项全部成立，逐条处理：
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-116** AC-8 假绿 | e2e 在加载屏上量宽度（`.app` 还没挂载） | 先 `expect(page.locator('.app')).toBeVisible()` 再量；注入 `min-width` 的探针现在会红 |
+| **C-117** AC-10 测错元素 + 真实重叠 42px | 只比较 banner 与 timer（本来同块）；底部 `sticky` 在内容溢出时压住上方 | 布局改成**三段式 grid**（状态条 / 主区 / 底部），主区内部滚动、底部不再 sticky；e2e 改为断言三段矩形互不重叠 + 输入框 `elementFromPoint` 真可点 |
+| **C-118** AC-11 没按 Tab、没有投票 | 用 `box.focus()`；投票由 AI 代打 | 输入框 Enter 提交；新增 `VoteInput` 与 `playerAction` 的投票分支（玩家的投票也走输入通道）；e2e 断言「发言后输入框消失」并把投票纳进循环 |
+| **C-119** AC-12/13 没有真浏览器用例 | 删 `:focus-visible`、调低对比度，e2e 仍绿 | e2e 新增两条：Tab 后 `document.activeElement` 的 `outlineWidth > 0`；从真实 computed style 采样正文与次要文字，逐项 ≥ 4.5:1 |
+| **C-120** AC-2/3 术语没接进界面 | `.term__trigger` 数量为 0；扫描只扫身份名 | `App` 的提示区用 `TermHint` 渲染「投票 / 刀 / 悍跳」；静态扫描扩展到 `TERMS` 的标签，拦组件里的字符串字面量 |
+| **C-121** AC-6/7 跨天错位 | `spokenSeats` 统计全天 | 只统计**最近一次 `DAY_STARTED` 之后**的发言，`speakingSeat` 同源 |
+| **C-122** UI-4 草稿丢内容 | 客户端从不调用 `/input` | `SpeechInput` 的 `onDraft` → `ApiClient.draft` → `POST /input`；超时由服务端用最后草稿提交 |
+| **C-123** AC-15 身份卡缺失 / `runGame` 忽略 `gameId` | 身份只在引导里；同一 session 多局时推进错的局 | 新增 `IdCard`（只读投影）；`runGame` 接受 `gameId`，`GameLoop` 传入；`boardAnnouncement` 接进 `role="status"` 的读屏区 |
+
+```
+$ pnpm test → 79 files / 674 tests
+$ pnpm test:e2e → 7 passed
+```

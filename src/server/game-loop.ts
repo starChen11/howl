@@ -59,6 +59,7 @@ export class GameLoop {
       await runGame({
         registry,
         session,
+        gameId,
         input,
         output,
         decide,

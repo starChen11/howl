@@ -13,10 +13,13 @@ export function SpeechInput({
   remaining,
   onSubmit,
   onSkip,
+  onDraft,
 }: {
   remaining: number;
   onSubmit: (text: string) => void;
   onSkip: () => void;
+  /** 草稿同步（节流由调用方负责）。 */
+  onDraft?: (text: string) => void;
 }) {
   const [text, setText] = useState('');
   const count = charCount(text);
@@ -49,7 +52,10 @@ export function SpeechInput({
         aria-describedby="speech-hint"
         value={text}
         maxLength={SPEECH_MAX_CHARS + 50}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          setText(event.target.value);
+          onDraft?.(event.target.value);
+        }}
         onKeyDown={(event) => {
           // Enter 提交、Shift+Enter 换行——否则纯键盘用户要按很多次 Tab。
           if (event.key !== 'Enter' || event.shiftKey) return;

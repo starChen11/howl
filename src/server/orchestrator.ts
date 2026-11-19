@@ -25,6 +25,8 @@ export interface AgentDecision {
 export interface OrchestratorDeps {
   registry: GameRegistry;
   session: SessionRecord;
+  /** 要推进的对局；省略时取会话里最后一个（旧行为）。 */
+  gameId?: string;
   input: InputChannel;
   output: OutputChannel;
   /** AI 的决策来源；测试注入脚本。`phase` 是引擎真实相位（投影把夜间折叠了）。 */
@@ -176,11 +178,12 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     const seat = seatToSpeak(state) ?? nextActor(state);
     if (seat === undefined) break;
 
-    // 白天的发言才问玩家；夜间的目标选择是另一套输入（RFC-012 的界面），
-    // 这一层先用注入的 `decide` 代劳，避免把「选目标」伪装成「说话」。
+    // 玩家触发点：白天发言（AC-11）与白天投票（AC-11 的「发言 → 投票」）。
+    // 夜间的目标选择仍是另一套输入，先用注入的 `decide` 代劳。
+    const playerPhase = state.phase === 'DAY_SPEECH' || state.phase === 'DAY_VOTE';
     const action =
-      seat === record.playerSeat && state.phase === 'DAY_SPEECH'
-        ? await playerAction(seat, deps)
+      seat === record.playerSeat && playerPhase
+        ? await playerAction(seat, state.phase, deps)
         : await decide({ seat, ctx: ctxFor(seat), phase: state.phase });
     if (action.action === undefined) break;
 
@@ -215,13 +218,30 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
 }
 
 /** 玩家轮：问输入通道，把结果翻译成 action（AC-6 / AC-7）。 */
-async function playerAction(seat: number, deps: OrchestratorDeps): Promise<AgentDecision> {
+async function playerAction(
+  seat: number,
+  phase: string,
+  deps: OrchestratorDeps,
+): Promise<AgentDecision> {
   const now = deps.now ?? Date.now;
   const input = await deps.input.read({
     seat: seat as never,
     timeoutMs: 60_000,
-    kind: 'speech',
+    kind: phase === 'DAY_VOTE' ? 'vote' : 'speech',
   });
+
+  if (phase === 'DAY_VOTE') {
+    // 投票轮把「目标席位」放在同一个 `text` 字段里；空 → 弃权。
+    const parsed = input.kind === 'skip' ? Number.NaN : Number.parseInt(input.text, 10);
+    return {
+      action: {
+        type: 'VOTE',
+        ts: now(),
+        seat: seat as never,
+        target: (Number.isNaN(parsed) ? 'abstain' : parsed) as never,
+      },
+    };
+  }
 
   if (input.kind === 'skip') {
     return { action: { type: 'SPEECH_SKIP', ts: now(), seat: seat as never } };
