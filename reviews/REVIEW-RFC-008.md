@@ -1740,3 +1740,283 @@ AssertionError: expected undefined to be defined
   5. C-70（动作响应是全量可见历史）、N-R2-2（无 seat 的 `START`）、`snapshot?: unknown`、`applied` 无上限、响应 Zod schema、`as never` 继续承接。
 
 - **状态**：`RFCS.md` → **`Changes requested`**；`FEATURES.md` 没有 Status 列，未改。**本评审没有修改任何产品代码，也没有 `git commit`；所有探针改过的 `src/server/store/game-registry.ts` / `src/server/app.ts` 已从 `/tmp/howl-round6-backup/` 恢复（未用 `git checkout`），`md5` 与备份一致；恢复后全量 61 files / 498 tests 全绿。`git status` 只显示本评审修改的 `reviews/REVIEW-RFC-008.md` 与 `RFCS.md`，产品代码无 diff。**
+
+---
+
+## Round 7 -- 2026-11-19
+
+> **评审会话**：独立 subagent，全新上下文；本会话没有参与本仓库任何代码 / RFC / 测试的写作。
+> **分支 / HEAD**：`main` / `966162b`（评审开始时 `git status --porcelain` 无输出）
+> **复核范围**：用户指定的 C-73（阻塞）、§8.11 / README / TEST-STRATEGY 的文档同步、两条旧 AC-13 用例改名；以及 C-61 是否必须在本 RFC 内解决。C-59 / C-60 / C-62 / C-65 / C-66 / C-68 / C-71 / C-72 / C-74 的 seat 2 / C-75 / C-76 / N-R4-1 等已关闭项按要求不重查，只做承接。
+> **结论**：**Changes requested**
+> **整体风险**：**Medium**
+
+### 0. STEP 0 · 门禁实跑（本轮 HEAD）
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。HEAD `966162b`，评审开始时工作树 clean。
+
+```
+$ pnpm typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+> eslint .
+LINT_EXIT=0
+
+$ pnpm format:check
+> prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+vite v8.3.8 building client environment for production...
+✓ 14 modules transformed.
+dist/client/assets/index-DTkfWeVY.js  219.65 kB │ gzip: 68.71 kB
+✓ built in 71ms
+vite v8.3.8 building ssr environment for production...
+✓ 38 modules transformed.
+dist/server/index.js  82.80 kB │ gzip: 27.86 kB
+✓ built in 17ms
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  61 passed (61)
+      Tests  499 passed (499)
+TEST_EXIT=0
+```
+
+`pnpm test:e2e` 未跑：本轮只改测试与文档，没有 UI / 浏览器 / 首屏改动；`TEST-6` 的 Playwright 要求从 RFC-012 起生效。`pnpm selfplay` 未跑：它仍是 RFC-015 的占位，与本 RFC 无关。
+
+**Product Type**：`PRD.md` 的类型是 **game（主）+ web app（交付形态）**。本轮适用游戏状态、可见性、测试证据与文档一致性检查；显式跳过 UI / A11Y / 浏览器兼容 / 首屏性能 / Playwright。
+
+**探针后的复跑**：所有变异探针从 `/tmp/howl-round7-backup/` 的文件备份恢复（**没有使用 `git checkout`**）；`src/server/store/game-registry.ts`、`src/server/app.ts`、`tests/server/finished-game.test.ts` 恢复后用 `md5` 与备份比对一致；临时插入的探针测试已删除。恢复后全量 `pnpm test` 复跑 **61 files / 499 tests 全绿**，`git status --porcelain` 为空（除本评审最后写入的两个文档文件）。没有 `git commit`。
+
+---
+
+### 1. 用户指定复核的三项
+
+#### 1.1 C-73 · 「同长度不同内容」用例只锁住了按长度校验的缓存：**仍 Open（阻塞）**
+
+**本轮成立的部分**
+
+1. **P-R7-1（Round 6 的 P-R6-3 复现）**：给 `finished` 记录加 `{ length, state }` 缓存，仅当 `events.length` 相同时返回缓存对象。新用例 `tests/server/finished-game.test.ts:138-153` 会红，说明「按长度校验的缓存」这一具体形态确实被锁住了。
+
+```
+× 同长度的不同事件流也必须反映出来（按长度校验的缓存会露馅）
+AssertionError: expected [Function] to throw an error
+ ❯ tests/server/finished-game.test.ts:152:46
+ Tests  1 failed | 3 passed (4)
+```
+
+2. **两条旧 AC-13 用例确实改名了**（`git show 966162b` 逐行核对）：
+   - `tests/server/release-and-entry.test.ts:150` → `C-73 的历史用例（只翻 status，真正的 FINISHED 用例在 finished-game.test.ts）`；
+   - `tests/server/strengthen.test.ts:168` → `C-67 · 状态重建：两次 stateOf 结果一致（真正的 FINISHED 用例在 finished-game.test.ts）`。
+   标题不再声称测的是 FINISHED / no-cache，用户指定项**完成**（非阻塞残项见 §4）。
+
+3. 真正的 FINISHED 用例仍在：`finished-game.test.ts:105-167` 用 `playToFinish` 走到 `FINISHED`，另有 release 后无法重建的断言；`finished-game.test.ts` 167 行 < `STYLE-6` 的 400 行。
+
+**仍未成立的部分（阻塞原因）**
+
+新用例把**最后一条事件的 `seq`** 改成 `seq + 5`，然后断言 `stateOf` 抛错。问题在于：`seq` 正是缓存键最容易包含的字段。**P-R7-2** 用 `(events.length, last.seq)` 一起校验的 finished 缓存（仍然长期持有 `GameState`，违反 §2.5 / AC-13 的「不再缓存」）：
+
+```ts
+const finishedCache: Record<string, { length: number; lastSeq: number; state: GameState }> = {};
+
+stateOf(record: GameRecord) {
+  const last = record.events[record.events.length - 1];
+  const cached = finishedCache[record.gameId];
+  if (
+    record.status === 'finished' &&
+    cached !== undefined &&
+    cached.length === record.events.length &&
+    cached.lastSeq === last?.seq
+  ) {
+    return cached.state;
+  }
+  const state = replay(record.events as never);
+  if (record.status === 'finished' && last !== undefined) {
+    finishedCache[record.gameId] = { length: record.events.length, lastSeq: last.seq, state };
+  }
+  return state;
+}
+```
+
+实跑结果：
+
+```
+$ pnpm exec vitest run --project unit tests/server/finished-game.test.ts
+ ✓ |unit| tests/server/finished-game.test.ts (4 tests) 27ms
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+
+$ pnpm test
+ Test Files  61 passed (61)
+      Tests  499 passed (499)
+```
+
+也就是说：**一个按「长度 + 末条 seq」校验的缓存，在 4 条 FINISHED / release 用例下全绿，全量 499 条也全绿**。新用例只证明「改 `seq` 后不能命中缓存」，没有证明「每次都从事件流重建」——而这正是 C-73 / AC-13 的核心。
+
+**P-R7-3** 进一步证明该缓存的返回值是错的：在 P-R7-2 下临时插入一条测试，保持 `events.length` 与末条 `seq` 不变，只改 `GAME_STARTED.payload.seed`（同长度、同末条 seq 的合法内容变化），断言重建后的 `state.seed` 必须跟着变。正常实现会从 `GAME_STARTED.payload` 读 `seed`（`src/engine/apply.ts:286`），应得 `4242425`；P-R7-2 返回旧缓存：
+
+```
+× PROBE 同长度且末条 seq 不变，改 GAME_STARTED.seed 后状态必须变
+AssertionError: expected 4242424 to be 4242425
+ Tests  1 failed | 4 passed (5)
+```
+
+该临时用例已删除并用备份恢复（`md5` 一致）。**结论：C-73 仍 Open（阻塞）**；Round 6 的 P-R6-3 已闭合，但「任何缓存 / 每次都 replay」仍未被证明。最小修复不是再加一个特例，而是让测试能观察到 `replay` 本身：
+
+- **首选**：在测试里用 `vi.mock('@engine/replay', ...)` 包装真实实现并计数，断言两次 `stateOf` 至少调用两次 `replay`（或每调用一次 `stateOf` 恰好一次）；任何命中缓存直接返回的实现都会红。
+- **次选**：改一条**同长度、同末条 `seq`** 的 payload（如 `GAME_STARTED.seed` / `WOLF_KILL_CHOSEN.target`），断言重建后的状态反映该变化；这至少能打红 P-R7-2 这类按 `last.seq` 校验的缓存。
+- 现有的 `seq` 跳号用例可以保留作为「非法事件流必须抛错」的守卫，但不能当作 AC-13 的主要 no-cache 证据。
+
+#### 1.2 文档同步：**部分完成，且 §8.12 有一处不实声明**
+
+| 用户/提交声明 | 实际 | 判定 |
+|---|---|---|
+| §8.11 的「400 次内」已改成 800 | `RFCs/RFC-008-session-store-and-resume.md:276` 仍写「400 次内」；`tests/server/finished-game.test.ts:25` 的 guard 是 `800` | **未改** |
+| §8.11 的 `release-and-entry` 行数已改成 227 | `:277` 是 227，`wc -l` 也是 227 | **已改** |
+| §8.11 的测试数已同步 | `:282` 是 `61 files / 498 tests`；当前实测 `61 / 499`（`:296` 的 §8.12 也写 499） | **过期** |
+| README 已同步 | `README.md:11` 与 `:18` 仍是 `498 个用例`；实际 499 | **未同步** |
+| TEST-STRATEGY 已同步 | `TEST-STRATEGY.md:33` 仍是 `Tests 498 passed (498)`；实际 499。`:460` 的 v1.20 changelog 写「基线 497 → 499」，与 `:33` 自相矛盾 | **未同步** |
+| README 的 RFC-008 状态行 | `README.md:37` 仍是 `Implemented（Round 6 修复中）`，与本轮后的 `Changes requested` 不一致 | **未同步** |
+
+`RFCs/RFC-008...:291` 的 §8.12 行写「『400 次内』实际 800 …… 已改」，但同一文件 `:276` 仍是 400。这是一条**不实的 Implementation Note**，按 `DOC-1` 应修；它不是代码缺陷，但会误导下一个读者以为 guard 与文档已对齐。
+
+其余 C-69 残项（非阻塞，仍承接）：
+- `TEST-STRATEGY.md:3` 的版本头仍是 v1.20 / 最后更新 2026-11-18 / 引用 `RFCS.md` v2.38（当前 v2.63）；
+- `TEST-STRATEGY.md:276-284` 的 RFC-008 小节仍把 `Exists?` 写成 `tests/server/{session,resume,store}.test.ts`，并列出不存在的 `tests/server/projection-leak.test.ts` / `tests/server/actions.test.ts`；`finished-game.test.ts` / `release-and-entry.test.ts` / `strengthen.test.ts` 未登记；
+- `TEST-STRATEGY.md:34` 仍写「其余 15 个 RFC 仍为 proposed」。
+
+#### 1.3 两条旧 AC-13 用例改名：**完成**
+
+见 §1.1 第 2 点。非阻塞残项：`tests/server/store.test.ts:74` 的标题仍写「释放 events 后再取状态会抛错（无事件流）；**重新放回事件则语义恢复**」，正文没有「重新放回事件」；该标题是 Round 6 的 4.2 残项，本轮未修。它不影响 C-73 的判定，但应删除后半句或补上对应操作。
+
+#### 1.4 C-61 · AC-13 原文与 §2.5 的矛盾：**代码侧不必改，规范侧必须在 `Reviewed` 前走 `/manage-changes`**
+
+我的判断分两层：
+
+1. **不需要在本 RFC 的实现里解决。** 按权威顺序，`PRD.md` 的 NFR-17 只要求「每局对局状态在结束后必须可被释放」，`FEATURES.md` 的 F37 只要求「对局结束后状态可释放 / 释放时机有明确策略」，F35 只要求**对局中**刷新恢复；没有任何更高权威要求「释放后还能 replay 出同一状态」。`RFC-008 §2.5` 与 D-5 又把释放定义为清空 `events` 后 `GET` 返回 410，`§8.9` / `§8.4` 的 release 用例也按此实现。因此代码按「未释放的终局记录不缓存、释放后无法重建」执行是**正确**的；反过来为满足 AC-13 原文而保留事件流，会违反 §2.5、F37 AC-3 的 100 局内存约束和 NFR-17。
+2. **但 AC-13 的措辞歧义 / 矛盾仍未消除，不能在标记 `Reviewed` 时假装它成立。** `RFCs/RFC-008...:131` 的 AC-13 仍写「释放后再取该局，内部重新 `replay` 得到同一状态」。「释放」有两种读法：若指**释放缓存状态**，则「重新 `replay` 得同一状态」成立（最近 3 局的事件流还在）；若指 §2.5 / D-5 的**释放事件流**，事件流已被清空，这句话在实现上不可能成立。当前 §2.5 的标题、D-5 与 `finished-game.test.ts` 的 release 用例都按后者写，所以矛盾成立。`/manage-changes` 应明确是哪种语义，并把它拆成两条或改写为「未释放的终局记录不缓存；释放后 `GET` 返回 410」。`RFCs/RFC-008...:270`（§8.10 的说明）与 `:293`（§8.12 的说明）是**实现者记录**，不是用户批准的偏离；仓库里没有对应的 `changes/CHANGE-REQUEST-*.md`，所以不能按「已批准的 recorded deviation」处理。
+
+**结论**：C-61 不阻塞代码，但阻塞 `Reviewed` 状态；解决方式是 `/manage-changes`，不是改实现。如果产品负责人在 `/manage-changes` 里明确接受这个偏离，记录后即可作为已批准偏离，不再阻塞。
+
+---
+
+### 2. 逐条验收标准：本轮实际重跑的范围
+
+> 按要求，已关闭项不重查；AC-1 ~ 12、14 ~ 16 沿用前轮证据，本轮实际重跑的是 AC-13。AC-7 / AC-11 的 PARTIAL 口径沿用 Round 6（非阻塞）。
+
+| AC | 证据 | 本轮判定 |
+|---|---|---|
+| 13 | `finished-game.test.ts:105-167`：真 FINISHED + 两次 `stateOf` + 砍半 events + 新增同长度 seq 跳号 + release；但 P-R7-2 的 `(length, last.seq)` 缓存下 4/4 绿、全量 61/499 绿 | **FAIL**（C-73 仍阻塞） |
+
+统计（仅本轮重跑）：**FAIL 1（AC-13）**；承接部分（AC-1 ~ 12、14 ~ 16）：PASS 13、PARTIAL 2（AC-7 / AC-11）、FAIL 0。
+
+---
+
+### 3. 变异探针清单
+
+所有注入都用精确字符串替换并断言目标存在；每个探针结束后从 `/tmp/howl-round7-backup/` 的原始文件恢复（**没有使用 `git checkout`**），恢复后用 `md5` 校验；临时插入的探针测试已删除；最终全量套件复跑 **61 files / 499 tests 全绿**，工作树 clean；没有 `git commit`。
+
+| # | 注入 | 跑什么 | 结果 | 说明 |
+|---|---|---|---|---|
+| P-R7-1 | `stateOf` 对 `finished` 记录按 `events.length` 缓存 `{ length, state }` | `finished-game.test.ts` | **红 1 / 4**（新用例 `expected [Function] to throw`） | Round 6 的 P-R6-3 形态确实被锁住 |
+| P-R7-2 | 同上，但缓存键改为 `(events.length, 末条 seq)` | `finished-game.test.ts` + 全量 | **绿 4 / 4**；全量 **61 files / 499 tests 绿**（先 `prettier --write`，否则 meta 的 `format:check` 会红） | **当前用例仍放过一种持有 `GameState` 的缓存**；这是本轮阻塞证据 |
+| P-R7-3 | 在 P-R7-2 下，临时加一条「同长度、同末条 seq，只改 `GAME_STARTED.seed`」的用例 | `finished-game.test.ts` | **红**（`expected 4242424 to be 4242425`） | 证明该缓存会返回旧状态；测试已删除 |
+| T-R7-1 | `git show 966162b --stat` / `git diff 33c4192..966162b` | — | 改了 README / RFCS / RFC-008 / TEST-STRATEGY / 3 个测试文件；`§8.11:276` 的 400 未改 | 提交说明与 diff 不完全一致 |
+| T-R7-2 | `grep -n "400 次\|800"`、`grep -n "498"`、`wc -l` | — | RFC 写 400（实际 800）；README / TEST-STRATEGY 写 498（实际 499）；`finished-game` 167 行、`release-and-entry` 227 行、`strengthen` 289 行 | 文档漂移与 `STYLE-6` 均记录 |
+| T-R7-3 | 恢复后 `md5` + `git status --porcelain` + 全量 `pnpm test` | — | 三个恢复点与备份一致；工作树 clean；**61 / 499 绿** | 没有 `git commit` |
+
+---
+
+### 4. 其他发现
+
+#### 4.1 旧用例改名成立，但两个文件仍有噪声（非阻塞）
+
+- `release-and-entry.test.ts:150-168` 的 describe 已诚实标注「只翻 status」，但用例本体还在；既然 `finished-game.test.ts` 已有真 FINISHED 用例，建议**删除**而不是只改名，避免下一个读者数出「AC-13 有三个证据」。
+- `strengthen.test.ts:168-182` 已改成「状态重建」，但仍是 active 记录；同理。
+- `store.test.ts:74` 的标题仍声称「重新放回事件则语义恢复」，正文没做（Round 6 4.2），建议删除后半句。
+
+#### 4.2 新用例的标题与断言范围
+
+`finished-game.test.ts:138` 的标题「同长度的不同事件流也必须反映出来（按长度校验的缓存会露馅）」在字面上成立；但 `:146` 的注释「replay 必须抛错。按长度命中缓存的实现会返回旧状态」只覆盖了长度这一维。建议改成「同长度、同末条 seq 的 payload 变化也必须反映」，或按 §1.1 的首选方案加 `replay` 计数。
+
+#### 4.3 文档
+
+- `README.md:11/18/37` 与 `TEST-STRATEGY.md:33/276-284` 的残项见 §1.2；`TEST-STRATEGY.md:3` 的版本头也过期。
+- `RFCs/RFC-008...:276` 的「400 次内」是唯一的数字硬伤；`:291` 的「已改」应改成实际结果或删掉。
+- `TEST-STRATEGY.md:460` 的「基线 497 → 499」本身正确，但与 `:33` 的 498 冲突；应把 `:33` 改成 499。
+
+---
+
+### 5. 维度结论
+
+#### 5.1 RFC ADHERENCE — NEEDS WORK
+
+- C-73 的 Round 6 具体形态（P-R6-3，按 `events.length`）已锁（P-R7-1 红）；
+- 但 AC-13 的「`GameState` 不再缓存 / 每次都重建」仍可被 `(length, last.seq)` 缓存绕过（P-R7-2 全量 61/499 绿；P-R7-3 返回旧状态），C-73 仍 Open（阻塞）；
+- 两条旧 AC-13 用例改名完成；真正的 FINISHED / release 用例仍在；
+- C-61 的代码方向正确，但 AC-13 原文仍与 §2.5 矛盾，需 `/manage-changes`。
+
+#### 5.2 RULES COMPLIANCE — NEEDS WORK
+
+| 规则 | 结论 |
+|---|---|
+| `ARCH-7` / `ARCH-9` / `ARCH-10` | **PASS**（承接）：路由只经 `GameRegistry`，公开路由绑定玩家席位，会话列表保留已释放对局 |
+| `API-1` | **PARTIAL**（承接）：请求有 Zod；响应类型仍是纯 interface |
+| `API-3` | **PASS**（承接）：重复 action 不重复推进 |
+| `SEC-1` / `SEC-5` | **PASS**（承接）：本轮没有修改 `src/`；B1 过滤与 B2 席位绑定未重查，也没有新增攻击面 |
+| `DATA-6` | **PARTIAL**（承接）：release 清 events；`applied` 不清、无 7 天服务端清理 |
+| `DOC-1` | **FAIL**：§8.11:276 的 400 未改，§8.12:291 却写「已改」；README / TEST-STRATEGY 仍 498、README 状态行过期 |
+| `TEST-1` | **FAIL**：AC-13 的「每次都重建」仍可被 `(length, last.seq)` 缓存绕过（P-R7-2 全量绿） |
+| `STYLE-6` | **PASS**：`finished-game.test.ts` 167 行、`strengthen.test.ts` 289 行、`release-and-entry.test.ts` 227 行，均 < 400 |
+| `STYLE-1/2/5` | **PASS**：kebab-case、具名导出、无 `any`；`as never` 仍是类型逃生口（承接 N-R2-4） |
+
+#### 5.3 SECURITY — PASS（承接，本轮未发现新问题）
+
+本轮 `966162b` 只改测试与文档，没有修改 `src/`；B1 / B2 / B3 的行为修复未重查，也没有新的攻击面。动作响应仍经 `visibleEventsOf` 过滤；`GET` 视图仍由 `project()` 生成；他人 `gameId` 与不存在 id 的 404 仍相等。非阻塞旧观察仍在：无 `seat` 的 `START` 可经公开路由提交并推进 `seq`（N-R2-2）；C-70 的整局可见历史仍是契约 / 体积问题，不是当前泄漏。
+
+#### 5.4 PERFORMANCE — PASS（承接）
+
+`finished-game.test.ts` 单跑 4 个用例约 27–37ms；全量 499 用例 19.56–26.37s（本轮多次实跑），没有新的超时或不稳定。`visibleEventsOf` 每次动作重放整局并返回整局可见历史（C-70），单局几百条事件，成本可接受，但响应随局长度增长。
+
+#### 5.5 MAINTAINABILITY — NEEDS WORK
+
+- 新用例只覆盖「末条 seq 变化」，没覆盖「同长度、同末条 seq 的内容变化」或可计数的 replay；
+- `store.test.ts:74` 的标题仍与正文不符；两个旧 AC-13 用例虽已改名，但仍可删除；
+- §8.11:276 / §8.12:291 的不实声明、README / TEST-STRATEGY 的 498 与状态行仍未同步（C-69）；
+- 承接：`snapshot?: unknown`、`applied` 无上限、响应 schema 缺失、`as never` 类型逃逸。
+
+---
+
+### 6. 冲突登记（已写入 `RFCS.md` §8.26）
+
+| # | 冲突 | 判定 |
+|---|---|---|
+| C-73 | AC-13 未证明「每次都从事件流重建」 | **Round 7：仍 Open（阻塞）**——P-R7-1（按 length）红，但 P-R7-2（按 `length + last.seq`）下 `finished-game` 4/4 绿、全量 61/499 绿；P-R7-3 证明该缓存返回旧状态；需改 payload 断言或加 replay 计数 |
+| C-61 | AC-13 原文与 §2.5 矛盾 | **Round 7：仍 Open（规范阻塞，非代码）**——代码符合 §2.5 + PRD NFR-17 / FEATURES F37；AC-13 的「释放」两义未澄清，必须在 `Reviewed` 前走 `/manage-changes` 修订 |
+| C-67 | B4 / C-61 未闭合 | **仍部分关闭**——AC-13 残项仍阻塞（C-73）；AC-7 只到 seat 2、AC-11 仍窄（非阻塞）；C-75 已关闭 |
+| C-69 | 文档漂移 | **Round 7：仍 Open（非阻塞）**——§8.11:276 的 400 未改而 §8.12:291 声称已改；README:11/18 仍 498、README:37 状态行；TEST-STRATEGY:33 仍 498、:460 与 :33 冲突、:3 版本头、:276-284 文件登记 |
+| C-75 / C-76 / N-R4-1 | 注入实例 / 拆分 / AC-8 | **保持关闭**（承接，本轮未重查） |
+| C-70 / C-63 / C-64 | 动作响应全量历史 / 手写 cookie 文档 / 文档基线 | 保持 Open（非阻塞），本轮未重查 |
+
+---
+
+### 7. 最终判断
+
+- **Overall Risk Level: Medium**
+- **Summary**：本轮确实把 Round 6 的 P-R6-3（按 `events.length` 校验的缓存）锁住了，也把两条旧 AC-13 用例改成了诚实的标题；但新的「同长度」用例改的是最后一条事件的 `seq`，一个按 `(events.length, last.seq)` 校验的缓存仍让全量 **61 files / 499 tests 全绿**，并且对同长度、同末条 seq 的 payload 变化返回旧状态（`4242424` 而不是 `4242425`）。因此 AC-13 的「`GameState` 不再缓存 / 每次都重建」仍没有覆盖；C-73 仍 Open（阻塞）。文档只同步了一部分：§8.11 的 227 改了，400 没改，README / TEST-STRATEGY 仍停在 498（实际 499），§8.12:291 的「已改」不成立。
+- **Blocking Issues**：
+  1. **C-73**：补一条能观察到 replay 的断言（`vi.mock('@engine/replay')` 计数，或注入可计数的 replay），或改一条**同长度、同末条 seq** 的 payload（如 `GAME_STARTED.seed` / `WOLF_KILL_CHOSEN.target`）并断言重建后的状态跟着变；当前的 `seq + 5` 用例可以保留，但不能单独作为 AC-13 的 no-cache 证据。
+  2. **C-61**：AC-13 的文字必须在 `Reviewed` 前通过 `/manage-changes` 修订为「未释放的终局记录不缓存；释放后 `GET` 410」；不需要改代码。
+- **Improvement Suggestions**（非阻塞）：
+  1. 修 `RFCs/RFC-008...:276`（400 → 800）；`:291` 改成实际结果；`:282` 的 498 与当前 499 不一致，请标注它是哪一轮的输出或更新；`:296` 是当前 499。
+  2. 同步 `README.md:11/18` 到 499、`README.md:37` 到本轮状态；`TEST-STRATEGY.md:33` 到 499，`:3` 的版本 / 日期 / `RFCS.md` 版本头更新；`:276-284` 登记 `finished-game.test.ts` / `release-and-entry.test.ts` / `strengthen.test.ts`，删除不存在的 `projection-leak.test.ts` / `actions.test.ts`；`:34` 的「15 个 proposed」更新。
+  3. 删除或改写 `release-and-entry.test.ts:150-168` 与 `strengthen.test.ts:168-182` 的旧假用例；`store.test.ts:74` 删掉「重新放回事件则语义恢复」。
+  4. AC-7 的 `project()` 深度比较循环到 9 个 `playerSeat`；AC-11 的路由测试可补一次提交或参数化到真正的 `MockStore`。
+  5. C-70、N-R2-2、`snapshot?: unknown`、`applied` 无上限、响应 Zod schema、`as never` 继续承接。
+
+- **状态**：`RFCS.md` → **`Changes requested`**；`FEATURES.md` 没有 Status 列，未改。**本评审没有修改任何产品代码，也没有 `git commit`；所有探针改过的 `src/server/store/game-registry.ts` / `src/server/app.ts` / `tests/server/finished-game.test.ts` 已从 `/tmp/howl-round7-backup/` 恢复（未用 `git checkout`），`md5` 与备份一致；恢复后全量 61 files / 499 tests 全绿。`git status` 只显示本评审修改的 `reviews/REVIEW-RFC-008.md` 与 `RFCS.md`。**
