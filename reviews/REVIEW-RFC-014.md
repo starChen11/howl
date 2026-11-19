@@ -292,3 +292,262 @@ AC-11 的「属性测试覆盖 3 个席位 × 3 个 `seq`」完全不存在；�
 **Improvement Suggestions（非阻塞）**：C-164 ~ C-175。优先补 C-166（释放后视角 500）、C-172（复盘页每秒轮询）、C-167（文档与测试计划回填）；C-158 的 usage 展示建议与 F38 的 seed 展示一起做，复盘页头部一次补齐。
 
 **状态**：`RFCS.md` 中 RFC-014 的 Status 置为 **`Changes requested`**。
+
+---
+
+## Round 2 -- 2026-11-19
+
+> 评审时间：2026-11-19 · 被评审提交：`1eb60b5 fix(rfc-014): 真实产出推理、用量含失败与视角路由级用例（Round 1）` · HEAD `1eb60b5`
+> 评审方式：全新上下文的 subagent，只读仓库文件；本会话没有写过 RFC-014 的实现代码。
+> 结论：**Changes requested**
+
+本轮用户点名复核 Round 1 的六项（C-156 ~ C-161）。先说明编号：你消息里的编号与 Round 1 记录不是同一套，C-158 / C-159 / C-160 / C-161 分别落在 Round 1 的 C-159 / C-171+C-161+C-166 / C-162 / C-158。下面按「你点名的行为」逐项复核，并在括号里标 Round 1 编号。C-164 ~ C-170、C-172 ~ C-175 按指示未重查；C-160（AC-10）与 C-163（AC-2/5/6）是 Round 1 仍 Open 的阻塞项、不在你的六项里，但它们仍会让 RFC 无法通过，所以一并复核。
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · HEAD `1eb60b5` · 评审开始与探针结束时工作树 clean；最终只有本评审记录（`RFCS.md` 与 `reviews/REVIEW-RFC-014.md`）变更。
+
+```text
+$ pnpm typecheck            → exit 0
+$ pnpm lint                 → exit 0
+$ pnpm format:check         → All matched files use Prettier code style! → exit 0
+$ pnpm build                → client 139 modules / server 65 modules → exit 0
+$ pnpm test                 → Test Files 87 passed (87) / Tests 743 passed (743) → exit 0
+$ pnpm test:e2e             → 10 passed (12.2s) → exit 0
+$ coverage（引擎，meta 门禁） → 行 96.96% / 分支 92.85%
+```
+
+`pnpm test` 在全部探针恢复后又完整跑了一遍，仍是 **87 files / 743 tests**。`pnpm test:e2e` 的 10/10 里，复盘主路径仍由 `HOWL_FAKE_AI=1` 的脚本 AI 驱动（`playwright.config.ts:22-30`），所以它能证明复盘页面能打开，不能证明「真实模型产出的推理」；这与本轮 C-176 的缺口一致。
+
+本轮所有探针都从 `/tmp/howl-rfc014-r2/backup/` 的**文件备份**恢复，**未使用 `git checkout` / `git restore`**。6 个源码文件 SHA-256 已记录，恢复后逐一核对：
+
+```text
+4873dd84c0ec509dfde76c1ce9d9a94576bf194d8c68dedecc48dbf5190b0693  src/server/ai/agent.ts
+5f3ffadae78f821f8d3e5f9bd2bf1416af08d31f2006e08c5b308358fcaebbbb  src/server/orchestrator.ts
+eb2ff8577f806ef1783a895fb75b99799122bcda17212e8c35b1928f2f1c366c  src/server/routes/games.ts
+7b1bb7d8a6d2b26e9162b89c96bf97bb102a27715d12c74fc4f25d237edf8b64  src/server/replay/snapshot.ts
+fafadd5a2832a8217145f56e374b7aa46e272aaa572273e83e250f4ea468d3f0  src/client/pages/ReplayPage.tsx
+b49353ebf52f3e6e27a09f29882f94ed39a66a0299ed645a11eeccdf6648edae  src/client/api.ts
+```
+
+临时探针测试 `tests/server/replay-probe.test.ts` / `tests/client/app-expired-probe.test.tsx` 已删除；探针结束时 `git status --porcelain` 为空；没有 `git commit`。
+
+### 1. 编号对照与结论
+
+| 你点名 | Round 1 | 本轮结论 |
+|---|---|---|
+| C-156 推理事件 | C-156 | 生产已产出；**终局快照漏最后一条** → C-176 阻塞 |
+| C-157 用量含失败 | C-157 | 行为正确；**用例仍是同义反复** → 仍阻塞（测试） |
+| C-158 3 席 × 3 seq | C-159 | **闭合**（M2-E 打红） |
+| C-159 释放局 App / 410 | C-171 + C-161 + C-166 | 端点闭合；**App 仍崩** → C-171 仍阻塞 |
+| C-160 服务端 parse | C-162 | **闭合（行为）**；无回归锁 → C-177 非阻塞 |
+| C-161 复盘页用量 | C-158 | **闭合**；cached 未展示 → C-178 非阻塞 |
+
+### 2. 用户点名的六项
+
+#### 2.1 C-156：生产已产出 AI_THOUGHT，但终局快照漏最后一条
+
+核心修复成立：
+
+- `AgentDecision` 已有 `thought`（`src/server/ai/agent.ts:15-20`）；LLM Agent 从 `outcome.decision.reason` 带出 `thought`（`agent.ts:100-108`）；`runGame` 在 `registry.submit` 成功后追加 `AI_THOUGHT`（`src/server/orchestrator.ts:224-241`），payload 含 `seat`（`:236`）。
+- 新用例 `tests/server/replay.test.ts:224-271` 有牙：M2-B 删掉追加块后，这条 **1 failed**（`thoughts.length` 为 0），其余 12 条仍绿。与 Round 1 的「`toThought` 没有任何生产调用者」相比，这是实质进展。
+
+**但持久化快照不完整（C-176，阻塞）。** `registry.submit` 在动作导致 `FINISHED` 时生成 `record.snapshot`（`src/server/store/game-registry.ts:217-228`），之后 `runGame` 才 `appendEvents` 追加这条 `AI_THOUGHT`（`orchestrator.ts:224-241`）；`appendEvents` 只改 `events`，不重算 `snapshot`（`game-registry.ts:239-243`）。真实完成局探针（脚本 AI 外层补 `thought`，走真实 `runGame` / `submit`）：
+
+```text
+{"status":"finished","totalEvents":108,"aiThoughtsInEvents":40,"thoughtsInSnapshot":39,
+ "lastEventType":"AI_THOUGHT","lastThoughtSeq":108,"gameEndedSeq":107,
+ "missingReason":"R-8-NIGHT_WOLVES","snapshotHasLastThought":false}
+```
+
+即每局最后一条 AI 决策的推理不会出现在 `GET /replay` 返回的 `record.snapshot` 里。AC-3 要求「每条 `reason` 与对应决策的结构化载荷 `reason` 完全一致（逐条比对）」，F31 AC-3 要求「每个 AI 每轮推理与投票动机」；少最后一条不是完整实现。
+
+新加的「完成局里 thoughts 数量等于事件流里的 AI_THOUGHT 数量」（`tests/server/replay.test.ts:372-380`）仍是 **0 = 0**：它用 `finishedGame()`，而 `scriptedAgent` 根本不返回 `thought`（`src/server/ai/agent.ts:37-64`）。M2-B 删掉追加块后这条仍绿，因为它没有 `expect(fromEvents).toBeGreaterThan(0)`。自定义 decide 的那条用例用 `maxSteps: 40` 且从未打到 `FINISHED`，又在 `replay.test.ts:264-268` 自己调用 `buildReplaySnapshot`，所以恰好绕开了「终局落盘」这条真实路径。
+
+#### 2.2 C-157：用量行为正确，回归锁仍是同义反复
+
+行为层面已修：
+
+- `createLlmAgent` 把 `usageMetaLog` 注入 `decide`（`agent.ts:82-85`）；`decide` 在格式失败、成功、异常三条路径都调用 `deps.metaLog?.record`（`src/server/llm/client.ts:141/168/175`）；`usageMetaLog.record` 按 `meta.gameId` 聚合（`src/server/llm/usage.ts:52-55`）。失败与重试会计入。
+
+但新用例（`tests/server/replay.test.ts:274-302`）只是手工 `usageMetaLog.record` 两次再读 `usageOf`；它不经过 `decide`、不经过 `createLlmAgent`，也不经过 `runGame` 或快照。M2-A 把 `agent.ts` 的 `metaLog: usageMetaLog as never` 删掉后，`tests/server/replay.test.ts` **13/13 仍绿**。这正是 Round 1 C-157 批评的「同义反复」换了一层：验证了 sink，没有验证接线。
+
+建议：用假 `fetch` 让第一次返回非 JSON、第二次返回合法决策，走 `decide({ config, metaLog: usageMetaLog })`，并断言 `buildReplaySnapshot(...).usage`（或完成局的 `record.snapshot.usage`）等于两次 attempt 的 calls / input / output / cached 之和；再把 `metaLog` 注入删掉应打红。
+
+#### 2.3 C-158（R1 C-159）：视角端点路由测试闭合
+
+`tests/server/replay.test.ts:305-341` 现在用真实 `buildApp` + 完成局 + 3 个席位（1/3/5）× 3 个 `seq`，逐个 `app.inject`，响应与 `project({ state: replay(truncated), events: truncated, observer: seat, pending: null })` **深度相等**。
+
+M2-E 把路由的 `truncated` 改成全量事件、`observer` 改成 `record.playerSeat` 后，这条 **1 failed**（视图里出现未来的 `GAME_ENDED`、`self.alive` 也变了），其余 12 条绿。AC-9 / AC-11 的 3 席 × 3 `seq` 有真实锁，Round 1 C-159 闭合。
+
+旧用例 `tests/server/replay.test.ts:189-221` 仍保留 `void app;` 和「路线由 e2e/路由测试覆盖」的注释，是死代码 / 误导；非阻塞，建议删除或改成只锁「截断后投影」的单元断言。
+
+#### 2.4 C-159（R1 C-171 + C-161 + C-166）：端点闭合，App 产品路径仍崩
+
+端点部分：
+
+- 释放后 `GET /replay` 200 + 9 席：`tests/server/replay.test.ts:343-361`；M2-F 在路由里对空事件流返回 410 后，这条 **1 failed**，锁成立。R1 C-161 闭合。
+- 释放后 `GET /replay/seat/:seat` 410：`src/server/routes/games.ts:144-146`；用例 `replay.test.ts:363-368` 断言 410。R1 C-166 闭合，500 的内部错误文案也不再出现。
+
+**App 路径仍未修（C-171，阻塞）。** RFC §8.7 写「`ApiClient.game` 对非 2xx 抛错」，但 `src/client/api.ts:40-46` 没有 `response.ok` 检查，410 的 JSON 被原样当成 `GameViewResponse` 返回：
+
+```text
+[probe] ApiClient.game 410 → {"error":"GAME_EXPIRED","message":"对局已释放"}，hasView=false，没有抛错
+```
+
+因此 `App.refresh` 的 `catch`（`src/client/App.tsx:39-49`）永远不会执行，`client.replay()` 的兜底是死代码。用等价 fake client（`game()` 返回同样的 410 对象，`openStream` 为 noop）渲染 `App`：
+
+```text
+TypeError: Cannot read properties of undefined (reading 'phase')
+  at App src/client/App.tsx:61  （view?.view.phase）
+```
+
+页面不出现「复盘」。`tests/client/replay.test.tsx` 新增的只有 usage 用例；`tests/client/app.test.tsx` 没有任何 410 / 释放局用例。RFC §8.7 的「已修」与代码不符。
+
+修复建议：`ApiClient.game` 对非 2xx 抛错（或返回 `{ ok: false, status, error }` 让调用方显式分支）；`App.refresh` 在 410 / 缺失 `view` 时直接走 `client.replay(gameId)`，无快照时显示错误而不是永久「正在载入对局…」；补一条真实 `ApiClient`（410 + 200 快照）或等价 fake client 的 App 用例，断言不抛 `TypeError` 且出现「复盘」。
+
+#### 2.5 C-160（R1 C-162）：服务端 parse 已加，但无回归锁
+
+`src/server/routes/games.ts:350-351` 已改为 `ReplaySnapshotSchema.parse(record.snapshot)`，API-1 的服务端行为闭合。但：
+
+- M2-G 去掉 `parse`、直接 `reply.send(record.snapshot)` 后，`tests/server/replay.test.ts` **13/13 仍绿**；没有「快照缺字段 → 契约错误」的用例。
+- `tests/client/api.test.ts` 仍只有 truth 的三条，没有 replay / perspective 的合法 / 缺字段用例；`GameRecord.snapshot` 仍是 `unknown`（`game-registry.ts:36`）。
+
+归 C-177（非阻塞）；R1 C-162 的「服务端 parse」部分闭合。
+
+#### 2.6 C-161（R1 C-158）：复盘页用量已显示
+
+`src/client/pages/ReplayPage.tsx:76-81` 显示「模型调用 N 次，输入 X / 输出 Y tokens」，`usage` 仍按可选处理；`tests/client/replay.test.tsx:132-143` 断言 `模型调用 12 次` 与 `输入 3400`。主路径闭合。
+
+未显示 `cachedTokens`，用例也没有断言 output / cached；F20 AC-1 要求缓存命中 token，F31 AC-7 的「token 汇总」建议补齐。归 C-178（非阻塞）。
+
+### 3. Round 1 其余阻塞项（不在本轮六项里，但仍 Open）
+
+#### 3.1 R1 C-160（AC-10）：筛选仍只锁条数，不锁内容
+
+`tests/client/replay.test.tsx:73-81` 仍只比较 `getAllByRole('listitem').length`，没有比较条目文本 / seq。M2-C 在选中席位时给每条时间线文本追加 `·MUTATION`（条数不变）后，`tests/client/replay.test.tsx` **8/8 仍绿**。AC-10 要求「条目数量**与内容**一致」，内容没有被锁。**仍 Open（阻塞）**。
+
+修复：记录 `Timeline` 每条 `data-replay-seq` + `textContent` 数组，筛选前后 deep equal；或断言具体条目文本。
+
+#### 3.2 R1 C-163（AC-2 / AC-5 / AC-6）：身份 / 人格 / 结果断言仍是同义反复
+
+`tests/server/replay.test.ts:53-60` 仍是 `roleLabel.length > 0`、persona 二选一、`result ∈ {wolf,good}`、condition 非空。M2-D 把每席 `roleLabel` 改成「狼人」、`personaLabel` 改成 `MUTATION`、`result` 固定 `good`、`winCondition` 固定 `MUTATION` 后，**13/13 仍绿**。
+
+RFC §8.7 写「由真实对局快照 + 路由级用例覆盖」，但新增的路由级 3×3 用例只比较 `project()` 的投影视图，没有读 `snapshot.seats` / `result` / `winCondition`；这条声明不成立。**仍 Open（阻塞）**。
+
+修复：把快照 `seats` 与 `GAME_STARTED` / `replay(GAME_STARTED + …)` 的实际 roles / persona 逐席比较；`result` / `winCondition` 与 `GAME_ENDED.payload` 精确相等并定位其 `seq`；补 wolf / good 双分支。
+
+### 4. 全部验收标准
+
+| AC | 本轮结论 | 证据 / 缺口 |
+|---|---|---|
+| 1 | PASS（沿用 R1） | 时间线升序、每条能在事件流里找到；本轮未重查双向口径（C-170 非阻塞，未重查） |
+| 2 | **FAIL（测试）** | `replay.test.ts:53-60` 仍只断言非空；M2-D 全绿。C-163 |
+| 3 | **FAIL（行为）** | 生产已产出 `AI_THOUGHT`，但终局快照漏最后一条（40 条事件 / 39 条快照）；「完成局」用例仍是 0=0。C-176 |
+| 4 | PASS（沿用 R1） | `buildThoughts` 只读 `payload.reason`；`reasoningContent` 不进快照 |
+| 5 | **FAIL（测试）** | persona 只做二选一；M2-D 全绿。C-163 |
+| 6 | **FAIL（测试）** | result 只做集合、condition 只做非空；M2-D 全绿。C-163 |
+| 7 | PASS（沿用 R1） | `degraded` 与 `DEGRADED` 一一对应 |
+| 8 | PASS（行为）/ **FAIL（回归锁）** | `usageMetaLog` 计入全部 attempt；但 M2-A 删生产接线仍 13/13 绿。C-157 |
+| 9 | PASS（路由级） | 3 席 × 3 `seq` 真实 `app.inject` 与截断投影深度相等；M2-E 打红。C-159 闭合 |
+| 10 | **FAIL（测试）** | 只锁条数；M2-C 改文本仍 8/8 绿。C-160 |
+| 11 | PASS（路由级） | 3 席 × 3 `seq`；M2-E 打红。C-159 闭合 |
+| 12 | PASS（沿用 R1） | 新 `gameId` + `/play`；C-168 未重查 |
+| 13 | **FAIL（产品路径）** | 端点 200 / 410 已锁；App 410 仍抛 `TypeError`，到不了复盘。C-171 |
+| 14 | PASS（360）/ 1024 沿用 R1 | e2e 360px 无横滚；C-169 未重查 |
+
+### 5. 工程维度
+
+#### 5.1 RFC ADHERENCE — **NEEDS WORK**
+
+- C-176 使 AC-3 的「每条推理」不完整；C-171 使 AC-13 的产品路径不成立。
+- RFC §8.7 的两条声明与代码不符：「`ApiClient.game` 对非 2xx 抛错」没有实现（`api.ts:40-46` 无 `ok` 检查）；「AC-2 / AC-5 / AC-6 由真实对局快照 + 路由级用例覆盖」也不成立（路由级用例只比较投影）。这是错误的实现记录，不只是文档漂移。
+- §8.5 仍写 737 tests，实际 743；TEST-STRATEGY 的 RFC-014 小节仍全 `proposed`，计划中的 `tests/server/replay-perspective.test.ts` 不存在。这些属于 R1 C-167（非阻塞、按指示未重查），但 RFC §8.7 的新声明需要一并修正。
+
+#### 5.2 RULES COMPLIANCE — **FAIL（TEST-1 / DOC-1）**
+
+| 规则 | 判定 | 证据 |
+|---|---|---|
+| **AI-5** | **PASS** | `buildThoughts` 只读 `payload.reason`（`snapshot.ts:170-190`）；`reasoningContent` 不进快照；新 `AI_THOUGHT` payload 只有 `reason` / `claim` |
+| **API-1** | **PASS（代码）/ 测试缺口** | 服务端 `ReplaySnapshotSchema.parse`（`routes/games.ts:351`）；客户端 `safeParse`（`api.ts:65-72`）；但两端都没有 replay 正负用例，服务端 parse 无回归锁 → C-177 |
+| **TEST-1** | **FAIL** | C-157 / C-160 / C-163 的验收证据不成立；C-176 无完成局锁 |
+| **TEST-6** | **PASS（主路径）** | e2e 10/10；但 `HOWL_FAKE_AI=1` 下脚本 AI 不产 `thought`，e2e 的「推理」标题只断言身份与时间线，不能替代 C-176 |
+| **DOC-1** | **FAIL** | §8.7 的 C-159 / AC-2/5/6 声明与代码不符；§8.5 计数陈旧 |
+| **SEC-5 / SEC-6** | **PASS** | 视角仍按 `observer: seat` 投影；释放后视角 410；`AI_THOUGHT.visibleTo = self:<seat>` |
+| **DATA-6 / ARCH-3** | **PASS** | 快照为值拷贝；事件流仍是唯一权威 |
+| **STYLE-6** | **PASS** | 本轮新增行数不大；无超 400 行文件 |
+
+#### 5.3 SECURITY — **PASS（有边界说明）**
+
+- 会话归属、视角投影、释放后 410 都保持；未发现新的越权读取。
+- `AI_THOUGHT` 仍是 `self:<seat>`，第三人称投影看不到；快照只在终局后提供全部身份与推理（SEC-6 的时间边界）。
+- 释放后视角端点从 500 改为 410，不再把内部错误文案暴露在 HTTP 上；这是本轮的改进。
+- App 410 崩溃是可用性缺陷，不是数据泄漏。
+
+#### 5.4 PERFORMANCE — **N/A（本轮无新增热点）**
+
+本轮没有新增计算热点；`ReplaySnapshotSchema.parse` 每次 `GET /replay` 对快照做一次线性校验，规模很小。R1 C-172（终局后每秒轮询、视角重复请求）与 C-165（usage Map 不清理）按指示未重查，仍为非阻塞。
+
+#### 5.5 MAINTAINABILITY — **NEEDS WORK**
+
+- `toThought()` 仍没有生产调用者；`runGame` 手工复制了同一套事件构造并 `as EventEnvelope`（`orchestrator.ts:226-240`）。两条构造路径未来可能漂移；`decisionSeq` 用 `result.version`（动作后），而 `toThought` 的注释约定是「决策产生前的 `state.seq`」（`src/server/llm/thought.ts:11-14`）。归 C-179（非阻塞）。
+- `usageMetaLog as never` 用强制类型转换掩盖了 `CallMetaLog` 与 sink 的结构差异；`decide` 只用到 `record`，所以现在能跑，但类型契约没有表达出来。归 C-179。
+- 测试债：`replay.test.ts:238-242` 的 `deciding` 是声明后 `void` 的死函数；`replay.test.ts:189-221` 的 `void app` 是死用例；`replay.test.ts:148-152` 与 `:372-380` 的空真分支仍在。归 C-180（非阻塞）。
+- 没有任何测试经过 `createLlmAgent`：M2-H 把 `reason: outcome.decision.reason` 改成 `'MUTATION'` 后，全套 **743/743 仍绿**。生产推理的来源（AI-5 的核心）没有回归锁。归 C-180（非阻塞）。
+
+### 6. 发现汇总
+
+#### 阻塞
+
+| # | AC / 规则 | 发现 | 建议 |
+|---|---|---|---|
+| **C-157** | AC-8、NFR-13 | 用量接线正确，但新用例只测 sink；M2-A 删掉 `agent.ts` 的 `metaLog` 注入仍 13/13 绿。 | 走 `decide` + 假 fetch 的「失败 + 成功 = 2 次」用例，并断言快照 usage；删接线应打红。 |
+| **C-160** | AC-10、TEST-1 | 筛选只锁时间线条数；M2-C 改文本仍 8/8 绿。 | 记录 `data-replay-seq` + 文本，筛选前后 deep equal。 |
+| **C-163** | AC-2 / AC-5 / AC-6、TEST-1 | 身份 / 人格 / 结果断言同义反复；M2-D 全绿；§8.7 的「已覆盖」不成立。 | 与 `GAME_STARTED` / state / `GAME_ENDED.payload` 逐项比较，补双分支。 |
+| **C-171** | AC-13 产品路径、F33 AC-4、FE-AS-2 | `ApiClient.game` 对 410 不抛错，App 的 catch 是死代码；真实路径仍在 `App.tsx:61` 抛 `TypeError`，到不了复盘。 | `game()` 对非 2xx 抛错；`App` 退到 `client.replay()`；补 410 → 复盘页的 client 用例。 |
+| **C-176** | AC-3、F31 AC-3、PRD FR-12 | 终局时 `snapshot` 先于最后一条 `AI_THOUGHT` 生成；真实完成局 40 条事件推理、快照只有 39 条，最后一条在 `GAME_ENDED` 之后。 | 追加 thought 后若已 `FINISHED` 重新生成快照（或让 `appendEvents` 维护快照）；补完成局「事件流条数 = 快照条数且含最后一条」用例。 |
+
+#### 非阻塞
+
+| # | 规则 / AC | 发现 | 建议 |
+|---|---|---|---|
+| **C-177** | API-1 | 服务端 parse 已加但无回归锁（M2-G 绿）；客户端 `api.test.ts` 没有 replay / perspective 正负用例；`snapshot` 仍 `unknown`。 | 补非法快照 → 契约错误的 server 用例；补 client 合法 / 缺字段 / 非 2xx 三条用例；收窄 `GameRecord.snapshot` 类型。 |
+| **C-178** | F31 AC-7、F20 AC-1 | 复盘页显示 calls / input / output，但未显示 cached；用例未断言 output / cached。 | 在用量行补 cached，并补齐三类 token 断言。 |
+| **C-179** | DOC-1 / 维护性 | `toThought` 无生产调用者，`runGame` 手工构造并 cast；`decisionSeq` 是动作后版本，与 helper 的「决策前」注释不一致；`usageMetaLog as never` 隐藏类型契约。 | 让 `runGame` 复用 `toThought`（或明确删除它）；修正 `decisionSeq` 口径；把 `metaLog` 的类型收窄为 `{ record(meta: CallMeta): void }`。 |
+| **C-180** | TEST-1 / 测试债 | 没有 `createLlmAgent` 用例，M2-H（reason 改成 `'MUTATION'`）全套 743 绿；`deciding` 死函数、`void app` 死用例、两处 0=0 空真仍在。 | 补假 fetch 的 `createLlmAgent` → `reason` / `claim` → `AI_THOUGHT` 用例；删死代码；完成局用例加 `fromEvents > 0` 与最后一条比对。 |
+
+### 7. 探针记录
+
+所有探针均使用文件备份恢复；没有使用 `git checkout` / `git restore`。
+
+| 探针 | 变更 / 内容 | 结果 |
+|---|---|---|
+| **P-R2-1** | 真实 `runGame` 完成局（seed `20_261_117`，脚本 AI 外层补 `thought`） | 108 事件 / 事件流 40 条 `AI_THOUGHT` / 快照 39 条；最后一条 seq 108 在 `GAME_ENDED`（107）之后，`snapshotHasLastThought=false` → **C-176** |
+| **P-R2-2** | 真实 `ApiClient` + 410 假 `fetch` | 返回 `{error:'GAME_EXPIRED'}`，`hasView=false`，不抛错 → App catch 不可达 |
+| **P-R2-3** | `App` + 等价 fake client（410 错误对象、`replay` 返回快照） | 未捕获 `TypeError: Cannot read properties of undefined (reading 'phase')` @ `App.tsx:61`；无复盘页 → **C-171** |
+| **M2-A** | `agent.ts` 删 `metaLog: usageMetaLog as never` | `tests/server/replay.test.ts` **13/13 passed** → C-157 接线无锁 |
+| **M2-B** | `orchestrator.ts` 删 `AI_THOUGHT` 追加块 | **1 failed / 12 passed**（自定义 decide 用例红）；「完成局」用例仍绿（0=0） |
+| **M2-C** | `ReplayPage.tsx` 选中席位时给时间线文本追加 `·MUTATION` | `tests/client/replay.test.tsx` **8/8 passed** → AC-10 仍只锁条数 |
+| **M2-D** | `snapshot.ts` 每席 `roleLabel='狼人'`、`personaLabel='MUTATION'`、result 固定 `good`、condition 固定 `MUTATION` | `tests/server/replay.test.ts` **13/13 passed** → AC-2/5/6 断言无牙 |
+| **M2-E** | `routes/games.ts` 视角路由忽略 `seq` + 用 `record.playerSeat` 作 observer | **1 failed / 12 passed** → 新 3×3 路由测试有牙 |
+| **M2-F** | `GET /replay` 在事件流为空时返回 410 | **1 failed / 12 passed** → 释放后 200 有锁 |
+| **M2-G** | `GET /replay` 去掉 `ReplaySnapshotSchema.parse` | **13/13 passed** → 服务端 parse 无回归锁（C-177） |
+| **M2-H** | `agent.ts` 的 `thought.reason` 固定为 `'MUTATION'` | 全套 **87 files / 743 tests passed** → `createLlmAgent` 的 reason 映射无锁（C-180） |
+
+### 8. 结论
+
+**Overall Risk Level: High**
+
+**Summary**：这轮修复有真实进展——生产路径现在会产出 `AI_THOUGHT`、视角端点有真实 3 席 × 3 `seq` 路由锁、释放后的 `GET /replay` 与视角端点都锁住了、复盘页显示了用量。但最关键的「释放局仍能看复盘」在产品路径上仍然不成立：`ApiClient.game` 不抛错，App 的 catch 是死代码，410 时仍在 `App.tsx:61` 抛 `TypeError`。同时，最后一条 AI 推理在终局快照生成之后才写入，导致每局复盘少一条推理；C-157 / C-160 / C-163 的验收证据仍是 Round 1 指出的空真 / 同义反复。
+
+**Blocking Issues（必须修复后才能合并）**
+
+1. **C-171**：释放局 410 仍让 App 崩溃，用户到不了复盘页（AC-13 / F33 AC-4）。
+2. **C-176**：终局快照漏最后一条 `AI_THOUGHT`（AC-3 / F31 AC-3）。
+3. **C-157**：用量生产接线无回归锁；删掉 `metaLog` 注入全套仍绿（AC-8 / TEST-1）。
+4. **C-160（R1）**：AC-10 只锁时间线条数，不锁内容（TEST-1）。
+5. **C-163（R1）**：AC-2 / AC-5 / AC-6 断言仍与实现同义反复（TEST-1）。
+
+**Improvement Suggestions（非阻塞）**：C-177 ~ C-180。优先修 C-180 的 `createLlmAgent` 用例与 C-179 的 `toThought` 复用；C-178 的 cached token 展示可与 C-173（seed 展示，未重查）一起做进复盘页头部。
+
+**状态**：`RFCS.md` 中 RFC-014 的 Status 置为 **`Changes requested`**。本轮已关闭的 C-158 / C-159 / C-161 / C-162 / C-166 不再重开；C-164 ~ C-170、C-172 ~ C-175 按指示未重查。
