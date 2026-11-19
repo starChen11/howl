@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import { registerGameRoutes } from './routes/games';
 import { registerStreamRoutes } from './routes/stream';
+import { ChannelRegistry } from './channels/session';
 import { StreamBus } from './stream/bus';
 import { GameRegistry } from './store/game-registry';
 import { InMemoryMetaStore, type MetaStore } from './store/meta-store';
@@ -18,6 +19,8 @@ export interface BuildAppOptions {
   production?: boolean;
   /** 流式事件总线（测试注入，默认新建）。 */
   bus?: StreamBus;
+  /** 通道注册表（测试注入，默认新建）。 */
+  channels?: ChannelRegistry;
 }
 
 /**
@@ -34,7 +37,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const registry = new GameRegistry(store);
   const production = options.production ?? false;
   const bus = options.bus ?? new StreamBus();
-  registerGameRoutes(app, { registry, production });
+  const channels = options.channels ?? new ChannelRegistry(bus);
+  registerGameRoutes(app, { registry, production, channels });
   registerStreamRoutes(app, { registry, bus, production });
 
   return app;

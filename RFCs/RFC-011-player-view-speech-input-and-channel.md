@@ -209,3 +209,15 @@ $ pnpm test → 74 files / 616 tests
 ```
 $ pnpm test → 75 files / 619 tests
 ```
+
+### 8.9 Round 3 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **B-R3-1** AC-6 没有「原文进事件流」的断言 | 上一轮声称加了，实际文件里没有；把玩家文本换成错的仍全绿 | 这次用 `grep -c playerSpeech` 确认写入：断言「玩家席位的 `SPEECH.payload.text` 等于输入的那句话」。反向探针（换成 `'错误文本'`）会红 |
+| **B-R3-2** AC-1 只数 `"role":` | 投影里加 `leakedRoles[].roleId` 仍全绿 | 改成结构检查：遍历五种角色值，凡是**不是自己**的角色值出现在视图 JSON 里就失败 |
+| **B-R3-3** 通道没有生产调用者 | `POST /actions` 直接 `registry.submit`，通道只被测试引用 | 新增 `ChannelRegistry`（每局一个 `HttpInputChannel` + `SseOutputChannel`）并接进 `buildApp`；`POST /actions` 的发言先交给挂起的输入通道，新增 `POST /api/games/:id/input` 同步草稿。用例：先挂起 `read()`，再 POST，断言挂起的 Promise 收到玩家原话；反向探针（删掉接线）会超时红 |
+
+```
+$ pnpm test → 75 files / 620 tests
+```

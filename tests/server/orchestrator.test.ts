@@ -179,10 +179,15 @@ describe('C-101 · 玩家轮真的会问输入通道', () => {
       maxSteps: 20,
     });
 
-    // 玩家席位被问过；而且发言确实落进事件流
+    // 玩家席位被问过；而且**玩家说的那句话**原样落进事件流
     expect(reads).toBeGreaterThan(0);
-    expect(result.record.events.filter((event) => event.type === 'SPEECH').length).toBeGreaterThan(
-      0,
+    const playerSeat =
+      registry.stateOf(result.record).seats.find((candidate) => candidate.isPlayer)?.seat ?? -1;
+    const playerSpeech = result.record.events.find(
+      (event) =>
+        event.type === 'SPEECH' && (event.payload as { seat?: number }).seat === playerSeat,
     );
+    expect(playerSpeech, '玩家没有发言').toBeDefined();
+    expect((playerSpeech?.payload as { text?: string }).text).toBe('我过关。');
   });
 });

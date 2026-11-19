@@ -15,6 +15,7 @@ import { project } from '../project';
 import { isWithinLimit } from '../speech';
 import { resolveSession } from '../session';
 import type { GameRegistry } from '../store/game-registry';
+import type { ChannelRegistry } from '../channels/session';
 
 /**
  * 对局与会话的路由（RFC-008 §2.2）。
@@ -27,6 +28,7 @@ import type { GameRegistry } from '../store/game-registry';
 export interface GameRoutesOptions {
   registry: GameRegistry;
   production: boolean;
+  channels: ChannelRegistry;
 }
 
 function validationError(message: string, issues: string[] = []): ApiError {
@@ -34,7 +36,7 @@ function validationError(message: string, issues: string[] = []): ApiError {
 }
 
 export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOptions): void {
-  const { registry, production } = options;
+  const { registry, production, channels } = options;
 
   app.post('/api/games', async (request, reply) => {
     const parsed = CreateGameBodySchema.safeParse(request.body);
@@ -99,6 +101,22 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
     },
   );
 
+  // 草稿同步：客户端每敲几个字就 POST 一次，超时由服务端用它提交（AC-6）。
+  app.post<{ Params: { id: string }; Body: { text?: string } }>(
+    '/api/games/:id/input',
+    async (request, reply) => {
+      const { session } = await resolveSession(registry, request, reply, production);
+      const record = await registry.getGame(request.params.id);
+      if (record === undefined || !session.gameIds.includes(record.gameId)) {
+        return reply.code(404).send({ error: 'GAME_NOT_FOUND', message: '对局不存在' });
+      }
+
+      const text = typeof request.body?.text === 'string' ? request.body.text : '';
+      channels.setDraft(record.gameId, text);
+      return reply.send({ ok: true });
+    },
+  );
+
   app.post<{ Params: { id: string } }>('/api/games/:id/actions', async (request, reply) => {
     const parsed = SubmitActionBodySchema.safeParse(request.body);
     if (!parsed.success) {
@@ -134,6 +152,11 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
         error: 'NOT_YOUR_SEAT',
         message: `只能操作自己的席位（${record.playerSeat} 号）`,
       });
+    }
+
+    // 玩家在等发言时，这句话先交给挂起的输入通道（RFC-011 的编排回路）。
+    if (parsed.data.action.type === 'SPEECH') {
+      channels.submit(record.gameId, parsed.data.action.text);
     }
 
     const result = await registry.submit(

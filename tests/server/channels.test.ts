@@ -191,3 +191,52 @@ describe('AC-12 · 新通道实现不需要改引擎', () => {
     expect(seqs).toEqual(seqs.map((_value, index) => index + 1));
   });
 });
+
+describe('AC-6 / AC-9 · 生产接线：POST 兑现挂起的输入通道', () => {
+  it('POST /actions 的发言会兑现挂起的 HttpInputChannel', async () => {
+    const { buildApp } = await import('@server/app');
+    const { ChannelRegistry } = await import('@server/channels/session');
+    const { StreamBus } = await import('@server/stream/bus');
+
+    const bus = new StreamBus();
+    const channels = new ChannelRegistry(bus);
+    const app = buildApp({ store: new InMemoryMetaStore(), bus, channels });
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side' },
+    });
+    const raw = created.headers['set-cookie'];
+    const header = Array.isArray(raw) ? raw[0] : raw;
+    const cookie = String(header).split(';')[0] ?? '';
+    const { gameId } = created.json<{ gameId: string }>();
+    const version = created.json<{ version: number }>().version;
+
+    // 先挂起一次「等玩家说话」，再由 POST 兑现
+    const pending = channels
+      .forGame(gameId)
+      .input.read({ seat: 1 as never, timeoutMs: 5_000, kind: 'speech' });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/games/${gameId}/actions`,
+      headers: { cookie },
+      payload: {
+        action: { type: 'SPEECH', ts: 1, seat: 1, text: '我先说' },
+        expectedVersion: version,
+      },
+    });
+
+    expect([200, 409]).toContain(res.statusCode);
+    // 关键：挂起的通道拿到的是玩家敲的那句话，不是空
+    expect(await pending).toEqual({ kind: 'speak', text: '我先说' });
+
+    const draft = await app.inject({
+      method: 'POST',
+      url: `/api/games/${gameId}/input`,
+      headers: { cookie },
+      payload: { text: '草稿' },
+    });
+    expect(draft.statusCode).toBe(200);
+  });
+});

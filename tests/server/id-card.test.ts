@@ -44,8 +44,26 @@ describe('AC-1 · 玩家视图只含自己的角色', () => {
         pending: null,
       });
 
-      const roles = JSON.stringify(ctx).match(/"role":/g) ?? [];
-      expect(roles.length, `seat=${seat}`).toBe(1);
+      // 结构检查：视图里出现的角色值只能是「自己」的。
+      const full = step(
+        lobbyState({ seed: 20_261_117 }),
+        startActionOf(lobbyState({ seed: 20_261_117 }), 1),
+      );
+      const otherRoles = new Set(
+        full.state.seats
+          .filter((candidate) => candidate.seat !== seat)
+          .map((candidate) => candidate.role as string),
+      );
+      const text = JSON.stringify(ctx);
+      const roleValues = ['wolf', 'seer', 'witch', 'hunter', 'villager'];
+      const leaked = roleValues.filter(
+        (role) =>
+          role !== ctx.self.role &&
+          (otherRoles.has(role) || otherRoles.size > 0) &&
+          text.includes(`"${role}"`),
+      );
+      expect(leaked, `seat=${seat} 泄漏了别人的角色值`).toEqual([]);
+      expect(text.match(/"role":/g) ?? []).toHaveLength(1);
       expect(ctx.self.seat).toBe(seat);
     }
   });
