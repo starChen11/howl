@@ -465,3 +465,171 @@ describe('AC-9 · 路由接受发言时通知挂起通道（正向用例）', ()
     expect(await pending).toEqual({ kind: 'speak', text: '我觉得 2 号像狼' });
   });
 });
+
+describe('C-115 · 弃权与空输入必须接上通道', () => {
+  it('POST SPEECH_SKIP 会兑现挂起的输入（不是等 60 秒超时）', async () => {
+    const { buildApp } = await import('@server/app');
+    const { ChannelRegistry } = await import('@server/channels/session');
+    const { StreamBus } = await import('@server/stream/bus');
+
+    const store = new InMemoryMetaStore();
+    const bus = new StreamBus();
+    const channels = new ChannelRegistry(bus);
+    const app = buildApp({ store, bus, channels });
+    const registry = new GameRegistry(store);
+    const session = await registry.createSession();
+    // 先探明第一个发言的席位，再让玩家坐那儿（路由只允许提交自己席位）
+    const trial = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 15,
+      playerSeat: 1,
+    });
+
+    // 推进到白天
+    let current = trial;
+    const stateOf = () => registry.stateOf(current);
+    while (stateOf().phase === 'NIGHT_WOLF_CHAT') {
+      const state = stateOf();
+      const speaker = state.seats.find(
+        (wolf) =>
+          wolf.alive &&
+          wolf.role === 'wolf' &&
+          !(state.wolfChat ?? []).some((entry) => entry.seat === wolf.seat),
+      )?.seat;
+      if (speaker === undefined) break;
+      const r = await registry.submit(
+        session,
+        current,
+        {
+          type: 'WOLF_CHAT',
+          ts: 1,
+          seat: speaker,
+          text: '',
+        } as never,
+        state.seq,
+      );
+      if (!r.ok) break;
+      current = r.record;
+    }
+    for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
+      const state = stateOf();
+      if (state.phase === 'DAY_SPEECH') break;
+      const actor =
+        type === 'WOLF_KILL'
+          ? state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat
+          : type === 'SEER_CHECK'
+            ? state.seats.find((seat) => seat.alive && seat.role === 'seer')?.seat
+            : state.seats.find((seat) => seat.alive && seat.role === 'witch')?.seat;
+      if (actor === undefined) break;
+      const action =
+        type === 'WITCH_ACT'
+          ? { type, ts: 1, seat: actor, potion: 'none' }
+          : {
+              type,
+              ts: 1,
+              seat: actor,
+              target: state.seats.find((seat) => seat.alive && seat.seat !== actor)?.seat,
+            };
+      const r = await registry.submit(session, current, action as never, state.seq);
+      if (!r.ok) break;
+      current = r.record;
+    }
+
+    const firstSpeaker = (stateOf().speech?.startSeat ?? 1) as number;
+    current = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 15,
+      playerSeat: firstSpeaker as never,
+    });
+    while (stateOf().phase === 'NIGHT_WOLF_CHAT') {
+      const state = stateOf();
+      const wolf = state.seats.find(
+        (seat) =>
+          seat.alive &&
+          seat.role === 'wolf' &&
+          !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+      )?.seat;
+      if (wolf === undefined) break;
+      const r = await registry.submit(
+        session,
+        current,
+        {
+          type: 'WOLF_CHAT',
+          ts: 1,
+          seat: wolf,
+          text: '',
+        } as never,
+        state.seq,
+      );
+      if (!r.ok) break;
+      current = r.record;
+    }
+    for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
+      const state = stateOf();
+      if (state.phase === 'DAY_SPEECH') break;
+      const actor =
+        type === 'WOLF_KILL'
+          ? state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat
+          : type === 'SEER_CHECK'
+            ? state.seats.find((seat) => seat.alive && seat.role === 'seer')?.seat
+            : state.seats.find((seat) => seat.alive && seat.role === 'witch')?.seat;
+      if (actor === undefined) break;
+      const action =
+        type === 'WITCH_ACT'
+          ? { type, ts: 1, seat: actor, potion: 'none' }
+          : {
+              type,
+              ts: 1,
+              seat: actor,
+              target: state.seats.find((seat) => seat.alive && seat.seat !== actor)?.seat,
+            };
+      const r = await registry.submit(session, current, action as never, state.seq);
+      if (!r.ok) break;
+      current = r.record;
+    }
+
+    const speaker = (stateOf().speech?.startSeat ?? 1) as number;
+    const pending = channels
+      .forGame(current.gameId)
+      .input.read({ seat: speaker as never, timeoutMs: 5_000, kind: 'speech' });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/games/${current.gameId}/actions`,
+      headers: { cookie: `session=${session.id}` },
+      payload: {
+        action: { type: 'SPEECH_SKIP', ts: 1, seat: speaker },
+        expectedVersion: current.events.length,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(await pending).toEqual({ kind: 'skip' });
+  });
+
+  it('空文本的 SPEECH 被拒绝（应改用 SPEECH_SKIP）', async () => {
+    const { buildApp } = await import('@server/app');
+    const app = buildApp({ store: new InMemoryMetaStore() });
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side' },
+    });
+    const raw = created.headers['set-cookie'];
+    const header = Array.isArray(raw) ? raw[0] : raw;
+    const cookie = String(header).split(';')[0] ?? '';
+    const { gameId } = created.json<{ gameId: string }>();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/games/${gameId}/actions`,
+      headers: { cookie },
+      payload: {
+        action: { type: 'SPEECH', ts: 1, seat: 1, text: '   ' },
+        expectedVersion: 1,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+});

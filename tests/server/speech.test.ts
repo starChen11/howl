@@ -178,3 +178,78 @@ describe('C-111 · timer 用事件流起点，不是常量', () => {
     expect(res.json<{ remainingSeconds: number }>().remainingSeconds).toBe(0);
   });
 });
+
+describe('C-111 · timer 的三种起点', () => {
+  async function timerFor(
+    eventsMutator: (
+      events: import('@shared/events').EventEnvelope[],
+    ) => import('@shared/events').EventEnvelope[],
+  ) {
+    const { buildApp } = await import('@server/app');
+    const { InMemoryMetaStore } = await import('@server/store/meta-store');
+    const { GameRegistry } = await import('@server/store/game-registry');
+
+    const store = new InMemoryMetaStore();
+    const app = buildApp({ store });
+    const registry = new GameRegistry(store);
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, { mode: 'slaughter-side' });
+
+    const events = eventsMutator(record.events);
+    await store.set(`game:${record.gameId}`, { ...record, events });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/timer`,
+      headers: { cookie: `session=${session.id}` },
+    });
+    return { res, record };
+  }
+
+  function speechAt(ts: number) {
+    return (events: import('@shared/events').EventEnvelope[]) => [
+      ...events,
+      {
+        gameId: events[0]?.gameId ?? 'g',
+        seq: events.length + 1,
+        ts,
+        type: 'SPEECH',
+        visibleTo: 'public',
+        payload: { seat: 1, text: '一句发言' },
+      } as import('@shared/events').EventEnvelope,
+    ];
+  }
+
+  it('刚刚的发言 → 接近 60 秒', async () => {
+    const { res } = await timerFor(speechAt(Date.now()));
+    const body = res.json<{ remainingSeconds: number }>();
+    expect(body.remainingSeconds).toBeGreaterThan(50);
+    expect(body.remainingSeconds).toBeLessThanOrEqual(60);
+  });
+
+  it('120 秒前的发言 → 0（常量实现会返回 60）', async () => {
+    const { res } = await timerFor(speechAt(Date.now() - 120_000));
+    expect(res.json<{ remainingSeconds: number }>().remainingSeconds).toBe(0);
+  });
+
+  it('SPEECH_SKIPPED 也算新一轮的起点', async () => {
+    const skipped = (events: import('@shared/events').EventEnvelope[]) => [
+      ...events,
+      {
+        gameId: events[0]?.gameId ?? 'g',
+        seq: events.length + 1,
+        ts: Date.now(),
+        type: 'SPEECH_SKIPPED',
+        visibleTo: 'public',
+        payload: { seat: 1 },
+      } as import('@shared/events').EventEnvelope,
+    ];
+    const { res } = await timerFor(skipped);
+    expect(res.json<{ remainingSeconds: number }>().remainingSeconds).toBeGreaterThan(50);
+  });
+
+  it('已释放（无事件）→ 410', async () => {
+    const { res } = await timerFor(() => []);
+    expect(res.statusCode).toBe(410);
+  });
+});

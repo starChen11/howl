@@ -263,3 +263,15 @@ $ pnpm test → 75 files / 628 tests
 ```
 $ pnpm test → 75 files / 631 tests
 ```
+
+### 8.13 Round 7 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **B-R7-1** 同席位重复提交 | 编排层唤醒后又提交同一席位，产生 `REJECTED / NOT_YOUR_TURN` | 重读之后先看「该谁行动」：如果已经不是这个席位（玩家刚从路由提交过），就 `continue`，不再提交 |
+| **B-R7-2** timer 用例没有真实发言事件 | 删 `SPEECH` 分支也绿 | 重写：用 `SPEECH` / `SPEECH_SKIPPED` 事件构造三种起点（刚刚 / 120 秒前 / 跳过），并补释放局 410。四个分支出错都会红（已实跑） |
+| **B-R7-3 / C-115** 真实 HTTP 弃权路径没接通道 | `POST SPEECH_SKIP` 后挂起通道仍等 60 秒；空文本 `SPEECH` 写了一条空发言 | 路由在引擎接受后把 `SPEECH_SKIP` 也交给通道（`submit('')` → `skip`）；空文本 `SPEECH` 返回 400，要求改用弃权。两条用例 + 反向探针都会红 |
+
+```
+$ pnpm test → 75 files / 637 tests
+```

@@ -140,7 +140,8 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
 
     // 起点来自事件流：最近一次 `DAY_STARTED`，或最近一条**开始新一轮**的发言事件
     // （`SPEECH` / `SPEECH_SKIPPED` 都算——跳过也是说完了，下一位的 60 秒重新计时）。
-    const state = registry.stateOf(record);
+    // 不 replay：timer 只需要事件流里的时间戳，而 replay 会因为「事件不全」抛错
+    // （比如已释放、或只保留部分事件的局）。
     const startEvent = [...record.events]
       .reverse()
       .find(
@@ -150,8 +151,17 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
           event.type === 'SPEECH_SKIPPED',
       );
 
+    const lastPhase = [...record.events]
+      .reverse()
+      .find((event) => event.type === 'PHASE_CHANGED' || event.type === 'GAME_ENDED');
+
     return reply.send({
-      phase: state.phase,
+      phase:
+        lastPhase === undefined
+          ? 'UNKNOWN'
+          : lastPhase.type === 'PHASE_CHANGED'
+            ? (lastPhase.payload as { to: string }).to
+            : 'FINISHED',
       startedAt: startEvent?.ts ?? null,
       remainingSeconds:
         startEvent === undefined
@@ -180,6 +190,16 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
 
     // B2：玩家只能提交**自己席位**的动作。不校验的话，玩家可以代 wolf 下刀、代 seer
     // 查验——顺带还能读到对方的私有事件（响应里那条 SEER_CHECKED）。
+    // RFC-011 §2.2：空输入等于弃权。引擎会老老实实写一条空 `SPEECH`，
+    // 但那不是「说了句空话」，所以这里直接拒绝，让客户端改发 `SPEECH_SKIP`。
+    if (parsed.data.action.type === 'SPEECH' && parsed.data.action.text.trim().length === 0) {
+      return reply.code(400).send({
+        error: 'VALIDATION_FAILED',
+        message: '空输入应提交 SPEECH_SKIP（弃权）',
+        issues: ['action.text'],
+      });
+    }
+
     // AC-5 / SEC-4：前端限制之外，后端必须再校验一次。按 Unicode 字符数算。
     if (parsed.data.action.type === 'SPEECH' && !isWithinLimit(parsed.data.action.text)) {
       return reply.code(400).send({
@@ -213,11 +233,13 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
 
     // 引擎**接受**之后才把这句话交给挂起的输入通道：先通知再提交的话，
     // 被引擎拒绝（夜间提交发言）也会让编排层以为玩家说过话（C-107）。
-    if (
-      parsed.data.action.type === 'SPEECH' &&
-      !result.events.some((event) => event.type === 'REJECTED')
-    ) {
+    const accepted = !result.events.some((event) => event.type === 'REJECTED');
+    if (accepted && parsed.data.action.type === 'SPEECH') {
       channels.submit(record.gameId, parsed.data.action.text);
+    }
+    // 弃权也要兑现挂起的输入，否则编排层会一直等到 60 秒超时（C-115）。
+    if (accepted && parsed.data.action.type === 'SPEECH_SKIP') {
+      channels.submit(record.gameId, '');
     }
 
     // B1：只回该席位可见的事件。`step` 的原始事件里含 `server` 可见的死亡与夜间相位。

@@ -141,6 +141,15 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     // **提交前再读一次**：等玩家输入的那段时间里，路由可能已经写入了别的动作
     // （比如玩家自己 POST 上来的发言）。用等待前的 `record` 提交会把它覆盖掉（B-R6-1）。
     const latest = (await registry.getGame(record.gameId)) ?? record;
+    // 等待期间玩家可能已经通过路由提交了这条发言。重读之后如果「该谁行动」变了，
+    // 就不要再提交一次——否则会多出一条 `REJECTED / NOT_YOUR_TURN`（B-R7-1）。
+    const latestState = registry.stateOf(latest);
+    const stillTheirTurn = (seatToSpeak(latestState) ?? nextActor(latestState)) === seat;
+    if (!stillTheirTurn) {
+      steps += 1;
+      continue;
+    }
+
     const result = await registry.submit(
       session,
       latest,
