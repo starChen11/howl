@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.123 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.124 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -48,7 +48,7 @@
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
-| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Implemented |
+| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Changes requested |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
@@ -890,10 +890,24 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 4 后的状态**：C-116 / C-119 / C-121·C-123（App 挂载）/ C-132（核心）/ C-127（UI）/ C-120（App 接线）关闭；**C-127 的 `targets.ts` 来源与 `playerPhase` 服务端分支、C-120 的 `/input → 超时 → SPEECH` 全链路仍 Open（阻塞，测试）**；新增 **C-133（阻塞，安全：夜间 `pending` 泄漏）**。RFC-012 的 Status = **`Changes requested`**。已确认有牙的：术语 JSX 扫描与 hover/focus、真 Tab、整页 IdCard/status/草稿、读屏无倒计时与 RUNOFF 中文化、默认 `pending` 的必要性。未锁的：重投的投影/服务端来源、草稿全链路；新发现：夜间 `pending` 泄漏。
 
+### 8.45 RFC-012 Round 5 评审（2026-11-19）
+
+> 由 `/review-rfc 012` 登记；完整证据见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 5。评审时 HEAD `2b01d1e`，工作树 clean；门禁 **80 files / 688 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0；`pnpm test:e2e` **8/8 passed**。本轮按用户指示只复核 Round 4 的三个阻塞项 **C-133 / C-127 / C-120**；已关闭项不重查。探针从 `/tmp/howl-rfc012-r5-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），4 个源码/测试文件 SHA-256 与探针前一致；临时探针测试已删除；没有 `git commit`。
+
+| # | 冲突 / 复核 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-133** | **夜间 `pending`（Round 5 关闭）**：路由只在 `nextActor(state) === record.playerSeat` 时补 `pendingForPhase`（`src/server/routes/games.ts:99-101`）。真实路由探针 P-R5-2：`enginePhase=NIGHT_SEER`、村民观察者 3、`projectedPhase=NIGHT`、`pending:null`、`legalTargets:[]`。回退成「所有人 pending」→ C-133 用例 **1 failed / 8 skipped**（`strengthen.test.ts:342`，`[2..9] ≠ []`），同一变异下探针 `pending:'check'`、`legalTargets:[1,2,4,5,6,7,8,9]`。测试弱点（非阻塞）：用例 :299-344 没有 `pending` 断言、断言包在 `if (phase === 'NIGHT')` 里（`:341`）；当前落点 `NIGHT_WOLVES` / 女巫（P-R5-1），不是 Round 4 的 `NIGHT_SEER` / 村民。 | **Closed（行为 + 回归锁）。** 建议后续把 `phase` / `pending` 断言移出 `if`，并补 `NIGHT_SEER` / 村民场景。 | **Closed（Round 5）** · `tests/server/strengthen.test.ts:299-344`、`src/server/routes/games.ts:99-101`；`reviews/REVIEW-RFC-012.md` Round 5 §2.1 / M-R5-1 / P-R5-1 / P-R5-2 |
+| **C-127（投影）** | **RUNOFF 只含并列者（Round 5 仍未锁住）**：新用例 `strengthen.test.ts:347-365` 的夹具 `runoff:[2,3]`、`alive:[1,2,3]`、观察者 1，使「并列者」与「除观察者外全部存活」是同一集合。M-R5-2（回退成 `[...alive,'abstain']`）→ **1 failed**；但 M-R5-6（回退成 `[...alive]`，**含非并列者、不含弃权**）→ **1 passed**。「只含并列者」仍无锁。 | **阻塞（RUL-2 / TEST-1）。** 夹具加入一个不在 `runoff` 的存活席位（如 alive `[1,2,3,4]`、runoff `[2,3]`、观察者 1，期望 `[2,3]`），使 `[...alive]` 会红。 | **仍 Open（阻塞，测试）** · `tests/server/strengthen.test.ts:347-365`、`src/server/project/targets.ts:29`；`reviews/REVIEW-RFC-012.md` Round 5 §2.2（a）/ M-R5-2 / M-R5-6 |
+| **C-127（服务端）** | **重投玩家分支（Round 5 仍未锁住）**：`isPlayerPhase`（`src/server/orchestrator.ts:117-119`）在 `src/` **没有调用者**，唯一引用是单测（`tests/server/orchestrator.test.ts:476`）；`runGame` 仍在 `:193-196` 内联同一规则。M-R5-4（删 helper 的 RUNOFF）→ **1 failed**（只锁死代码）；M-R5-3（删**活的**内联分支）→ server **27 files / 240 tests 全绿**、server+client **32/289 全绿**。真实平票探针 P-R5-3：当前 `reads:['vote']`、玩家 `VOTE_CAST{seat:3,target:1}`、`decide` 不覆盖 3 号；M-R5-3 后 `reads:[]`、`decide` 覆盖 3 号——AI 会替玩家投重投票。 | **阻塞（AC-11 / PRD FR-6 / TEST-1）。** 把内联判断换成 `isPlayerPhase(state.phase)`，并补 `runGame` 级「平票 → 重投 → 玩家输入被消费」用例。 | **仍 Open（阻塞，测试）** · `src/server/orchestrator.ts:117-119,193-196`、`tests/server/orchestrator.test.ts:474-482`；`reviews/REVIEW-RFC-012.md` Round 5 §2.2（b）/ M-R5-3 / M-R5-4 / P-R5-3 |
+| **C-120** | **草稿全链路（Round 5 关闭）**：`tests/server/speech.test.ts:323-361` 真实 `buildApp` + 共享 `ChannelRegistry`：挂起 `read()` → `POST /input` 同步草稿 → 超时交回 `{kind:'timeout', text}`。M-R5-5（删 `src/server/routes/games.ts:148` 的 `setDraft`）→ **1 failed / 14 skipped**（`{kind:'skip'}`）；重复 8 次 **8/8 绿**。超时文本 → `SPEECH` 的后半段由 C-110（`orchestrator.test.ts:345-440`）覆盖。 | **Closed。** 非阻塞建议：用 fake timers / 注入 `timeoutMs` 替代 60ms 真实定时器；可把 `runGame` 接进同一条用例。 | **Closed（Round 5）** · `tests/server/speech.test.ts:323-361`、`src/server/routes/games.ts:148`、`tests/server/orchestrator.test.ts:345-440`；`reviews/REVIEW-RFC-012.md` Round 5 §2.3 / M-R5-5 |
+
+> **Round 5 后的状态**：**C-133（安全）与 C-120 关闭**；**C-127 仍 Open（阻塞，测试）**——投影用例只锁住「不弃权」、锁不住「只含并列者」；服务端玩家分支删掉后 240 条 server 用例仍全绿，`isPlayerPhase` 是只有测试调用的死代码。RFC-012 的 Status = **`Changes requested`**。另：RFC §8.10 写「81 files / 688 tests」，实跑为 **80 files / 688 tests**（非阻塞文档项）。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.124 | RFC-012 Round 5 复核（Status → `Changes requested`）：**C-133（安全）关闭**（真实路由 `NIGHT_SEER` / 村民观察者 → `pending:null` / `legalTargets:[]`；回退 → 1 failed）；**C-120 关闭**（删路由 `setDraft` → 1 failed；8/8 稳定）；**C-127 仍 Open（阻塞，测试）**——投影用例夹具使「只含并列者」与「全部存活」同集（M-R5-6 仍绿），`runGame` 的 `DAY_VOTE_RUNOFF` 分支删掉后 27 files / 240 tests 全绿（M-R5-3），`isPlayerPhase` 为死代码（M-R5-4）。门禁 80 files / 688 tests、8/8 e2e 全绿；探针从 `/tmp/howl-rfc012-r5-probes/backup/` 文件备份恢复、4 个文件 SHA-256 一致、临时测试删除、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 5 |
 | 2026-11-19 | v2.123 | RFC-012 Round 4 修复（Status → Implemented）：C-133 夜间默认 pending 只给当前行动者（安全）；RUNOFF 投影层回归锁；草稿全链路用例 |
 | 2026-11-19 | v2.122 | RFC-012 Round 4 复核（Status → `Changes requested`）：**C-116 / C-119 / C-121·C-123（App 挂载）/ C-132（核心）/ C-127（UI）/ C-120（App 接线）关闭**；C-127 的 `targets.ts` 来源与 `playerPhase` 服务端分支、C-120 的 `/input → 超时 → SPEECH` 全链路仍 Open（阻塞，测试）；新增 **C-133**（阻塞，安全：夜间 `pending` 泄漏）。门禁 80 files / 684 tests、8/8 e2e 全绿；探针从 `/tmp/howl-rfc012-r4-probes/backup/` 文件备份恢复、8 个文件 SHA-256 一致、临时测试删除、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 4 |
 | 2026-11-19 | v2.121 | RFC-012 Round 3 修复（Status → Implemented）：重投只列 `legalTargets`；路由默认 `pending`；e2e 真 Tab；JSX 文本扫描；hover/focus 用例；整页集成测试（IdCard/读屏/草稿） |

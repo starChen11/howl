@@ -2048,3 +2048,366 @@ $ pnpm test:e2e → 8 passed
 ```
 
 **状态**：RFC-012 → **`Changes requested`**。
+
+## Round 5 -- 2026-11-19
+
+> 评审方式：全新上下文 subagent，只读仓库文件；本会话没有写过 RFC-012 的实现代码。
+> 被评审提交：`2b01d1e fix(rfc-012): 夜间 pending 只给行动者、RUNOFF 与草稿回归锁（Round 4）`。
+> 评审开始时 HEAD `2b01d1e`，工作树 clean。结论：**Changes requested**。
+>
+> 本轮按用户指示只复核 Round 4 的三个阻塞项：**C-133（安全）**、**C-127（投影 + 服务端重投分支）**、
+> **C-120（草稿全链路）**。已关闭项（C-116 / C-118 / C-119 / C-121·C-123 / C-132 等）不重查；
+> RFC-011 侧不重查；C-128 / C-129 / C-131 等非阻塞旧项沿用前轮记录。
+>
+> **产品类型**：`PRD.md` §Product Type 为 **game（主）+ web app（交付形态）**，沿用 Round 1 ~ 4 的
+> 检查口径；平台认证、帧预算、手柄、账号、SEO、离线同步等显式跳过，不另列 N/A 行。
+
+---
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · HEAD `2b01d1e` · 评审开始时工作树 clean。
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  80 passed (80)
+      Tests  688 passed (688)
+    Duration  31.47s
+TEST_EXIT=0
+
+$ pnpm test:e2e
+Running 8 tests using 1 worker
+  8 passed (5.2s)
+E2E_EXIT=0
+```
+
+绿色不是结论。本轮用定向变异验证「Round 4 声称已锁住的行为」是否真的会红；探针全部从
+`/tmp/howl-rfc012-r5-probes/backup/` 的文件备份恢复（**未使用 `git checkout` / `git restore`**），
+恢复后 4 个文件 SHA-256 与探针前一致、`git status --porcelain` 为空；临时探针测试已删除；
+最终重跑 **80 files / 688 tests**、**8/8 e2e** 全绿；没有 `git commit`。
+
+> 附带核对：RFC §8.10 写「81 files / 688 tests」，实跑为 **80 files / 688 tests**（本轮新增的
+> 用例都加在已有文件里，文件数不变）。这是文档数字漂移，非阻塞，但 `DOC-1` 要求改回 80。
+
+---
+
+### 1. 三项结论（先看这张表）
+
+| 用户点名项 | 本轮结论 | 一句话证据 |
+|---|---|---|
+| **C-133** 夜间默认 `pending` 只给行动者 | **Closed（行为与回归锁）**；测试有非阻塞弱点 | 真实路由 `NIGHT_SEER` / 村民观察者 → `pending:null`、`legalTargets:[]`（P-R5-2）；回退成「所有人 pending」→ C-133 用例 **1 failed**（P-R5-1） |
+| **C-127** 重投投影层 | **Open（阻塞，测试）** | 回退成 `[...alive,'abstain']` → 新用例 **1 failed**；回退成 `[...alive]`（**不含并列者过滤、也不含弃权**）→ 新用例仍 **1 passed**（M-R5-6）——「只含并列者」没有被锁住 |
+| **C-127** 重投服务端玩家分支 | **Open（阻塞，测试）** | 删掉 `runGame` 里**活的** `DAY_VOTE_RUNOFF` 分支 → 27 files / **240 tests 全绿**、server+client **32/289 全绿**（M-R5-3）；`isPlayerPhase` 单测只锁住一个 `src/` 里**没有调用者**的 helper（M-R5-4） |
+| **C-120** 草稿全链路 | **Closed** | 删路由 `channels.setDraft` → 新用例 **1 failed**（`{kind:'skip'}`，M-R5-5）；8 次重复运行 8/8 绿 |
+
+**总判断**：三项里 **C-133 与 C-120 可以关闭**；**C-127 仍未修完**——不是行为坏了，而是 Round 4
+要求的两把回归锁一把是「弱锁」（投影用例）、一把是「假锁」（只锁了死代码）。按 `AGENTS.md`
+硬规则 3 / RULES `TEST-1`，这仍是阻塞。
+
+---
+
+### 2. 逐项证据
+
+#### 2.1 C-133：安全行为确实修好了，回归锁也真的会红
+
+**实现**（`src/server/routes/games.ts:94-101`）：
+
+```ts
+const actor = nextActor(state);
+const defaultPending = actor === record.playerSeat ? pendingForPhase(state.phase) : null;
+const pending = (pendingParsed.data.pending ?? defaultPending) as PendingDecision | null;
+```
+
+**正向**：临时探针 **P-R5-2** 用真实 `buildApp` + 真实 `GET /api/games/:id`，把一局推进到
+`NIGHT_SEER`，玩家 3 号是村民：
+
+```text
+PROBE-C133-PLAYER {"playerSeat":3,"role":"villager"}
+PROBE-C133-ENGINE-PHASE NIGHT_SEER
+PROBE-C133-VIEW {"enginePhase":"NIGHT_SEER","projectedPhase":"NIGHT","pending":null,
+                 "legalTargets":[],"observer":3,"observerRole":"villager"}
+```
+
+这正是 Round 4 的 P-R4-1 场景，泄漏已消失。
+
+**回归锁**（M-R5-1）：把路由改回 `defaultPending = pendingForPhase(state.phase)`：
+
+```text
+$ pnpm exec vitest run --project unit tests/server/strengthen.test.ts -t "C-133"
+→ 1 failed / 8 skipped
+  AssertionError: expected [ 2, 3, 4, 5, 6, 7, 8, 9 ] to deeply equal []
+  tests/server/strengthen.test.ts:342
+```
+
+同一变异下 P-R5-2 复现了 Round 4 的泄漏：
+
+```text
+PROBE-C133-VIEW {"enginePhase":"NIGHT_SEER","projectedPhase":"NIGHT","pending":"check",
+                 "legalTargets":[1,2,4,5,6,7,8,9],"observer":3,"observerRole":"villager"}
+```
+
+**用户声明成立：「回退会给所有人 pending，探针会红」。** 行为与锁都通过。
+
+**非阻塞弱点**（建议下一轮修，不改变本轮结论）：
+
+1. **用例名说「不带 pending」，但一行 `pending` 断言都没有**。`tests/server/strengthen.test.ts:299-344`
+   只断言 `legalTargets`，而且包在 `if (body.view.phase === 'NIGHT')` 里（`:341`）。现有夹具
+   （seed 15 / playerSeat 1）落点是 `NIGHT_WOLVES`、玩家是**女巫**（P-R5-1），`pending:'kill'` 的
+   `legalTargets` 非空，所以变异会红；但如果将来夜间顺序变化、夹具落到 `NIGHT_WOLF_CHAT`，
+   `chat` 的 `legalTargets` 本来就是 `[]`，这条安全回归锁会**静默失效**。
+   建议：把 `expect(body.view.phase).toBe('NIGHT')`、`expect(body.view.pending).toBeNull()` 移到
+   `if` 外，并补 Round 4 建议的 **村民观察者 + `NIGHT_SEER`** 场景。
+2. **`DAY_SPEECH` 的玩家拿不到默认 `pending:'speak'`**：`nextActor`（`orchestrator.ts:52-87`）没有
+   `DAY_SPEECH` 分支，而 `runGame` 的当前行动者是 `seatToSpeak(state) ?? nextActor(state)`
+   （`:188`）。当前没有消费者（`src/client` 不读 `ctx.pending`，发言框靠 `speakingSeat`），所以
+   不影响行为；但 §8.10 的措辞「只有 `nextActor(state) === record.playerSeat`（即当前行动者本人）」
+   与 `DAY_SPEECH` 的实际语义不一致。建议改成 `seatToSpeak(state) ?? nextActor(state)`。
+3. `?pending=` 显式查询仍可被任意客户端指定（Round 4 的非阻塞旧项，未变）。它不是新泄漏
+   （值由客户端自选，`legalTargetsOf` 只在 `vote` 时读 `state.phase`，`knownKillTargetOf` 只对
+   女巫返回她自己的知识）；维持非阻塞。
+
+#### 2.2 C-127：投影只锁了「不弃权」，服务端分支仍是一把假锁
+
+Round 4 的要求是：「平票 → 重投 → 投影只给并列者 → 玩家输入被消费」。现在的新增覆盖是：
+
+| 新增测试 | 位置 | 锁住了什么 |
+|---|---|---|
+| `legalTargetsOf(RUNOFF)` 只含并列者、不含弃权 | `tests/server/strengthen.test.ts:347-365` | 只锁住「不弃权」；**没锁住「只含并列者」** |
+| `isPlayerPhase('DAY_VOTE_RUNOFF')` | `tests/server/orchestrator.test.ts:474-482` | **只锁住一个死代码 helper**；`runGame` 不使用它 |
+
+**（a）投影用例的夹具让「只含并列者」没有被证明。**
+
+夹具是 `runoff: [2,3]`、`aliveSeats: [1,2,3]`、观察者 1。于是「并列者」= `[2,3]`，「除观察者外
+的所有存活席位」也正好是 `[2,3]`——两者在夹具里是同一个集合。
+
+```text
+# M-R5-2：RUNOFF 分支回退成 [...alive, 'abstain']
+$ pnpm exec vitest run --project unit tests/server/strengthen.test.ts -t "C-127"
+→ 1 failed / 8 skipped
+  AssertionError: expected [ 2, 3, 'abstain' ] to deeply equal [ 2, 3 ]   # 有牙
+
+# M-R5-6：RUNOFF 分支回退成 [...alive]（非并列者 + 不弃权）
+$ pnpm exec vitest run --project unit tests/server/strengthen.test.ts -t "C-127"
+→ 1 passed / 8 skipped                                                   # 假绿
+```
+
+M-R5-6 恰恰违反了 RUL-2 的核心「重投只能投并列者」，用例却全绿。修法很小：让夹具里有一个
+**不在 runoff 的存活席位**，例如 `aliveSeats: [1,2,3,4]`、`runoff: [2,3]`、观察者 1，
+期望 `[2,3]`；`[...alive]` 会得到 `[2,3,4]`，立刻红。
+
+**（b）服务端重投分支仍然可以原样回归，且 `isPlayerPhase` 是死代码。**
+
+`grep -rn "isPlayerPhase" src tests` 的结果：`src/` 只有定义（`orchestrator.ts:117-119`），
+**没有任何调用者**；唯一引用是 `tests/server/orchestrator.test.ts:476`。`runGame` 仍在
+`orchestrator.ts:193-196` 内联同一组相位判断：
+
+```ts
+const playerPhase =
+  state.phase === 'DAY_SPEECH' ||
+  state.phase === 'DAY_VOTE' ||
+  state.phase === 'DAY_VOTE_RUNOFF';
+```
+
+所以「删掉 helper 里的 RUNOFF」会红，但「删掉真正生效的分支」不会：
+
+```text
+# M-R5-4：helper 删 RUNOFF（生产代码不用它）
+$ pnpm exec vitest run --project unit tests/server/orchestrator.test.ts -t "C-127"
+→ 1 failed / 9 skipped        # 只证明测试锁住了 helper
+
+# M-R5-3：runGame 的内联分支删 RUNOFF（真正生效的代码）
+$ pnpm exec vitest run --project unit tests/server
+→ 27 files / 240 tests 全绿
+
+$ pnpm exec vitest run tests/server tests/client
+→ 32 files / 289 tests 全绿
+```
+
+这不是「少一个测试」而已。临时探针 **P-R5-3** 用真实引擎把一局推到
+`DAY_VOTE_RUNOFF`（`runoff:[1,2]`、玩家 3 号存活），再跑真实 `runGame`：
+
+```text
+# 当前代码
+PROBE-RUNOFF-STATE {"phase":"DAY_VOTE_RUNOFF","runoff":[1,2],"player":3,"playerAlive":true}
+PROBE-RUNOFF-RESULT {"reads":["vote"],"decidedSeats":[1,2,4,5,7,8,9],
+                     "playerVotes":[{"seat":3,"target":1}]}
+
+# M-R5-3 之后（跑同一探针）
+PROBE-RUNOFF-RESULT {"reads":[],"decidedSeats":[1,2,3,4,5,7,8,9], ...}
+```
+
+即：**当前行为是对的（玩家真的被问、真的投出 `VOTE_CAST`）；但删掉那个分支的瞬间，
+`decide` 会替玩家投出重投票，而全量测试仍绿**。这正是 Round 4 的 C-127 回归，原样保留。
+
+**结论：C-127 仍 Open（阻塞，测试）。** 修法二选一或都做：
+
+1. 把 `runGame` 的内联判断换成 `isPlayerPhase(state.phase)`，让现有 helper 单测至少锁住调用点；
+2. 补 P-R5-3 这样的 `runGame` 级用例：构造平票 → 断言 `input.read` 以 `kind:'vote'` 被调用、
+   `decide` 没收到玩家席位、事件流里有玩家的 `VOTE_CAST`、没有 `INVALID_RUNOFF_TARGET` /
+   `NOT_YOUR_TURN`。
+
+#### 2.3 C-120：路由 → 通道 → 超时草稿现在有牙
+
+新增 `tests/server/speech.test.ts:323-361`：
+
+```ts
+const pending = channels
+  .forGame(gameId)
+  .input.read({ seat: 1 as never, timeoutMs: 60, kind: 'speech' });
+
+await app.inject({ method: 'POST', url: `/api/games/${gameId}/input`, ... });
+
+expect(await pending).toEqual({ kind: 'timeout', text: '我怀疑 2 号。' });
+```
+
+反向探针（**M-R5-5**）删掉 `src/server/routes/games.ts:148` 的 `channels.setDraft(...)`：
+
+```text
+$ pnpm exec vitest run --project unit tests/server/speech.test.ts -t "C-120"
+→ 1 failed / 14 skipped
+  AssertionError: expected { kind: 'skip' } to deeply equal
+                  { kind: 'timeout', text: '我怀疑 2 号。' }
+```
+
+这一次真实链路（路由 → 通道草稿 → 超时交回）被锁住了，反复 8 次运行 **8/8 通过**。
+超时文本 → `SPEECH` 的后半段仍由既有的 C-110 用例覆盖
+（`tests/server/orchestrator.test.ts:345-440`，「输入是 timeout 时，产出带该文本的 SPEECH」）；
+两段合起来覆盖了 Round 4 要求的链路，因此 **C-120 可以关闭**。
+
+非阻塞建议：
+
+1. 60ms 是真实定时器，CI 高负载时有偶发超时先于 `POST` 到达的风险；用 fake timers 或注入
+   `now` / `timeoutMs` 会更稳。
+2. 若想一条用例看到 `SPEECH` 事件，可把 `runGame` 也接进这条链路（当前拆成两段，逻辑上等价，
+   但下一轮按「全链路」找证据时要多跳一次文件）。
+
+---
+
+### 3. 变异与行为探针汇总
+
+| 探针 | 注入的改动 | 定向命令 | 结果 | 证明 |
+|---|---|---|---|---|
+| **M-R5-1** | 路由默认 `pending` 改回对所有观察者 `pendingForPhase` | `vitest unit strengthen -t C-133` | **1 failed / 8 skipped**（`:342`，`[2..9] ≠ []`） | C-133 回归锁有牙 |
+| **M-R5-2** | `targets.ts` RUNOFF → `[...alive,'abstain']` | `vitest unit strengthen -t C-127` | **1 failed / 8 skipped** | 投影锁住「不弃权」 |
+| **M-R5-6** | `targets.ts` RUNOFF → `[...alive]`（非并列者、无弃权） | 同上 | **1 passed / 8 skipped** | **「只含并列者」没锁住** |
+| **M-R5-3** | `runGame` 内联 `playerPhase` 删 `DAY_VOTE_RUNOFF`（生产分支） | `vitest unit tests/server` + `tests/server tests/client` | **27/240、32/289 全绿** | 服务端分支无锁 |
+| **M-R5-4** | 只删 `isPlayerPhase` helper 的 RUNOFF（生产不用） | `vitest unit orchestrator -t C-127` | **1 failed / 9 skipped** | 单测只锁死代码 |
+| **M-R5-5** | 路由删 `channels.setDraft(...)` | `vitest unit speech -t C-120` | **1 failed / 14 skipped** | C-120 有牙 |
+| **P-R5-1** | 打印现有 C-133 用例落点 | `vitest unit __probe-r5` | `NIGHT_WOLVES` / 女巫 / `pending:null` / `legalTargets:[]` | 用例当前非空转，但未断言 `pending` |
+| **P-R5-2** | 真实 GET 到 `NIGHT_SEER`，村民观察者 | 同上 | 修复后 `pending:null / legalTargets:[]`；M-R5-1 后 `pending:'check' / [1,2,4..9]` | C-133 行为正确 |
+| **P-R5-3** | 真实平票 → RUNOFF → `runGame`，玩家 3 号 | 同上 | 修复后 `reads:['vote']`、玩家 `VOTE_CAST`；M-R5-3 后 `reads:[]`、`decide` 覆盖 3 号 | 行为正确但无锁 |
+
+所有探针改动均已恢复；临时测试 `tests/server/__probe-r5.test.ts` 已删除。恢复后的 SHA-256 见 §6。
+
+---
+
+### 4. 五个维度
+
+#### 4.1 RFC ADHERENCE — **NEEDS WORK**
+
+- **C-133**：AC-11 / `PRD FR-11` / RFC-007 C-28 的信息边界现在成立；Round 4 的准确场景已实测。
+- **C-120**：UI-4 / AC-6 的客户端到服务端草稿路径成立，且有回归锁。
+- **C-127**：只完成了一半。投影来源的「只含并列者」没有被用例证明；`runGame` 的
+  `DAY_VOTE_RUNOFF` 玩家分支仍无锁，且新 helper 未接入生产路径。§8.10 把「`isPlayerPhase`
+  单测」当作服务端分支已锁的证据，不成立。
+- 未重查（按用户指示）：C-116 / C-118 / C-119 / C-121·C-123 / C-132 等已关闭项。
+
+#### 4.2 RULES COMPLIANCE — **NEEDS WORK**
+
+- **TEST-1**：不通过。C-127 的两处（投影「只含并列者」、服务端玩家分支）仍是「改坏实现不红」。
+- **TEST-6**：本轮无新增 e2e 需求；现有 8/8 绿，不重查。
+- **DOC-1**：不通过。RFC §8.10 的「81 files」实为 80；「`isPlayerPhase('DAY_VOTE_RUNOFF')`
+  单测」被写成服务端分支的锁，但 helper 没有调用者；`TEST-STRATEGY.md:332-345` 的 RFC-012
+  小节仍全部 `proposed`（Round 4 非阻塞项，未重查，但 `TEST-1` 仍要求回填）。
+- **UI-2 / UI-4 / SEC-5**：本轮三项涉及的路径通过；`project()` 仍是唯一输出口。
+
+#### 4.3 SECURITY — **PASS（C-133 关闭）**
+
+- 夜间默认 `pending` 的泄漏已修：真实路由探针 P-R5-2 在 `NIGHT_SEER`、村民观察者下
+  `pending:null / legalTargets:[]`；回退探针（M-R5-1）会红。
+- `?pending=` 显式查询仍是 Round 4 的非阻塞旧项，不构成新泄漏（客户端自选值；`vote` 只读
+  `state.phase`，`knownKillTarget` 只对女巫返回她自己的知识）。
+- 测试侧弱点（未断言 `pending`、`if` 包裹）记在 §2.1，属非阻塞加固。
+
+#### 4.4 PERFORMANCE — **N/A（本轮无性能相关改动）**
+
+- 路由每次 GET 多一次 `nextActor(state)`（纯内存扫描，O(席位)），可忽略。
+- 每秒全量 `GET` + `project()` 是 C-126 的旧问题，不在本轮三项内，未重查。
+
+#### 4.5 MAINTAINABILITY — **NEEDS WORK**
+
+- **死代码 + 逻辑重复**：`isPlayerPhase`（`orchestrator.ts:117-119`）与 `runGame` 的内联条件
+  （`:193-196`）是同一份规则的两份实现；单测锁住了死的那份，活的那份没有。这比单纯的
+  「少一个测试」更危险：下一轮按测试名找证据会误判为已覆盖。
+- **夹具鉴别力**：C-127 的投影用例把「并列者」取成了「除观察者外全部存活」，M-R5-6 证明
+  它区分不了「只含并列者」与「全部存活」。
+- **60ms 真实定时器**：C-120 用例有 CI 抖动风险（本轮 8/8 稳定）。
+- **文档数字**：RFC §8.10 81 → 80；`README.md` 状态行的 CR 计数需要随本轮状态同步（见 §5）。
+
+---
+
+### 5. 结论
+
+**Overall Risk Level: Medium。** 两个安全 / 数据完整性行为（C-133 夜间泄漏、C-120 草稿丢失）
+已经真的修好并且有牙；剩余风险集中在**回归锁的鉴别力**：C-127 的投影用例锁不住「只含并列者」，
+服务端玩家分支删掉后 289 条 server+client 用例仍全绿，且删掉后 AI 会替玩家投出重投票。
+
+**Blocking Issues（必须修复后才能合并）**
+
+1. **C-127（服务端分支）· 活代码无锁 + 死 helper 假锁。** `src/server/orchestrator.ts:193-196`
+   的内联 `playerPhase` 删掉 `DAY_VOTE_RUNOFF` 后 27 files / 240 tests 全绿（M-R5-3）；
+   `isPlayerPhase`（`:117-119`）在 `src/` 没有调用者，单测只锁住它（M-R5-4）。
+   修法：`const playerPhase = isPlayerPhase(state.phase)`，并补 `runGame` 级平票 → 重投 →
+   玩家 `VOTE_CAST` 用例。
+2. **C-127（投影）· 夹具无法证明「只含并列者」。** M-R5-6（RUNOFF 返回 `[...alive]`）仍
+   1 passed。修法：夹具加入一个不在 `runoff` 的存活席位（如 alive `[1,2,3,4]`、runoff
+   `[2,3]`、观察者 1，期望 `[2,3]`）。
+
+**Improvement Suggestions（非阻塞）**
+
+1. **C-133 测试加固**：在 `tests/server/strengthen.test.ts:341` 的 `if` 外断言
+   `view.phase === 'NIGHT'` 与 `view.pending === null`；补 Round 4 原场景（村民 / `NIGHT_SEER`），
+   避免未来夜间顺序变化让锁静默失效。
+2. **路由语义**：用 `seatToSpeak(state) ?? nextActor(state)` 作为默认 `pending` 的 actor 判定，
+   让玩家自己的 `DAY_SPEECH` 轮也拿到 `pending:'speak'`（当前无消费者，纯一致性）。
+3. **C-120 去抖**：用 fake timers 或注入 `timeoutMs`，避免 60ms 真实定时器在 CI 上偶发。
+4. **删除或接线 `isPlayerPhase`**：不要留一个只有测试调用的导出。
+5. **文档**：RFC §8.10 的 81 files → 80；README 状态行同步「1 个 Changes requested」；
+   `TEST-STRATEGY.md:332-345` 的 `Exists?` 回填（Round 4 非阻塞项）。
+
+---
+
+### 6. 探针恢复与最终门禁
+
+探针前备份的 4 个文件与恢复后的 SHA-256（`shasum -a 256 -c` 全部 OK，`git status --porcelain`
+为空）：
+
+```text
+4296be7ef6ebcecb1209703b7436cf883b425cc915afddfd7c5b57c43df75670  src/server/orchestrator.ts
+8887b7c3ea590b71da3e417ee96933ceb2647e6083386b45f0becf6a050e0c10  src/server/routes/games.ts
+67a6cba74716288f9ef77216d2b1148f19cbf46682265fb6dd9e0d83b3681b5e  src/server/project/targets.ts
+1eff6c8d4f4409a4a924583b269bb2c7e140b785c669952f323e41bba38ddbd1  tests/server/speech.test.ts
+```
+
+临时探针测试 `tests/server/__probe-r5.test.ts` 已删除；最终（恢复后）重跑：
+
+```text
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → 80 files / 688 tests 全绿
+$ pnpm test:e2e → 8 passed
+```
+
+**状态**：RFC-012 → **`Changes requested`**（C-127 两项阻塞）。
