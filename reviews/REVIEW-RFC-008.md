@@ -542,3 +542,265 @@ $ pnpm exec vitest run --project unit tests/server/session.test.ts tests/server/
   5. N-R2-5：按实际测试重写 RFC §8.4 的 AC 证据，删除或补齐 §8.8；同步 TEST-STRATEGY 基线（482）与 README 状态。
 
 - **状态**：`RFCS.md` → **`Changes requested`**；`FEATURES.md` 没有 Status 列，未改。**本评审没有修改任何产品代码，也没有 `git commit`；所有探针改过的文件已从 `/tmp/howl-probe-backup-round2-src/` 恢复，临时测试文件已删除，工作树 clean。**
+
+---
+
+## Round 3 -- 2026-11-19
+
+> **评审会话**：独立 subagent，全新上下文；本会话没有参与本仓库任何代码 / RFC / 测试的写作。
+> **分支 / HEAD**：`main` / `1f1c59d`（评审开始时 `git status --porcelain` 无输出）。
+> **复核范围**：用户指定的 C-65 / C-66 / C-67，以及 C-67 声称已换掉的 AC-2 / 3 / 7 / 8 / 13 / 14 / 15 判据。C-65 / C-66 只做反向探针确认已关闭；Round 1 / 2 已关闭的 C-59 / C-60 / C-62 行为修复与 C-64 / C-69 / C-70 非阻塞文档项不重查。
+> **结论**：**Changes requested**
+> **整体风险**：**High**
+
+### 0. STEP 0 · 门禁实跑（本轮 HEAD）
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。HEAD `1f1c59d`，评审开始时工作树 clean。
+
+```
+$ pnpm typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+> eslint .
+LINT_EXIT=0
+
+$ pnpm format:check
+> prettier --check .
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm test
+ Test Files  59 passed (59)
+      Tests  490 passed (490)
+TEST_EXIT=0
+
+$ pnpm build
+✓ 14 modules transformed.
+✓ 38 modules transformed.
+dist/server/index.js  82.80 kB │ gzip: 27.86 kB
+BUILD_EXIT=0
+```
+
+`pnpm test:e2e` 未跑：RFC-008 只改服务端路由 / 存储 / 共享类型，没有 UI、浏览器或首屏改动；`TEST-6` 的 Playwright 要求从 RFC-012 起生效。`pnpm selfplay` 未跑：它仍是 RFC-015 的占位，与本 RFC 无关。
+
+**Product Type**：`PRD.md` 的类型是 **game（主）+ web app（交付形态）**。本轮适用游戏状态、可见性、安全、接口与纯函数检查；显式跳过 UI / A11Y / 浏览器兼容 / 首屏性能 / Playwright。
+
+**探针后的复跑**：所有变异探针从 `/tmp/howl-probe-backup-round3-src/` 的文件备份恢复（**没有使用 `git checkout`**），没有新建临时测试文件；随后全量 `pnpm test` 复跑 **59 files / 490 tests 全绿**，`git status --porcelain` 为空。
+
+---
+
+### 1. 用户指定复核的三项
+
+#### 1.1 C-65 · B1 的 HTTP 回归测试：**关闭**
+
+反向探针把 `src/server/routes/games.ts:146` 改回 `events: result.events`，跑 `strengthen.test.ts + resume.test.ts`：
+
+```
+Test Files  1 failed | 1 passed (2)
+     Tests  1 failed | 15 passed (16)
+```
+
+失败点正是新用例 `strengthen.test.ts:160-164`，diff 里出现：
+
+```
++ PHASE_CHANGED  visibleTo: "server"  { from: "NIGHT_WITCH", to: "NIGHT_RESOLVE" }
++ PLAYER_DIED    visibleTo: "server"  { cause: "wolf", seat: 3 }
+```
+
+这说明 seed 15 / 座位 1 女巫这条路径确实经玩家自己的 `WITCH_ACT` 产生 server 事件，过滤接线被真实测到了。**C-65 关闭**；不是只测 helper 的单测。
+
+#### 1.2 C-66 · 超限释放逐个来：**关闭**
+
+把 `src/server/store/game-registry.ts:129-135` 改回「只释放 `session.gameIds[0]`」，跑 `strengthen.test.ts`：
+
+```
+× 开到上限 +2 局后，持有事件的局数不超过上限
+AssertionError: expected 21 to be less than or equal to 20
+```
+
+新实现挑「最旧的、仍持有事件流的那一局」，22 局时前两局都释放。**C-66 关闭**，22 局用例有效。
+
+#### 1.3 C-67 · 弱断言强化：**部分关闭**
+
+已确认变红的三条：
+
+| AC | 探针 | 结果 |
+|---|---|---|
+| 2 | `step.ts` 的 `GAME_STARTED.seed = action.seed + 1` | **红**：`expected 778 to be 777`（`strengthen.test.ts:35`） |
+| 3（引擎层） | `GAME_STARTED.mode` 硬编码 `'slaughter-side'` | **红**：`Received: "slaughter-side"`（`strengthen.test.ts:36`） |
+| 14 | `enforceRetention` 改成保留 `KEEP_FULL_EVENTS + 1` 局 | **红**：`expected 4 to be less than or equal to 3`（`strengthen.test.ts:215`） |
+| 15 | replay 的 `404` 改 `200` | **红**：`expected 200 to be 404`（`strengthen.test.ts:238`） |
+
+但仍有三条关键缺口：
+
+**C-67-a · AC-3 的 HTTP 路径没有被测到。** `strengthen.test.ts:24-39` 直接调 `registry.createGame(session, { mode: 'slaughter-all', seed: 777 })`，绕过了 `POST /api/games`。把 `src/server/routes/games.ts:48` 改成：
+
+```ts
+const record = await registry.createGame(session, { ...parsed.data, mode: 'slaughter-side' });
+```
+
+`strengthen.test.ts + session.test.ts` 仍然 **18/18 全绿**。`session.test.ts:76-92` 的 AC-3 用例仍只断言 `GET` 返回 200，没有读 `GAME_STARTED.mode`。也就是说，「创建请求指定 mode → 事件里是它」这条 AC 的**请求入口**可以整段坏掉而不被发现。
+
+**C-67-b · AC-8 仍不检查 action 是否成功。** `strengthen.test.ts:77-166` 只断言 `statusCode === 200`、`events.length > 0`、响应无 `server` 事件。把 `src/engine/phases/night.ts:200-202` 的 `'none'` 分支改成恒返回 `rejectionDraft`，跑 `strengthen.test.ts`：
+
+```
+Test Files  1 passed (1)
+     Tests  8 passed (8)
+```
+
+`REJECTED` 也是 `200`、也非空、也不是 `server` 事件，所以「动作成功」没有被断言。这正是 Round 2 P-R2-9 的同类问题，只是换了动作。`resume.test.ts:74-99` 的 200 + `version` 更大同样不能区分「接受」与「拒绝」（`REJECTED` 也推进 `seq`）。
+
+**C-67-c · AC-13 仍然没测 FINISHED / 释放。** `strengthen.test.ts:168-182` 用的是 `createGame` 刚创建出来的 **active** 记录，只证明两次 `stateOf` 深相等；没有 `finished` 状态，也没有 `release`。按 C-61 的原始验法，只给 finished 记录加一个普通对象缓存（`release` 不失效）：
+
+```ts
+private readonly stateCache: Record<string, ReturnType<typeof replay> | undefined> = {};
+// stateOf: record.status === 'finished' 时读/写 stateCache；active 仍 replay
+```
+
+跑**全量** `pnpm test`：
+
+```
+Test Files  59 passed (59)
+     Tests  490 passed (490)
+```
+
+全套仍然绿。`store.test.ts:73-91` 也仍在断言「release 后 `stateOf` 抛错」，与 AC-13 的「重新 replay 得到同一状态」相反；RFC §8.4 仍把它当 AC-13 的 PASS 证据。**C-61 没有任何变化**，C-67 的 AC-13 部分没有闭合。
+
+**AC-7 只做了部分强化（非阻塞）：** `strengthen.test.ts:41-75` 只对默认 `playerSeat = 1` 与 `project()` 深度相等；`resume.test.ts:55-72` 的 9 个席位仍只数 `"role":`。在路由里只对 `playerSeat === 2` 加 `allRoles: state.seats.map(s => s.role)`（值里没有 `"role":` 字面量），`strengthen + resume` **16/16 绿**。AC-7 字面要求「对 9 个 `playerSeat` 各验证一次」，目前只有一个席位是深度比较。
+
+**AC-11 仍为 PARTIAL（非阻塞）：** `store.test.ts:49-58` 仍只让 `GameRegistry` 的 4 个方法跑在 `MockStore` 上；`session.test.ts` / `resume.test.ts` 的路由测试仍用 `InMemoryMetaStore`，没有做到 AC-11 的「替换后全部会话相关测试通过」。
+
+---
+
+### 2. 逐条验收标准：哪个测试会红
+
+> C-59 / C-60 / C-62 的代码修复已在 Round 2 复核通过，C-65 / C-66 本轮已用反向探针确认关闭；下表对它们只做承接，不重复探针。
+
+| AC | 证据 | 变异后会红吗 | 判定 |
+|---|---|---|---|
+| 1 | `session.test.ts:27-54`：同一 cookie 三局、`games` 长度 3 且是数组 | 删类型字段会编译失败 | **PASS**（承接） |
+| 2 | `session.test.ts:56-74` 断言响应 seed；`strengthen.test.ts:24-39` 断言 `record.seed === GAME_STARTED.seed` | seed +1 探针 → 红 | **PASS** |
+| 3 | `strengthen.test.ts:24-39` 用 registry 创建并断言 `GAME_STARTED.mode`；`session.test.ts:76-92` 仍只 GET 200 | 引擎改 mode → 红；**路由强写 mode → 18/18 绿** | **FAIL（入口未覆盖）** |
+| 4 | `session.test.ts:94-111`：`HttpOnly` / `SameSite=Lax` / `Path=/`，id ≥32 | 删 `HttpOnly` → 红 | **PASS**（承接） |
+| 5 | `resume.test.ts:33-53`：两次独立 `inject` 的 `version` 与 `view` 深相等 | 改任一值 → 红 | **PASS**（承接） |
+| 6 | 同 AC-5（两次独立调用，不共享客户端内存） | 同 AC-5 | **PASS**（承接） |
+| 7 | `strengthen.test.ts:41-75` 只深比 seat 1；`resume.test.ts:55-72` 对 9 席数 `"role":` | 通用泄漏（seat 1）→ 红；**seat 2 专属 `allRoles` → 16/16 绿** | **PARTIAL** |
+| 8 | `strengthen.test.ts:77-166` 提交真实 `WITCH_ACT`，只断言 200 / 非空 / 无 server | **`WITCH_ACT` 恒拒绝 → 8/8 绿** | **FAIL** |
+| 9 | `resume.test.ts:101-141`：重复 → `ALREADY_APPLIED`；旧版本换动作 / 未来版本 → `VERSION_MISMATCH` | 去掉 `ALREADY_APPLIED` → 红 | **PASS**（承接） |
+| 10 | `session.test.ts:114-155`：他人 id 与不存在 id 的 404 JSON 相等 | 改 404 为 403 / 换 message → 红 | **PASS**（承接） |
+| 11 | `store.test.ts:49-58` 只让 registry 的 4 个方法跑在 `MockStore` 上；路由测试仍用 `InMemoryMetaStore` | 没有「全部会话相关测试」跑在第二实现上 | **PARTIAL** |
+| 12 | `store.test.ts:61-71` 扫 `src/server` 的模块级 `new Map`，排除 `meta-store.ts` | 加 `Map` → 红；对象缓存仍可逃（见 AC-13） | **PASS（按 AC 字面）** |
+| 13 | `strengthen.test.ts:168-182` 用 **active** 记录做两次 `stateOf`；`store.test.ts:73-91` 仍断言 release 后抛错 | **finished 普通对象缓存（release 不失效）→ 全量 59/490 绿** | **FAIL** |
+| 14 | `strengthen.test.ts:184-219` 真的开 100 局；`session.test.ts:183-186` 钉住 `KEEP_FULL_EVENTS === 3` | 保留 4 局 → 红（4 > 3）；改常量 → 常量用例红 | **PASS** |
+| 15 | `strengthen.test.ts:221-241` 断言 replay `404` + `NOT_FINISHED`；`session.test.ts:157-181` 断言 stream `501` | replay 改 200 → 红 | **PASS** |
+| 16 | `session.test.ts:189-208` 黑名单 7 个数据库驱动；当前依赖确实没有 | 新增别的驱动可逃，但 AC 只要求不存在数据库驱动 | **PASS**（承接） |
+
+统计：**PASS 11（1 / 2 / 4 / 5 / 6 / 9 / 10 / 12 / 14 / 15 / 16）**，**FAIL 3（3 / 8 / 13）**，**PARTIAL 2（7 / 11）**。C-67 不能关闭。
+
+---
+
+### 3. 变异探针清单
+
+所有注入都用精确字符串替换并断言目标存在；每个探针结束后从 `/tmp/howl-probe-backup-round3-src/` 的原始文件恢复（没有使用 `git checkout`），没有遗留临时文件；最终 `git status --porcelain` 为空，全量套件复跑 **59 files / 490 tests 全绿**。
+
+| # | 注入 | 跑什么 | 结果 | 说明 |
+|---|---|---|---|---|
+| P-R3-1 | `routes/games.ts:146` 改回 `events: result.events` | `strengthen + resume` | **红 1**（1 failed / 15 passed） | C-65 关闭 |
+| P-R3-2 | 超限改回只释放 `gameIds[0]` | `strengthen.test.ts` | **红 1**（21 > 20） | C-66 关闭 |
+| P-R3-3 | `enforceRetention` 改回扫全局 `game:` | `strengthen.test.ts` | **红 1**（C-68：A 的 events 变 0） | C-68 关闭 |
+| P-R3-4 | `GAME_STARTED.seed = action.seed + 1` | `strengthen + session + resume` | **红 1**（778 ≠ 777） | AC-2 有效 |
+| P-R3-5 | `GAME_STARTED.mode` 硬编码 `'slaughter-side'` | `strengthen + session` | **红 1**（mode 不符） | AC-3 引擎侧有效 |
+| P-R3-6 | 路由创建时强写 `mode: 'slaughter-side'` | `strengthen + session` | **绿 18/18** | **AC-3 的 HTTP 入口无效** |
+| P-R3-7 | 路由只对 `playerSeat === 2` 加 `allRoles` | `strengthen + resume` | **绿 16/16** | **AC-7 只有 seat 1 深度比较** |
+| P-R3-8 | `WITCH_ACT` 的 `'none'` 分支恒拒绝 | `strengthen.test.ts` | **绿 8/8** | **AC-8 不检查动作成功** |
+| P-R3-9 | finished 记录加普通对象状态缓存（release 不失效） | 全量 `pnpm test` | **绿 59/490** | **AC-13 无回归锁；C-61 仍 Open** |
+| P-R3-10 | `enforceRetention` 保留 `KEEP_FULL_EVENTS + 1` | `strengthen + store` | **红 2**（4 > 3） | AC-14 有效 |
+| P-R3-11 | replay 的 `404` 改 `200` | `strengthen + session` | **红 1**（200 ≠ 404） | AC-15 有效 |
+
+### 4. 行为探针（只读，未留文件）
+
+| # | 探针 | 观察 |
+|---|---|---|
+| T-R3-1 | 按 seed 15 推进到 `NIGHT_WITCH`，玩家座位 1（witch）经路由提交 `WITCH_ACT potion:'none'` | 过滤后只返回 public 事件；路由回退 raw 时出现 `PHASE_CHANGED(server)` 与 `PLAYER_DIED(server)`（死者 seat 3） |
+| T-R3-2 | 单会话 22 局 | 前两局 events 为空，其余 20 局持有 events；`session.gameIds` 仍 22 条 |
+| T-R3-3 | 会话 A 一局 finished；会话 B 5 局 finished 并逐次 `enforceRetention(B)` | A 的 events 仍 >0；把 retention 改回全局扫描后 A 变 0 |
+| T-R3-4 | finished 记录加入普通对象缓存后跑全量 | 59 files / 490 tests 全绿，说明 AC-13 的「不缓存」没有测试保护 |
+
+---
+
+### 5. 维度结论
+
+#### 5.1 RFC ADHERENCE — NEEDS WORK
+
+- **正确修复**：C-65（B1 的 HTTP 回归锁）与 C-66（逐局释放）都成立，且反向探针会红；AC-14 / AC-15 的强化成立。
+- **未闭合**：AC-3 只测到 registry 层，`POST /api/games` 的入口可以忽略 `mode` 而全绿；AC-8 的「成功」仍不可区分 `REJECTED`；AC-13 的 FINISHED / release 语义仍未测。AC-7 只对一个席位做深度比较；AC-11 仍是 PARTIAL。
+- **文档与声明不一致**：RFC §8.8 说 AC-2/3/7/8/13/14/15「全部换成改坏会红」，实际 AC-3（入口）、AC-7（9 席深度）、AC-8（成功）、AC-13（FINISHED）四项不成立；§8.4 的 AC-13 证据行仍是旧的「释放后 stateOf 抛错」。属 DOC-1 / C-69 的延续。
+- §2.2 的 `{ version, events }` 仍返回整局可见历史（C-70，非阻塞）；§2.5 的 20 局上限释放语义在本轮已按 C-66 修正。
+
+#### 5.2 RULES COMPLIANCE — NEEDS WORK
+
+| 规则 | 结论 |
+|---|---|
+| `ARCH-7` | **PASS**（承接）：路由只经 `GameRegistry`，`MetaStore` 是唯一出口 |
+| `ARCH-9` | **PASS**（承接）：公开路由绑定玩家席位 |
+| `ARCH-10` | **PASS（结构）**：`gameIds` 一对多；超限释放已逐个进行 |
+| `API-1` | **PARTIAL**（承接）：请求有 Zod；响应类型仍是纯 interface |
+| `API-3` | **PASS**（承接）：重复 action 不重复推进 |
+| `SEC-1` | **PASS**：本 RFC 无密钥路径 |
+| `SEC-5` | **PASS（行为 + 回归锁）**：B1 过滤成立；C-65 的 HTTP 用例本轮已能变红 |
+| `DATA-6` | **PARTIAL**：release 清 events；`applied` 不清、finished 状态缓存无回归锁（C-73）、无 7 天服务端清理 |
+| `DOC-1` | **PARTIAL**：§8.8 的「全部换成」与 §8.4 的旧 AC-13 证据过强；D-1 仍缺用户同意（承接） |
+| `TEST-1` | **FAIL**：AC-3 / 8 / 13 无有效断言；AC-7 / 11 PARTIAL |
+| `STYLE-*` | **PASS**：新文件 309 行 <400、kebab-case、具名导出；`as never` 仍在（承接） |
+
+#### 5.3 SECURITY — PASS（行为；无新泄漏）
+
+- B1 的过滤行为成立，且 C-65 关闭后 HTTP 层已有能变红的回归锁（P-R3-1 证明 raw 响应会带 `PLAYER_DIED(server)`）。
+- B2 席位绑定、B3 生产 `Secure` 仍在（承接 Round 2，未重查）。
+- 他人 `gameId` 与不存在 id 的 404 相等；`GET` 视图仍由 `project()` 生成；错误响应不含 LLM 原文；无账号 / 数据库 / 密钥路径。
+- 非阻塞旧观察仍在：无 seat 的 `START` 可经公开路由提交并推进 `seq`（N-R2-2），本 RFC 未处理。
+
+#### 5.4 PERFORMANCE — PASS（有非阻塞提示）
+
+- `POST /actions` 的 `visibleEventsOf` 仍每次重放整局并返回整局可见历史（C-70）；单局几百条事件，成本可接受，但响应随局长度增长。
+- C-66 的逐局释放每次创建最多扫描整个 `gameIds`（22 局场景可忽略；100 局探针 39ms）。`gameIds` 与 `applied` 仍随局数线性增长，属 F37 的已知口径问题。
+- `GET /api/session` 每个 gameId 一次 `store.get`；当前列表无上限。没有发现新的 N+1 或热路径问题。
+
+#### 5.5 MAINTAINABILITY — NEEDS WORK
+
+- **测试命名与断言不一致**：`strengthen.test.ts:168-182` 名为「终局状态每次都重新 replay」，实际是 active 记录；`strengthen.test.ts:24-39` 名为「响应里的 seed 与 mode」，实际没有 HTTP 响应；`strengthen.test.ts:77-166` 同时承担 C-65 和 AC-8 两个目标，导致 AC-8 的成功断言被 C-65 的「无 server 事件」掩盖。
+- **RFC / TEST-STRATEGY 漂移**：`TEST-STRATEGY.md:32-37` 仍写 `Tests 449` 与「其余 15 个 RFC proposed」；RFC-008 计划表写的 `tests/server/projection-leak.test.ts` / `tests/server/actions.test.ts` 不存在，实际文件是 `session/resume/store/strengthen`；`strengthen.test.ts` 未登记。C-69 保持 Open（非阻塞）。
+- `snapshot?: unknown`、`applied` 无上限、响应 schema 缺失、`as never` 类型逃逸仍是承接项。
+
+---
+
+### 6. 冲突登记（已写入 `RFCS.md` §8.22）
+
+| # | 冲突 | 判定 |
+|---|---|---|
+| C-71 | **AC-3 的 HTTP 入口无有效断言**：`strengthen.test.ts:24-39` 绕过路由；路由强写 `mode` 后 18/18 绿 | **阻塞（TEST-1）**：通过 `POST /api/games` 创建 `slaughter-all` 并断言记录的 `GAME_STARTED.mode` |
+| C-72 | **AC-8 不检查动作成功**：`WITCH_ACT` 恒拒绝仍 8/8 绿；`REJECTED` 也是 200 + 非空 + 无 server | **阻塞（TEST-1）**：断言无 `REJECTED`，且出现接受后的具体事件 / 相位推进 |
+| C-73 | **AC-13 仍未测 FINISHED / release**：finished 普通对象缓存下全量 59/490 绿；`store.test.ts:73-91` 仍断言相反行为 | **阻塞（TEST-1 / C-61）**：用真实 FINISHED 局面 + 释放后重建断言 |
+| C-74 | **AC-7 只对 1 个席位做深度比较**：seat 2 专属 `allRoles` 下 16/16 绿；9 席仍是 `"role":` 计数 | **非阻塞（测试证据）**：把深度比较循环到 9 席 |
+| C-75 | **AC-11 的第二实现仍只在 registry 层**：4 个方法跑 MockStore，路由测试仍用 InMemory | **非阻塞（Should）**：参数化路由测试或明确 AC-11 口径 |
+
+---
+
+### 7. 最终判断
+
+- **Overall Risk Level: High**
+- **Summary**：Round 2 修复的三个目标里，C-65 与 C-66 已真正关闭，AC-2 / 14 / 15 也换成了会变红的判据；但 C-67 只完成了一半：AC-3 的 HTTP 入口、AC-8 的动作成功、AC-13 的 FINISHED / 释放后重建仍可用变异探针全绿，其中 finished 状态缓存甚至让全量 490 个用例保持绿色。AC-7 只做了 1/9 席位的深度比较，AC-11 仍为 PARTIAL。因此 RFC-008 不能标为 Reviewed，C-61 也继续 Open。
+- **Blocking Issues**：
+  1. **C-61 / C-73** AC-13 的 FINISHED + release 无回归锁（全量套件对 finished 缓存不设防）。
+  2. **C-67 / C-72** AC-8 不区分「动作成功」与 `REJECTED`。
+  3. **C-67 / C-71** AC-3 的路由入口未覆盖。
+- **Improvement Suggestions**（非阻塞）：
+  1. N-R3-1：AC-7 的 `project()` 深度比较循环到 9 个 `playerSeat`，不要只测默认席位。
+  2. N-R3-2：AC-11 把 `buildApp({ store })` 的路由测试参数化到 `MockStore`，闭合「全部会话相关测试」。
+  3. N-R3-3：更新 RFC §8.4 / §8.8 与 TEST-STRATEGY（基线 490、`strengthen.test.ts`、实际测试文件）；C-69 保持非阻塞。
+  4. N-R3-4：C-70（动作响应是全量可见历史）与 N-R2-2（无 seat 的 `START`）继续作为契约 / 防滥用项处理。
+  5. N-R3-5：`snapshot?: unknown`、`applied` 无上限、响应 Zod schema、`as never` 继续承接。
+
+- **状态**：`RFCS.md` → **`Changes requested`**；`FEATURES.md` 没有 Status 列，未改。**本评审没有修改任何产品代码，也没有 `git commit`；所有探针改过的文件已从 `/tmp/howl-probe-backup-round3-src/` 恢复（未用 `git checkout`）。`git status` 只显示本评审修改的 `reviews/REVIEW-RFC-008.md` 与 `RFCS.md`，产品代码无 diff。**
