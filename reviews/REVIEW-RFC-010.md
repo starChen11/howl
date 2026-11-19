@@ -2367,3 +2367,321 @@ $ pnpm test
 - **C-97（仍阻塞，行为已修 / 测试锁不全）**：正常与降级都走 `submit`（P-R7-2 / P-R7-3 / P-R7-6），夜晚不再写非法 `SPEECH`（P-R7-4 / P-R7-9）；但只回退降级分支全量仍绿（M-R7-4），AC-12 用例已变成「1 次 SPEECH + 3 次 REJECTED」（P-R7-7），且 `speak` 把 `REJECTED` 当成功发布 `done`（P-R7-4 / P-R7-5）。需补降级分支的端到端锁、修正 AC-12 用例、让 `speak` 在引擎拒绝时失败。
 - **C-87（本轮未重查）**：C-97 的写回路径部分已由修复覆盖；AC-11 的轮次标记、`src/` 调用者、§8.4 / §8.6 文档按 Round 6 记录保留。若正式交给 RFC-011，按 `AGENTS.md` 硬规则 6 同步依赖表与 §8.6。
 - **C-92 / DOC-1（未重查，非阻塞）**：`TEST-STRATEGY.md` 的 RFC-010 小节仍全 `proposed`；`README.md` 的 RFC 状态 / 覆盖数字仍待回写；§8.3 / §8.6 / §8.4 的旧口径仍在。
+
+---
+
+## Round 8 -- 2026-11-19
+
+**结论：Changes requested · Overall Risk Level: Medium**
+
+本轮只复核 Round 7 的三项阻塞修复：**`speak` 把引擎 `REJECTED` 当失败**、**降级分支「走引擎」的回归锁**、**AC-12 用例按当前发言者轮转**。已关闭的 C-85 / C-86 / C-88 / C-89 / C-96 不重查；C-87 的非 C-97 遗留（AC-11 轮次标记、`src/` 调用者）与 C-90 ~ C-95 非阻塞项按 Round 7 记录保留，本轮未重新审计。
+
+一句话：**第 1 项和第 3 项是真的修好了**——拒绝路径返回 `ok:false`、不发 `done`（P-R8-B），删掉 `REJECTED` 检查会让两条用例变红（M-R8-2）；AC-12 现在按 `currentSpeaker` 轮转 4 个席位，`spoken=4` / `calls=8` / `total=4`（P-R8-C），同一席位连说 4 次的旧写法会在第 2 轮被拒、`spoken` 变 1，测试会红。**但第 2 项（降级分支回归锁）不成立：把降级分支改回 `appendEvents` 绕开引擎后，全量 69 files / 581 tests 仍然全绿（M-R8-1）。** 此外，这次修复把 `DEGRADED` 事件挪到短句 `SPEECH` **之后**，没有同步总线消息 id 与历史重放顺序，引入一个新回归：live 的 `degraded` id 与事件 seq 不一致（违反 AC-5 / API-2），刷新 / 重连会把刚显示的降级短句抹掉并停在 `degraded` / 空正文（P-R8-A）。**仍为 `Changes requested`。**
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。评审开始时 HEAD `c160821`，`git status --porcelain` 为空。
+
+```
+$ pnpm typecheck
+... TYPECHECK_EXIT=0
+
+$ pnpm lint
+... LINT_EXIT=0
+
+$ pnpm format:check
+Checking formatting...
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+vite v8.3.8 building ssr environment for production...
+dist/server/index.js  91.31 kB │ gzip: 30.46 kB
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  69 passed (69)
+      Tests  581 passed (581)
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+```
+
+覆盖率（`coverage/coverage-summary.json`，只覆盖 `src/engine/**`）：
+
+```
+lines: 96.96% (544/561)   branches: 92.85% (364/392)
+```
+
+**Product Type**：`PRD.md` 是 **game（主）+ web app（交付形态）**。本轮检查服务端 `speak` 写回 / `DEGRADED` 事件顺序 / SSE id / 客户端 reducer 重放；**显式跳过** UI / A11Y / 响应式 / 浏览器兼容 / Playwright（界面归 RFC-012，`tests/e2e/` 为空），以及需要真实模型的 p95 手工验收（D-6）。不把「跳过」当成 PASS。
+
+**探针方式**：临时探针 `tests/server/__r8-probe.test.ts`（4 个用例，跑完已删除）；变异用 `/tmp/howl-rfc010-r8-backup/speak.ts` 的文件备份恢复，**未使用 `git checkout`**，也没有 `git commit`。恢复后 `speak.ts` 的 `md5` 与备份相同（`ed036cca6a21e15bc00d21d81c8493d3`），探针文件已删除，全量 69 / 581 复跑全绿，`git status --porcelain` 为空（见 §7）。
+
+---
+
+### 1. C-97 第 1 项 · `REJECTED` 当失败 —— 关闭
+
+**行为成立。** `src/server/llm/speak.ts:70-85` 现在先看 `submitted.ok`，再扫 `submitted.events` 里的 `REJECTED`；命中就返回 `{ ok: false, code }`，且在任何 `bus.publish(done / degraded)` 之前返回。返回值是真正的可判别联合（`speak.ts:30-40`），`tests/server/speak.test.ts:94,117,250` 等调用点都改为先处理失败。独立探针：
+
+```
+P-R8-B night normal=   {"ok":false,"code":"PHASE_MISMATCH",
+                        "events":["GAME_STARTED:1","REJECTED:2"],"bus":["thinking:2"]}
+P-R8-B night degraded= {"ok":false,"code":"PHASE_MISMATCH",
+                        "events":["GAME_STARTED:1","REJECTED:2"],"bus":["thinking:2"]}
+P-R8-B day normal wrong seat=   {"ok":false,"code":"NOT_YOUR_TURN",
+                                 "newEvents":["REJECTED:15"],"bus":["thinking:15"],
+                                 "expectedSpeaker":2,"tried":1}
+P-R8-B day degraded wrong seat= {"ok":false,"code":"NOT_YOUR_TURN",
+                                 "newEvents":["REJECTED:15"],"bus":["thinking:15"],
+                                 "expectedSpeaker":2,"tried":1}
+```
+
+夜晚 / 非当前席位、正常 / 降级四条路径都没有 `done`、没有 `degraded`、没有多写 `SPEECH` / `DEGRADED`，只是保留了提交前的 `thinking`。**回归锁成立**：删掉 `speak.ts:76-85` 的 `rejected` 分支后：
+
+```
+$ pnpm vitest run tests/server/speak.test.ts --project unit
+ Tests  2 failed | 5 passed (7)
+  FAIL  夜晚调用返回 ok=false，且不向总线发 done        expected true to be false
+  FAIL  非当前发言者返回 ok=false                       expected true to be false
+```
+
+这与 Round 7 要求的「夜晚 / 非当前席位被拒绝」一致。**第 1 项关闭。**
+
+**非阻塞小项**：`speak` 在知道会被拒绝之前已经发了 `thinking`，失败后总线留下一条没有终结消息的 `thinking`（`speak.ts:49`）。RFC-011 的调用方必须处理 `ok:false`（例如不要进入 thinking UI），否则界面会停在「思考中」；当前没有生产调用者，不据此阻塞。另外，仓库里没有「夜晚 / 非当前席位 + 降级」的组合用例（P-R8-B 已独立验过行为正确），建议补一条，锁住「被拒绝时连 `DEGRADED` 都不写」。
+
+---
+
+### 2. C-97 第 2 项 · 降级分支「走引擎」的回归锁 —— 不成立（阻塞）
+
+Round 7 新增的用例是 `tests/server/speak.test.ts:236-255`：
+
+```ts
+it('降级一轮之后，当前发言者换人', async () => {
+  ...
+  const before = registry.stateOf(record).speech?.spoken.length ?? 0;
+  const result = await speak({ ... attempt: async () => ({ text: '', failed: true }) });
+  const after = registry.stateOf(result.record).speech?.spoken.length ?? 0;
+  expect(after).toBe(before + 1);
+});
+```
+
+RFC §8.13 据此声称「绕开引擎时这条会红」（`RFCs/RFC-010...:255`）。**实跑不成立。** 把降级分支改回 Round 6 的写法——不调用 `submit`，直接用 `appendEvents` 写 `DEGRADED` + 短句 `SPEECH`（正常分支保持 `submit`）——全量测试仍然全绿：
+
+```
+$ pnpm test
+ Test Files  69 passed (69)
+      Tests  581 passed (581)
+```
+
+**根因**：`speech.spoken` 是 `applyEvent` 折叠出来的，不是 `submit` 的 handler 写的。`src/engine/apply.ts:81-83` 对 `SPEECH` / `SPEECH_SKIPPED` 一律 `appendSpoken(base, seat)`——**只要事件流里有这条 `SPEECH`，不管它是 `submit` 还是 `appendEvents` 写进去的，`spoken` 都会 +1**。降级路径上 `submit` 唯一独有的行为是 `advanceIfDone`（`src/engine/phases/day.ts:118-147`）：**最后一位**发言者说完后补 `PHASE_CHANGED(DAY_SPEECH → DAY_VOTE)`。新用例用的是当天第一位发言人（还有 7 位没说），本来就不会触发相位推进，所以引擎路径和 `appendEvents` 路径在这里没有可观测差异。
+
+这是 TEST-1 缺口，而且与 Round 7 自己的阻塞项要求不一致——Round 7 原文要求「在真实 `DAY_SPEECH` 中让**最后一位**剩余发言人降级，断言 `DEGRADED` + `SPEECH` + `PHASE_CHANGED`、相位离开 `DAY_SPEECH`、`seq` 连续、`stateOf()` 通过；该用例必须在『降级分支改回 `appendEvents`』时变红」。修复方向应回到这条：
+
+1. 先正常说完 7 位，再让第 8 位降级；断言新增事件里有 `SPEECH` + `PHASE_CHANGED`，`registry.stateOf(result.record).phase === 'DAY_VOTE'`，`seq` 连续，`stateOf()` 不抛；
+2. 或（更直接）断言 `result.record.applied` 里出现了这次 `SPEECH` 动作（`submit` 会写 `applied`，`appendEvents` 不会）；
+3. 用 M-R8-1 验证：改回 `appendEvents` 后该用例必须红。
+
+**第 2 项仍 Open（阻塞）。**
+
+---
+
+### 3. C-97 第 3 项 · AC-12 用例轮转 —— 关闭
+
+`tests/server/speak.test.ts:129-164` 现在每轮先取 `currentSpeaker(registry.stateOf(current))`，再用它调 `speak`，并断言 `spoken === 4`、`calls === 8`、`degradation.total === 4`。独立探针（P-R8-C）在真实一天里跑 4 轮降级：
+
+```
+P-R8-C rotated= {"rounds":[
+  {"seat":2,"ok":true,"events":["SPEECH:15","DEGRADED:16"],"next":3,"spoken":1},
+  {"seat":3,"ok":true,"events":["SPEECH:17","DEGRADED:18"],"next":4,"spoken":2},
+  {"seat":4,"ok":true,"events":["SPEECH:19","DEGRADED:20"],"next":5,"spoken":3},
+  {"seat":5,"ok":true,"events":["SPEECH:21","DEGRADED:22"],"next":6,"spoken":4}],
+  "spoken":4,"calls":8,"total":4,"phase":"DAY_SPEECH","nextSpeaker":6}
+```
+
+对照组（Round 7 的旧写法：同一席位连说 4 次）在**当前**正确实现下是：
+
+```
+P-R8-C fixed seat= {"rounds":[
+  {"ok":true,"events":["SPEECH:15","DEGRADED:16"]},
+  {"ok":false,"code":"NOT_YOUR_TURN","events":["REJECTED:17"]}],
+  "calls":4,"total":1,"phase":"DAY_SPEECH"}
+```
+
+也就是说，旧的同席位写法今天会在第 2 轮 `break`，`spoken` 只有 1，新断言会红。**第 3 项关闭。** 非阻塞建议：顺手断言 4 轮的席位互不相同、第 4 轮之后仍存在下一发言人（`currentSpeaker` 不为 `undefined`），把「对局未卡死」写死，而不是只靠 `spoken` 代理。
+
+---
+
+### 4. C-98（新，阻塞）· 降级事件被挪到 `SPEECH` 之后，id 与重放语义回归
+
+Round 7 为了让 `REJECTED` 检查发生在写 `DEGRADED` 之前，把降级分支改成了：
+
+1. `submit(SPEECH)`（`speak.ts:63-68`）→ `SPEECH` 的 seq 为 `N`；
+2. 成功后 `appendEvents(DEGRADED)`（`speak.ts:89-100`）→ `DEGRADED` 的 seq 为 `N+1`（最后一位发言时，`submit` 还会先产出 `PHASE_CHANGED`，于是是 `N+2`）；
+3. 总线却仍用 `nextSeq`（= `N`）发 `degraded`（`speak.ts:102`），再用 `nextSeq` 发 `done`（`speak.ts:103-108`）。
+
+这带来三个可观测问题。
+
+**4.1 live 的 `degraded` 消息 id 不等于事件 seq（AC-5 / API-2）**
+
+`src/shared/stream.ts:9` 写得很明确：「`id` 恒等于对应事件的 `seq`（API-2）」。P-R8-A 在真实 `DAY_SPEECH` 里让当前发言人降级：
+
+```
+P-R8-A events= ["SPEECH:15","DEGRADED:16"]
+P-R8-A bus=    ["thinking:15","degraded:15","done:15(我先过。)"]
+P-R8-A committed tail= ["done:15(我先过。)","degraded:16"]
+```
+
+`degraded` 的事件 seq 是 16，live 消息 id 是 15；而 `committedMessages`（`src/server/routes/stream.ts:47-51`）按事件 seq 映射出的是 `degraded:16`。同一个标记在 live 与历史里 id 不一致。最后一位降级更明显（P-R8-D）：
+
+```
+P-R8-D newEvents= ["SPEECH:22","PHASE_CHANGED:23","DEGRADED:24"]
+P-R8-D busTail= [...,"thinking:22","degraded:22","done:22(我先过。)"]
+```
+
+`degraded:22` 与 `DEGRADED:24` 相差 2。现有 AC-5 用例（`tests/server/stream.test.ts:130-149`）只把 `SPEECH` 的 seq 拿来比，完全不覆盖 `degraded`，所以套件看不到。
+
+**4.2 刷新 / 重连会把短句抹掉，并停在 `degraded`**
+
+`streamReducer` 的 `degraded` 分支会清空 `text` 并把 `phase` 置为 `degraded`（`src/client/use-stream.ts:95-104`）。Round 6 的顺序是 `DEGRADED → SPEECH`，历史重放 `[degraded, done]` 最终停在 `done` / 短句（P-R7-8）；现在顺序反了，历史是 `[done, degraded]`：
+
+```
+P-R8-A refresh(reduce committed)= {"phase":"degraded","text":"","lastId":16}
+P-R8-A live(reduce bus)=          {"phase":"done","text":"我先过。","lastId":15}
+P-R8-A refresh route tail= ["done:15(我先过。)","degraded:16"]
+P-R8-A refresh route state= {"phase":"degraded","text":"","lastId":16}
+```
+
+不只是「刷新后看不到」，**在线重连也会把已经显示的短句清掉**：客户端收到 live 的 `done:15` 后 `lastId=15`，重连带 `Last-Event-ID: 15`，总线重放 `id===15` 的那段（thinking / degraded / done），`committedMessages` 又补上 `degraded:16`，最终状态：
+
+```
+P-R8-A reconnect frames= ["degraded:16"]
+P-R8-A reconnect state=  {"phase":"degraded","text":"","lastId":16}
+```
+
+这破坏了 `routes/stream.ts:19-20` 写下的「刷新看到历史、实时看到增量，两路看到同一段对话」，也与 AC-9「降级时前端收到 `degraded` 并显示可见提示」的意图不一致——live 有短句、刷新/重连没有。AC-10 的推进不受影响（见 §5），但这条是用户可见的回归。
+
+**4.3 事件顺序与 RFC 记录不一致（DOC-1）**
+
+RFC §8.12 明确写的是「降级路径**先** `appendEvents` 补 `DEGRADED` 标记，**再**走同一条通道写短句」（`RFCs/RFC-010...:244`）；`src/server/llm/turn.ts:131` 的 `degradeEvents()` 也仍注释「`DEGRADED` 在前，短句 `SPEECH` 在后」。Round 7 的实现反了过来，但 §8.13 只记了「补回归锁 / 改 AC-12」，没有记录这次顺序变更及其后果。测试侧也没跟上：C-86 的历史用例（`tests/server/stream.test.ts:403-439`）仍手工构造 `DEGRADED` 在 `SPEECH` 之前，断言 `['degraded','done']`，**与真实生产顺序相反**，所以它既没抓到 4.1，也没抓到 4.2。
+
+另外，最后一位降级现在把 `DEGRADED` 写在 `PHASE_CHANGED` **之后**（`SPEECH:22, PHASE_CHANGED:23, DEGRADED:24`）。RFC-014 的复盘要按 `DEGRADED` 标「发生降级的轮次」（AC-7 / AC-11），事件落在 `DAY_VOTE` 之后会让「轮次」的归属更难判；AC-11 本来就是未关闭的非阻塞项，这里只提示修复顺序时一并考虑。
+
+**修复方向**（任选其一，但必须让事件顺序、总线 id、committed 重放与 reducer 终态一致）：
+
+- **(a) 恢复 `DEGRADED → SPEECH`**：在写 `DEGRADED` 之前用引擎导出的纯函数做接受性预检（`currentSpeaker` / phase），或把 `DEGRADED` 变成引擎在 `SPEECH` handler 内产出的同批事件（最干净，但改 engine 接口，需登记）。
+- **(b) 保留 `SPEECH → DEGRADED`**：总线先发 `done`（id = `SPEECH` seq）、再发 `degraded`（id = `DEGRADED` seq），并调整 reducer / committed 映射，让 `degraded` 不再清空刚显示的短句（否则刷新仍会丢正文）。这等于修改 AC-9 的展示语义，需要写进 RFC。
+
+无论哪条，至少补三组测试：① live 的 `degraded.id === DEGRADED.seq`；② 刷新 / 重连后的终态与 live 一致（`done` + 短句）；③ C-86 的 fixture 使用真实事件顺序。**列为阻塞。**
+
+---
+
+### 5. 逐条验收标准（只列本轮受影响的）
+
+| AC | Round 7 | Round 8 | 依据 |
+|---|---|---|---|
+| 5 | PASS | **FAIL（回归）** | P-R8-A：live `degraded:15` vs `DEGRADED:16`；AC-5 用例只比 `SPEECH` seq，未覆盖 `degraded` |
+| 7 | PASS | **PASS（未变）** | P-R8-C / P-R8-D：`DEGRADED` + ≤10 字短句，`seq` 连续 |
+| 9 | PASS | **NEEDS WORK（回归）** | live 有 `degraded` 提示；刷新 / 重连终态 `degraded` / 空正文（P-R8-A） |
+| 10 | PASS | **PASS（未变）** | P-R8-C 下一席位 3；P-R8-D 最后一位降级 → `DAY_VOTE`，`seq 24 === len 24` |
+| 12 | NEEDS WORK | **PASS（本轮）** | P-R8-C；同席位旧写法在第 2 轮被拒、`spoken=1`，新断言会红 |
+| 1/2/3/4/6/8/11 | — | **未重查** | 本轮没有触碰 / 属已关闭或按记录保留的非阻塞项 |
+
+---
+
+### 6. 五个审查维度
+
+#### 6.1 RFC ADHERENCE —— **NEEDS WORK**
+
+- 用户点名的三项：**第 1 项关闭**（P-R8-B + M-R8-2），**第 3 项关闭**（P-R8-C），**第 2 项仍不成立**（M-R8-1 全绿）。
+- 新回归 **C-98**：AC-5 / API-2 的 id 契约被破坏，刷新 / 重连丢短句；且 §8.12 的「先 DEGRADED 后短句」被实现反转但未记录（DOC-1）。
+- 文档漂移：§8.3 仍没有 `speak.ts` / `turn.ts` / `speak.test.ts`；§8.6 仍写「路由用 `reply.send` 一次写完，持续推送在 RFC-012」；§8.4 的 AC-10 / 11 / 12 仍是旧证据；`RFCS.md` §3 的 RFC-010 后继仍是 `—`。归 C-92 / DOC-1 非阻塞债务（本轮未重审），但 C-98 相关的 §8.12 / §8.13 应在下一次修复中一并回写。
+
+#### 6.2 RULES COMPLIANCE —— **NEEDS WORK**
+
+| 规则 | 结论 |
+|---|---|
+| `ARCH-1` | **PASS**：`src/engine/` 未新增 UI / server / 网络依赖。 |
+| `ARCH-4` / `ARCH-9` | **PASS**：引擎仍是唯一权威；客户端 reducer 只是呈现层。 |
+| `DATA-1` | **PASS**：P-R8-C / P-R8-D 的事件 `seq` 连续（15,16 / 17,18 / … / 22,23,24），`state.seq === events.length`。 |
+| `DATA-3` | **PASS**：P-R8-A / C / D 的 `stateOf()` / `replay` 均不抛。 |
+| `API-2` | **FAIL**：live `degraded` 的 `id`（15 / 22）不等于 `DEGRADED` 事件 seq（16 / 24）。 |
+| `TEST-1` | **FAIL**：第 2 项的回归锁无效（M-R8-1 全量 581 绿）；C-98 无测试（AC-5 用例只覆盖 `SPEECH`）。 |
+| `TEST-2` | **PASS**：引擎覆盖率 96.96% / 92.85%，未下降。 |
+| `DOC-1` | **NEEDS WORK**：§8.12 / §8.13 与实现不一致（顺序反转、声称会红的锁实际不红）。 |
+| `AI-3` / `AI-7` | **未重查**：未改调用超时 / 重试配置。 |
+| `SEC-5` | **PASS**：`speak` 不在 HTTP 路由上；SSE 仍先过可见性过滤；没有新增密钥或完整状态序列化。 |
+
+#### 6.3 SECURITY —— **PASS**
+
+本轮改动没有新增对外输入面、密钥或日志：`speak` 仍不在 HTTP 路由上，`committedMessages` 仍先过 `isVisibleTo`，路由仍在 `resolveSession` 之后校验 `session.gameIds`。C-90 的可见性回归锁仍是未重查的非阻塞项，本轮未改变其状态。C-98 只影响发言流消息的 id / 顺序，不泄露非可见事件。
+
+#### 6.4 PERFORMANCE —— **N/A**
+
+本轮是写回路径与测试改动，没有新增循环、查询或 N+1；降级路径现在多一次 `submit` 的 `stateOf` 全量 replay 和一次 `appendEvents`，与 Round 7 同量级，当前规模可接受。既有的「`committedMessages` 每次连接扫描全部历史」「`PassThrough` 无 backpressure」等旧非阻塞项未变，本轮不重新审计。
+
+#### 6.5 MAINTAINABILITY —— **NEEDS WORK**
+
+- **测试名与注释名不副实**：`tests/server/speak.test.ts:236` 的「降级发言也走引擎」只证明「事件流里有 `SPEECH`」，不证明走 `submit`；M-R8-1 就是反证。RFC §8.13 的「绕开引擎时这条会红」也应删掉或改成真实成立的条件。
+- **C-86 fixture 失真**：`tests/server/stream.test.ts:403-439` 手工构造的顺序（`DEGRADED` 前、`SPEECH` 后）已不是生产顺序，且只断言消息类型、未喂 reducer；应改成真实顺序并断言 `streamReducer` 终态。
+- **两套顺序并存**：`degradeEvents()`（`turn.ts:131-157`）仍产出 `DEGRADED + SPEECH` 且注释「DEGRADED 在前」，生产路径却只取第一条并反向写；下一个调用者很容易照文档写错（Round 7 已提过，仍未处理）。
+- **`unstable` 重复计算**：降级返回里用 `turn.degradation.consecutive >= UNSTABLE_AFTER`（`speak.ts:116`），而 `turn` 本身已有 `unstable` 字段；二者等价但容易漂移。
+- **两处 `as never`**（`speak.ts:66` 及测试中的注入）仍是 C-95 的同类类型逃逸。
+- **AC-12 可再加强**：断言 4 个席位互异、第 4 轮后仍有下一发言人，避免未来「返回 ok 但不写事件」的实现假绿。
+- **正向**：第 1 项的实现小而清晰，`ok:false` 路径在发 `done` 之前返回，探针和反向变异都干净；第 3 项的轮转也确实消除了「用被拒绝的提交凑数」。
+
+---
+
+### 7. 探针与恢复
+
+备份在 `/tmp/howl-rfc010-r8-backup/speak.ts`；临时探针为 `tests/server/__r8-probe.test.ts`（4 个用例），跑完已删除。源码变异一律用 `cp` 从备份恢复，**没有使用 `git checkout`**，也没有 `git commit`。
+
+| # | 探针 / 变异 | 跑什么 | 结果 |
+|---|---|---|---|
+| P-R8-A | 真实 `DAY_SPEECH` 里降级当前发言人；对比事件、总线、committed、刷新 / 重连 | `speak` + 真实路由 + reducer | `SPEECH:15 + DEGRADED:16`；bus `thinking:15 / degraded:15 / done:15`；刷新 / 重连终态 `degraded` / 空正文（C-98） |
+| P-R8-B | 夜晚正常 / 夜晚降级 / 白天非当前席位正常 / 白天非当前席位降级 | `speak` | 四条均 `ok:false`（`PHASE_MISMATCH` / `NOT_YOUR_TURN`），无 `done` / `degraded` / `SPEECH`（第 1 项成立） |
+| P-R8-C | 按 `currentSpeaker` 轮转 4 轮降级 vs 同一席位 4 次 | `speak` + replay | 轮转：席位 2/3/4/5、`spoken=4`、`calls=8`、`total=4`、下一席位 6；同席位：第 2 轮 `NOT_YOUR_TURN`、`spoken=1`（第 3 项成立） |
+| P-R8-D | 正常说完 7 位后让最后一位降级 | `speak` + replay | `SPEECH:22 + PHASE_CHANGED:23 + DEGRADED:24` → `DAY_VOTE`，`seq===len===24`；bus `degraded:22`（C-98 的 id 偏差更大） |
+| M-R8-1 | 只把降级分支改回 `appendEvents([DEGRADED, SPEECH])`，不调 `submit` | **全量 `pnpm test`**（探针已移出） | **69 files / 581 tests 全绿**（第 2 项回归锁不成立） |
+| M-R8-2 | 删掉 `speak.ts:76-85` 的 `REJECTED` 检查 | `tests/server/speak.test.ts` | **2 failed / 5 passed**（夜晚、非当前席位，`expected true to be false`） |
+
+**恢复校验**：
+
+```
+$ md5 -q src/server/llm/speak.ts
+ed036cca6a21e15bc00d21d81c8493d3
+$ md5 -q /tmp/howl-rfc010-r8-backup/speak.ts
+ed036cca6a21e15bc00d21d81c8493d3
+
+$ ls tests/server/__r8-probe.test.ts
+No such file or directory
+
+$ git status --porcelain
+（空）
+
+$ pnpm test
+ Test Files  69 passed (69)
+      Tests  581 passed (581)
+```
+
+---
+
+### 8. 结论
+
+- **Overall Risk Level: Medium**
+- **Summary**：第 1 项（`REJECTED` 当失败）和第 3 项（AC-12 轮转）都真的修好了，并且第 1 项有会红的反向锁。第 2 项声称的「降级分支绕开引擎会红」不成立——`spoken` 由 `applyEvent` 折叠 `SPEECH` 推进，和写回路径无关，M-R8-1 全量 581 绿；要用最后一位降级 + `PHASE_CHANGED` / 离开 `DAY_SPEECH` 才能锁住。同时，修复把 `DEGRADED` 挪到 `SPEECH` 之后却没同步总线 id 和历史顺序，引入了 C-98：live `degraded` id ≠ 事件 seq（AC-5 / API-2），刷新 / 重连会抹掉短句并停在 `degraded`。
+- **Blocking Issues**：
+  1. **C-97 第 2 项 · 降级分支回归锁无效**：M-R8-1 全量 69 / 581 绿。改成「7 位正常 + 最后一位降级」并断言 `SPEECH` + `PHASE_CHANGED` + 离开 `DAY_SPEECH` + `seq` 连续 + `stateOf()` 通过；该用例必须在 `appendEvents` 绕开引擎时变红。同步修正 §8.13 的「绕开引擎时这条会红」与测试名。
+  2. **C-98 · 降级事件顺序 / id / 重放回归**：`speak.ts:89-108` 在 `submit` 后追加 `DEGRADED`（seq `N+1` / 最后一位 `N+2`），总线却用 `nextSeq`（`N`）发 `degraded`；live 与 committed 的 id 不一致（P-R8-A / P-R8-D），刷新 / 重连终态 `degraded` / 空正文。修复时二选一：恢复 `DEGRADED → SPEECH`（并在写前做接受性预检 / 让引擎同批产出），或保留新顺序并同步 `done` / `degraded` 的 id 与 reducer 语义；补 live id、刷新 / 重连终态、真实 fixture 三组测试，并更新 §8.12 / §8.13。
+- **Improvement Suggestions**：① 补「夜晚 / 非当前席位 + 降级」拒绝用例，锁住「拒绝时连 `DEGRADED` 都不写」；② AC-12 断言 4 个席位互异、第 4 轮后仍有下一发言人；③ 消除 `degradeEvents()` 与生产路径的顺序分叉（只返回 `DEGRADED` 或明确注释仅供 fixture）；④ 去掉 `speak.ts:66` 的 `as never`，用 `turn.unstable` 替代重复计算；⑤ 下一次 docs 提交同步 §8.3 / §8.4 / §8.6 / §8.11 / `TEST-STRATEGY.md` / `README.md` 与 `RFCS.md` §3 的 RFC-011 依赖（C-92 / DOC-1，非阻塞）；⑥ 拒绝时已发 `thinking` 的悬挂问题留给 RFC-011 的调用方契约（`ok:false` 必须清掉 thinking UI）。
+- **Suggested status**：**`Changes requested`**。
+
+---
+
+### 9. Open conflicts（登记到 `RFCS.md` §8.31 Round 8 段）
+
+- **C-97（第 1 / 3 项关闭，第 2 项仍阻塞）**：`REJECTED` 当失败已实现并有反向锁（M-R8-2 2 failed）；AC-12 轮转成立（P-R8-C，同席位旧写法会红）。但降级分支「走引擎」的回归锁无效（M-R8-1 全量 581 绿），需最后一位降级 + `PHASE_CHANGED` 的断言。
+- **C-98（新，阻塞）**：`DEGRADED` 被挪到 `SPEECH` 之后，live `degraded` id 与事件 seq 不一致（AC-5 / API-2），刷新 / 重连丢短句（AC-9）；§8.12 的旧顺序仍写在文档里，C-86 fixture 与真实顺序相反。
+- **C-86（Round 7 关闭，本轮不重开）**：类型映射与合并顺序本身未退化；C-98 是**生产侧事件顺序**的新问题，不是 C-86 的映射问题。
+- **C-87 / C-90 ~ C-95（未重查，按 Round 7 记录保留）**：AC-11 轮次标记、`src/` 调用者、`TEST-STRATEGY.md` / `README.md` / §8.3 / §8.4 / §8.6 的文档漂移仍是非阻塞债务；其中 §8.12 / §8.13 与 C-98 直接相关，应随 C-98 一起改。
