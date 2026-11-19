@@ -62,6 +62,9 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
   // AC-8：失败后重试 1 次；重试成功就不降级。
   // `attempt` 抛错也算失败——否则真实 `decide()` 的异常会直接把这一轮打穿（C-87）。
   for (let index = 0; index < 2; index += 1) {
+    // 整体预算：重试不能把总耗时推到硬上限之外（C-87）。第二次尝试之前就检查，
+    // 而不是等它跑完再发现已经超了。
+    if (index > 0 && input.now() - input.startedAt >= input.limitMs) break;
     attempts += 1;
     try {
       last = await input.attempt();
@@ -69,9 +72,6 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
       last = { text: '', failed: true };
     }
     if (!last.failed) break;
-
-    // 整体预算：重试不能把总耗时推到上限之外（否则「超时」会被第二次调用重置）。
-    if (input.now() - input.startedAt > input.limitMs) break;
   }
 
   const decision = decideDegrade({

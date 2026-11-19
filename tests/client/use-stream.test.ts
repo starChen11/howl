@@ -92,3 +92,37 @@ describe('C-89 · 跨发言必须重置正文与首字时间', () => {
     expect(state.firstDeltaAt).toBe(300);
   });
 });
+
+describe('C-89 · done 也要按段重置，且不抹掉已收到的正文', () => {
+  it('上一段有 thinking+delta，下一段只有 done：sawThinking 与 firstDeltaAt 归零', () => {
+    let state = streamReducer(initialStreamState, { type: 'thinking', id: 1, seat: 3 });
+    state = streamReducer(state, { type: 'delta', id: 1, seat: 3, text: '第一段' }, 200);
+    state = streamReducer(state, { type: 'done', id: 1, seat: 3, text: '第一段' });
+
+    state = streamReducer(state, { type: 'done', id: 2, seat: 4, text: '第二段' });
+
+    expect(state.sawThinking).toBe(false);
+    expect(state.firstDeltaAt).toBeNull();
+    expect(state.text).toBe('第二段');
+  });
+
+  it('空文本的 done（跳过发言）不抹掉已收到的正文', () => {
+    let state = streamReducer(initialStreamState, {
+      type: 'delta',
+      id: 5,
+      seat: 1,
+      text: '我说完',
+    });
+    state = streamReducer(state, { type: 'done', id: 5, seat: 1, text: '' });
+
+    expect(state.text).toBe('我说完');
+  });
+
+  it('不同 id 的 done 会重新开始一段（不是把上一段长文覆盖成一句话就完事）', () => {
+    let state = streamReducer(initialStreamState, { type: 'delta', id: 5, seat: 1, text: '甲' });
+    state = streamReducer(state, { type: 'done', id: 9, seat: 2, text: '乙' });
+
+    expect(state.text).toBe('乙');
+    expect(state.speechId).toBe(9);
+  });
+});

@@ -57,7 +57,15 @@ export class StreamBus {
     const oldest = channel.history[0]?.id ?? 0;
     if (channel.history.length >= BUS_HISTORY && lastEventId < oldest) return undefined;
 
-    return channel.history.filter((message) => message.id > lastEventId);
+    // C-96：同一条发言的多个 `delta` 共享 `id = seq`。如果断线发生在**发言中途**，
+    // `id > lastEventId` 会把这条发言剩下的增量全过滤掉，客户端就永远等不到 done。
+    // 所以把「id 等于断点、且还没结束的那段发言」的增量一并重放，从头补齐。
+    const trailingSpeech = channel.history.filter(
+      (message) =>
+        message.id === lastEventId && (message.type === 'delta' || message.type === 'thinking'),
+    );
+
+    return [...trailingSpeech, ...channel.history.filter((message) => message.id > lastEventId)];
   }
 
   subscribe(gameId: string, listener: (message: StreamMessage) => void): () => void {

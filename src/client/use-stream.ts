@@ -41,7 +41,11 @@ export function streamReducer(state: StreamState, message: StreamMessage, now = 
   // 乱序 / 重放：`id` 变小就丢掉。**同一条发言的增量共享同一个 `id`**（它是那条事件的
   // `seq`），所以只有终结类消息才按 `<=` 判重——否则第二个 delta 会被自己挡掉。
   if (state.lastId !== null && message.id < state.lastId) return state;
-  if (state.phase === 'done' && message.type === 'done') return state;
+  // 同一条 `done` 重放（重连补偿）是幂等的，但不能让它把正文改回旧值。
+  if (state.lastId === message.id && state.phase === 'done' && message.type === 'done') {
+    return state;
+  }
+  // 不再因为 phase 已经 done 就吞掉后续消息：下一段发言的 done 必须能进来。
 
   // 新一段发言：`text` / `firstDeltaAt` 必须重置，否则第二段会把第一段的正文接上去，
   // per-speech 的首字延迟也会一直停在上一段（C-89）。
@@ -74,15 +78,20 @@ export function streamReducer(state: StreamState, message: StreamMessage, now = 
         speechId: message.id,
       };
     }
-    case 'done':
+    case 'done': {
+      const sameSpeech = state.speechId === message.id;
       return {
         ...state,
         phase: 'done',
         seat: message.seat,
-        text: message.text,
+        // 空文本的 `done` 是「跳过发言」或没有正文的事件，不能把已经逐字收到的正文抹掉。
+        text: message.text.length > 0 ? message.text : state.text,
+        firstDeltaAt: sameSpeech ? state.firstDeltaAt : null,
+        sawThinking: sameSpeech ? state.sawThinking : false,
         lastId: message.id,
         speechId: message.id,
       };
+    }
     case 'degraded':
       return {
         ...state,

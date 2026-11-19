@@ -292,3 +292,35 @@ describe('C-86 · 增量经总线实时到达（thinking / delta 先于 done）'
     expect(response.body).toContain('SNAPSHOT_REQUIRED');
   });
 });
+
+describe('C-96 · 发言中途断线不丢增量', () => {
+  it('重连带 Last-Event-ID=当前发言 id 时，重放该段剩余的增量', async () => {
+    const { app, bus, session, record } = await setup();
+    const cookie = `session=${session.id}`;
+    const speechId = 900;
+
+    // 发言中途断线：先写了两个 delta
+    bus.publish(record.gameId, { type: 'thinking', id: speechId, seat: 3 });
+    bus.publish(record.gameId, { type: 'delta', id: speechId, seat: 3, text: '我' });
+    bus.publish(record.gameId, { type: 'delta', id: speechId, seat: 3, text: '觉得' });
+
+    const pending = app.inject({
+      method: 'GET',
+      url: `/api/games/${record.gameId}/stream`,
+      headers: { cookie, 'last-event-id': String(speechId) },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    bus.publish(record.gameId, { type: 'done', id: speechId, seat: 3, text: '我觉得' });
+    bus.end(record.gameId);
+
+    const body = (await pending).body;
+    const types = body
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => (JSON.parse(line.slice(6)) as { type: string }).type);
+
+    // 必须能拿到这段发言的增量，而不是只有 done
+    expect(types).toContain('delta');
+    expect(types[types.length - 1]).toBe('done');
+  });
+});

@@ -193,3 +193,16 @@ $ pnpm test → 68 files / 559 tests
 ```
 $ pnpm test → 68 files / 564 tests
 ```
+
+### 8.9 Round 3 回应（Changes requested · High）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-96**（新）发言中途断线丢增量 | `delta` 共享 `id = seq`，而 `id > Last-Event-ID` 会把这条发言剩下的增量全过滤掉——客户端永远等不到 `done` | `StreamBus.replay` 额外重放「id 等于断点、且仍是 `thinking`/`delta`」的尾部消息，从这段发言的开头补齐。补用例：断在发言中途、带当前发言 id 重连，必须收到 `delta` 且最后是 `done`。反向探针会红 |
+| **C-86** 刷新后一条发言都看不到 | `committedMessages` 把每个可见事件都映射成 `done`（大多没有文本），最后一条空文本把正文抹掉；且 `phase === 'done'` 后不再接收下一段 | `done` 只在文本非空时替换正文；去掉「已经 done 就不再收」的守卫，改为「同一 id 的 done 幂等」。补三条用例（空文本不抹、跨段重置、同 id 幂等） |
+| **C-89** `done` 分支不重置、修复无回归锁 | 上一段有 thinking+delta、下一段只有 done 时 `sawThinking` 仍为 true；删掉重置行测试仍全绿 | `done` 分支按 `sameSpeech` 重置 `sawThinking` 与 `firstDeltaAt`；补「跨段 done」用例。反向探针（删掉该行）会红 |
+| **C-87** 重试可突破整体预算 | 只在第一次失败**之后**检查，第二次仍会跑满 | 第二次尝试**之前**检查 `now() - startedAt >= limitMs` |
+
+```
+$ pnpm test → 68 files / 568 tests
+```
