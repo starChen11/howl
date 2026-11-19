@@ -94,10 +94,12 @@ interface OutputChannel {
 6. 倒计时归零时自动提交已输入内容，且该内容完整进入事件流
 7. 超时且输入为空时产出 `SPEECH_SKIPPED` 事件，对局继续
 8. 玩家提交的发言原样出现在投影给其他 AI 的上下文中，并带 `seat` 标记（复用 RFC-007 的 `<public_utterance>` 注入格式）
-9. 输入与输出都经过 `InputChannel` / `OutputChannel` 接口：静态断言 `src/engine/` 中不出现这两个类型
+9. 输入与输出都经过 `InputChannel` / `OutputChannel` 接口：静态断言 `src/engine/` 中不出现这两个类型；**服务端存在兑现路径**——`POST /actions` 的发言在被引擎接受后通知挂起的输入通道，被拒绝时不通知
 10. 编排层在服务端：静态断言 `src/client/` 不 import `src/engine/`，且客户端代码中不出现 `reduce(`（ARCH-9）
 11. 用 stub 通道（预置输入序列）能在**无浏览器、无 LLM** 的情况下把一局跑完
 12. 新增一个通道实现（如 `ScriptedChannel`）不需要修改 `src/engine/` 与 `src/shared/` 之外的任何文件
+
+> **边界说明（`CHANGE-REQUEST-010`，用户选 A）**：「启动整局循环的生产入口」（轮到 AI 让它说话、轮到玩家等 60 秒）迁移到 **RFC-012**。本 RFC 只保证接线与兑现；`runGame` 是编排层的能力，由 RFC-012 的入口驱动。`RFCS.md` 的依赖表已登记 RFC-012 → RFC-011。
 13. 倒计时以服务端为准：刷新页面后剩余时间不回满，且超时仍按原起点触发
 14. 引擎依赖方向不变：`src/engine/` 仍只依赖 `src/shared/`
 
@@ -178,7 +180,7 @@ $ pnpm test → Test Files 74 passed (74) · Tests 613 passed (613)
 | 缺口 | 说明 | 归属 |
 |---|---|---|
 | 界面部件 | `IdCard.tsx` / `SpeechInput.tsx` 与 DOM 扫描（AC-3 / AC-4） | RFC-012 |
-| 编排层的完整循环 | `runGame` 的 AI 决策目前由注入的 `decide` 提供；真正把 `speak`（RFC-010）接进每个 AI 回合是 RFC-012/013 的事 | RFC-012 |
+| 编排层的完整循环 | `runGame` 已能跑完整局（脚本化 AI）；**生产入口**由 RFC-012 提供（`CHANGE-REQUEST-010` 裁决） | RFC-012 |
 | 播报超时 | `HttpInputChannel` 超时时交出空文本（没有增量缓存）；要「自动提交已输入内容」需要前端把草稿同步到服务端 | RFC-012 |
 
 ### 8.7 Round 1 回应（Changes requested）
