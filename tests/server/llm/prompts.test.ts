@@ -68,6 +68,24 @@ describe('用户消息 · 反映知情清单', () => {
   });
 });
 
+describe('RFC-009 · 人格进入提示且只约束风格', () => {
+  it('传入人格时，提示里出现性格与「不要因性格违反规则」', () => {
+    const prompt = buildSystemPrompt({
+      persona: '直来直去（说话短、指认强）',
+      mode: 'slaughter-side',
+    });
+
+    expect(prompt).toContain('性格设定');
+    expect(prompt).toContain('不要因为性格而做出违反规则的选择');
+  });
+
+  it('不传人格时不出现这个段落', () => {
+    const prompt = buildSystemPrompt({ persona: null, mode: 'slaughter-side' });
+
+    expect(prompt).not.toContain('性格设定');
+  });
+});
+
 describe('B3 · 用户消息要带上对局内容，而不只是事件类型', () => {
   it('发言原文、票型、死者都出现在消息里，且发言经封装', () => {
     const ctx: ProjectedContext = {

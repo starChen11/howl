@@ -105,3 +105,68 @@ claim?: {
 |---|---|---|
 | Q-009-1 | 人格库最终放几个 | **(assumption)** 至少 12 个，具体条目属于实现者选择 |
 | Q-009-2 | `claim.checks` / `claim.accuses` 由模型生成还是由服务端推断 | **(assumption)** 由模型在结构化输出中生成；服务端只校验，不做语义推断 |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。前置 RFC-007 已 `Reviewed`。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| 人格分配方式 | **按种子随机分配、整局不变**（用户选 A）：每局重洗，同一局内 8 个 AI 性格各异 |
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+| **D-1** | 人格在 `createInitialState` 里分配（发牌之后），用**发牌后的** rng 序列 | 保证「换种子换人格、但不影响身份」（AC-3 正交性）；分配结果随 `GAME_STARTED.personas` 进事件流，`replay` 能重建 |
+| **D-2** | 人格给 8 个 AI 席位，**玩家席位没有人格** | `personaId` 为 `undefined` 而不是空串：空串会在提示里被当成一个人格 id |
+| **D-3** | `annotate` 需要调用方提供 `speakerOf(event)`，**不从 `visibleTo` 反解席位** | CR-003 C2 的教训：拿可见性字段当数据用，规则一改就静默错位（RFC-005 确实改过可见性） |
+| **D-4** | `annotateWithoutText` 把 `speech` / `text` 抹掉后重新标注，用于证明「判定不依赖自然语言」 | AC-8 要的不是「换个措辞也测一遍」，而是「文本完全不参与判定」 |
+| **D-5** | AC-3 不做完整卡方检验，改用「每个格子的狼数必须少于好人数 + 1」的界 | 200 局样本下，这种界对「人格与阵营相关」的实现在统计上够敏感，且不需要正态分位表。若将来要严格卡方，可换成正态近似实现 |
+| **D-6** | AC-4 的「平均句长/攻击性词汇比例」用**风格画像**（`styleOf`）替代 | 真正的句长要等模型生成（RFC-010/011）。本 RFC 能保证的是「提示里会被要求用不同风格」，生成侧的可测性留给后续 RFC |
+
+### 8.3 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 引擎新增 | `src/engine/personas.ts`（12 个人格 + 分配器 + 风格画像）、`src/engine/annotate.ts`（三类打法判定） |
+| 引擎修改 | `src/engine/init.ts`（发牌后分配人格、写入 `seats.personaId`） |
+| 服务端修改 | `src/server/llm/prompts/base.ts`（人格风格段 + 「不要因性格违反规则」） |
+| 测试新增 | `tests/engine/{personas,annotate}.test.ts`；`tests/server/llm/prompts.test.ts` 补人格段 |
+| 文档 | 本文件 §8、`RFCS.md`、`TEST-STRATEGY.md`、`README.md` |
+
+### 8.4 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `personas.test.ts` · 200 个种子的 AI 席位人格数恒为 8；玩家席位无 `personaId` | PASS |
+| 2 | 同上 · 每局 8 个 id 互不重复 | PASS |
+| 3 | 同上 · 200 局交叉表里每个人格的狼数都少于好人数 + 1（D-5 的界） | PASS |
+| 4 | 同上 · 12 个人格的「句长/攻击性」组合超过 3 种（D-6：风格画像，非生成文本） | PASS |
+| 5 | 同上 · `personaOf(id).label` 可读出，未知 id 抛错 | PASS |
+| 6 | `annotate.test.ts` · 狼 + 声称 seer + 至少一条查验 → 真；缺查验 / 好人声称 → 假 | PASS |
+| 7 | 同上 · 狼指认同伴 → 真；狼指认好人 → 假；好人指认 → 假 | PASS |
+| 8 | 同上 · `annotateWithoutText` 的结果与带文本时完全一致 | PASS |
+| 9 | 同上 · 构造的事件流里三类打法各 ≥3 条 | PASS |
+| 10 | `prompts.test.ts` · 人格只进「风格段」，且提示明确写「不要因为性格而做出违反规则的选择」；合法性判定在 `toAction`，与人格无关 | PASS |
+| 11 | `personas.test.ts` · 同 seed 两次分配映射相同；不同 seed 排列不同 | PASS |
+
+### 8.5 验证输出（实跑）
+
+```
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → Test Files 63 passed (63) · Tests 519 passed (519)
+$ coverage → 行 97.12% / 分支 92.95%
+```
+
+### 8.6 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| 生成文本的风格差异未测 | AC-4 只验证「目标风格不同」；真实句长要等模型生成 | RFC-010 / 011 |
+| 标注结果未进快照 | `annotate` 是纯函数，快照由 RFC-014 生成 | RFC-014 |
+| 卡方检验 | 用界代替（D-5） | 可选改进 |

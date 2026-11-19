@@ -26,9 +26,10 @@ export function buildSystemPrompt(input: {
     'reason 不超过 200 字。',
   ];
 
-  // 人格在 RFC-009 之前恒为 null；留出接缝，但不填假值。
+  // 人格（RFC-009）：只约束**风格**，不改变合法性判断。
   if (input.persona !== null) {
     lines.push(`你的性格设定：${input.persona}`);
+    lines.push('保持这个性格的说话方式，但不要因为性格而做出违反规则的选择。');
   }
 
   return lines.join('\n');

@@ -2,6 +2,7 @@ import type { GameState, Role, Seat, SeatId, WinMode } from '@shared/domain';
 import { SEAT_IDS } from '@shared/domain';
 
 import { dealRoles } from './deal';
+import { assignPersonas } from './personas';
 
 /**
  * 开局前构造状态（RFC-002 §2.2）。
@@ -33,12 +34,28 @@ export function createInitialState(
     throw new Error(`板子规模 ${dealt.roles.length} 与座位数 ${SEAT_IDS.length} 不一致`);
   }
 
+  // 人格在**发牌之后**独立分配：换种子会换人格，但不会影响身份（AC-3 正交性）。
+  const assigned = assignPersonas(dealt.rng);
+  let personaCursor = 0;
+
   const seats: Seat[] = SEAT_IDS.map((seat, index) => {
     const role = dealt.roles[index];
     if (role === undefined) {
       throw new Error(`座位 ${seat} 没有分到身份`);
     }
-    return { seat, role, alive: true, isPlayer: seat === input.playerSeat };
+
+    // 玩家席位没有人格（RFC-009 §2.1：人格给 8 个 AI）。
+    if (seat === input.playerSeat) {
+      return { seat, role, alive: true, isPlayer: true };
+    }
+
+    const persona = assigned.personas[personaCursor];
+    personaCursor += 1;
+    if (persona === undefined) {
+      throw new Error('人格不够分配给 AI 席位');
+    }
+
+    return { seat, role, alive: true, isPlayer: false, personaId: persona.id };
   });
 
   return {
@@ -47,7 +64,7 @@ export function createInitialState(
     mode: input.mode,
     // 发牌已经消耗过随机数，状态里留下的是**发牌之后**的生成器状态；
     // `START` 处理时它会作为 GAME_STARTED 的 `rngAfter` 写进事件（RFC-002 §2.2）。
-    rng: dealt.rng,
+    rng: assigned.rng,
     phase: 'LOBBY',
     day: 0,
     seats,

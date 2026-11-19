@@ -45,7 +45,7 @@
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Reviewed |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
-| [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Not started |
+| [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Implemented |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Not started |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Not started |
@@ -534,6 +534,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.66 | RFC-009 实现完成（Status → Implemented）：12 个人格按种子分配、整局不变（玩家席位无人格）；`claim` 驱动的三类打法判定（悍跳 / 狼查杀狼 / 自曝），不做文本分析；人格只进风格段 |
 | 2026-11-19 | v2.65 | RFC-008 Round 8 复核（Status → Reviewed）：C-73 关闭（P-R8-1 红，`4242424` vs `4242425`）；C-61 按 CR-009 关闭（AC-13a / 13b，`src/` 零改动）；C-67 关闭；C-69 仍 Open（非阻塞，§8.11 的 400 / README / TEST-STRATEGY 未同步）。门禁 61/500 全绿；探针从文件备份恢复、工作树 clean、无 commit。详见 `reviews/REVIEW-RFC-008.md` Round 8 |
 | 2026-11-19 | v2.64 | RFC-008 Round 7 修复（Status → Implemented）：C-61 按 CR-009 拆成 AC-13a / 13b；C-73 补「同长度同 seq 改 payload」的 no-cache 判据；文档漂移修正 |
 | 2026-11-19 | v2.63 | RFC-008 Round 7 复核（Status → `Changes requested`）：C-73 仍 Open（阻塞）——按 `(events.length, last.seq)` 校验的缓存下 `finished-game` 4/4、全量 61/499 绿（P-R7-2），同长度同末条 seq 的 payload 变化返回旧状态（P-R7-3）；两条旧 AC-13 用例改名完成；C-69 仍 Open（非阻塞，§8.11 的 400 未改、README/TEST-STRATEGY 仍 498）；C-61 仍 Open（规范阻塞，非代码）。门禁 61/499 全绿；探针从文件备份恢复、工作树 clean、无 commit。详见 `reviews/REVIEW-RFC-008.md` Round 7 |
