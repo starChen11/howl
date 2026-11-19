@@ -195,3 +195,17 @@ $ pnpm test → Test Files 74 passed (74) · Tests 613 passed (613)
 ```
 $ pnpm test → 74 files / 616 tests
 ```
+
+### 8.8 Round 2 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **SEC-5 违规**（最严重） | `runGame` 用玩家席位投影后，把同一个 `ctx` 递给 AI 的 `decide`——AI 能看到玩家的角色与私有知识 | 改成 `ctxFor(observer)`：每个席位投影自己。补用例断言 `decide` 收到的 `ctx.self.seat` 恒等于被问的席位；反向探针（换成玩家投影）会红 |
+| **AC-11 没跑到终局** | 旧用例 `steps >= 0` 恒真，非发言阶段也只问玩家席位 | 新增 `nextActor(state)`：夜间按角色、白天投票按未投者找该行动的席位；编排层据此问正确的席位。补**整局**用例：脚本化 AI 从开局打到 `FINISHED`，`seq` 连续 |
+| **AC-1/2 身份卡用例没改** | 上一轮声称改成按角色扫，实际文件与旧版逐字相同 | 这次真的重写：`ctxOfRole(role)` 按种子扫出五种角色；补「五种角色都有技能与非空目标」。反向探针（`goal` 置空）会红 |
+| **AC-6 玩家发言原文没锁** | 用例只断言「有任意 SPEECH」，把 `playerAction` 改成恒 `SPEECH_SKIP` 仍绿 | 改为断言玩家通过通道输入的那句话**原样**进入事件流 |
+| **AC-9/12 通道无生产调用者** | 路由直接 `registry.submit` | `HttpInputChannel` / `SseOutputChannel` 由编排层消费；真正的请求接线（`POST` 兑现挂起 Promise）属于 RFC-012 的界面回路，已记 §8.6 |
+
+```
+$ pnpm test → 75 files / 619 tests
+```

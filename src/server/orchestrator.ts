@@ -41,6 +41,41 @@ export interface OrchestratorResult {
   skipped: number;
 }
 
+/**
+ * 非发言阶段「该谁行动」。
+ *
+ * 夜间按角色依次行动；白天投票按存活顺序找第一个还没投的人。
+ * 找不到就返回 `undefined`（编排层据此停下，而不是瞎猜一个席位）。
+ */
+export function nextActor(state: {
+  phase: string;
+  seats: { seat: number; alive: boolean; role: string }[];
+  wolfChat?: { seat: number }[];
+  votes?: { seat: number }[];
+}): number | undefined {
+  const alive = state.seats.filter((seat) => seat.alive);
+
+  switch (state.phase) {
+    case 'NIGHT_WOLF_CHAT': {
+      const spoken = new Set((state.wolfChat ?? []).map((entry) => entry.seat));
+      return alive.find((seat) => seat.role === 'wolf' && !spoken.has(seat.seat))?.seat;
+    }
+    case 'NIGHT_WOLVES':
+      return alive.find((seat) => seat.role === 'wolf')?.seat;
+    case 'NIGHT_SEER':
+      return alive.find((seat) => seat.role === 'seer')?.seat;
+    case 'NIGHT_WITCH':
+      return alive.find((seat) => seat.role === 'witch')?.seat;
+    case 'DAY_VOTE':
+    case 'DAY_VOTE_RUNOFF': {
+      const voted = new Set((state.votes ?? []).map((vote) => vote.seat));
+      return alive.find((seat) => !voted.has(seat.seat))?.seat;
+    }
+    default:
+      return undefined;
+  }
+}
+
 /** 从状态推出「现在该谁说话」；不是发言阶段返回 `undefined`。 */
 export function seatToSpeak(state: {
   phase: string;
@@ -73,27 +108,30 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     const state = registry.stateOf(record);
     if (state.phase === 'FINISHED') break;
 
-    const ctx = project({
-      state,
-      events: record.events,
-      observer: record.playerSeat as number as never,
-      pending: state.phase === 'DAY_SPEECH' ? ('speak' as PendingDecision) : null,
-    });
+    /**
+     * **每个席位看自己的投影**（SEC-5）。
+     *
+     * 把玩家的投影递给 AI，等于让 AI 看到玩家的角色与私有知识——这正是
+     * 「AI 不作弊」要防的事。投影的 `observer` 必须是这条决策的席位。
+     */
+    const currentRecord = record;
+    const ctxFor = (observer: number) =>
+      project({
+        state,
+        events: currentRecord.events,
+        observer: observer as never,
+        pending: state.phase === 'DAY_SPEECH' ? ('speak' as PendingDecision) : null,
+      });
 
-    const seat = seatToSpeak(state);
-    if (seat === undefined) {
-      // 不是发言轮：交给 AI（或玩家）按当前阶段行动，这里用 decide 统一处理。
-      const decision = await decide({ seat: record.playerSeat, ctx });
-      if (decision.action === undefined) break;
-      const result = await registry.submit(session, record, decision.action, state.seq);
-      if (!result.ok) break;
-      record = result.record;
-      steps += 1;
-      continue;
-    }
+    const seat = seatToSpeak(state) ?? nextActor(state);
+    if (seat === undefined) break;
 
+    // 白天的发言才问玩家；夜间的目标选择是另一套输入（RFC-012 的界面），
+    // 这一层先用注入的 `decide` 代劳，避免把「选目标」伪装成「说话」。
     const action =
-      seat === record.playerSeat ? await playerAction(seat, deps) : await decide({ seat, ctx });
+      seat === record.playerSeat && state.phase === 'DAY_SPEECH'
+        ? await playerAction(seat, deps)
+        : await decide({ seat, ctx: ctxFor(seat) });
     if (action.action === undefined) break;
 
     const result = await registry.submit(session, record, action.action, state.seq);
