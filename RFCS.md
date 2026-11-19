@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.50 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-18
+> 版本 v2.51 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -44,7 +44,7 @@
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Reviewed |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Reviewed |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
-| [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Implemented |
+| [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Changes requested |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Not started |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Not started |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Not started |
@@ -403,10 +403,26 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 4 后的冲突状态**：C-50 / C-55 / C-56 关闭；C-53 保持 Open（非阻塞；`Exists?` 已回填，Test 列 / 注记 / FEATURES `claimedRole` 仍待收尾）；C-57 保持 Open（非阻塞；D-2 已标注修订，ARCH-2 规则同步仍待 `/manage-changes`）；C-42 保持 Open（非阻塞，范围因 C-57 扩大）；新登记 C-58（非阻塞文档回填）。RFC-006 的 Status 为 **Reviewed**。
 
+### 8.20 RFC-008 Round 1 评审登记的冲突（2026-11-19）
+
+> 由第一轮 `/review-rfc 008` 登记；完整证据见 [`reviews/REVIEW-RFC-008.md`](reviews/REVIEW-RFC-008.md)。评审时 HEAD `10e0374`，工作树 clean；门禁 **58 files / 477 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0。C-59 / C-60 / C-61 / C-62 阻塞 RFC-008；C-63 / C-64 非阻塞。所有探针从 `/tmp/howl-probe-backup/` 的文件备份恢复（未用 `git checkout`），探针后全量套件复跑 58/477 绿，工作树 clean；没有 `git commit`。
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-59** | **`POST /api/games/:id/actions` 的 `{ version, events }` 响应把未经可见性过滤的事件原样发给客户端。** `src/server/routes/games.ts:132` 返回 `result.events`；实测女巫玩家的动作响应含 `PLAYER_DIED`（`visibleTo: 'server'`，`cause: 'wolf'`）与 `PHASE_CHANGED`（`visibleTo: 'server'`，`NIGHT_WITCH → NIGHT_RESOLVE`）。RFC-008 §2.2 只写了响应含 `events`，没有授权发送 `server` / 其他席位私有事件；`RULES SEC-5` 要求客户端视图由 `project()` 产生，RFC-007 C-28 已裁决夜间子阶段与死因不得泄漏。按权威顺序 `RULES > RFC`，响应必须过滤。 | **阻塞 RFC-008**。返回前按 `isVisibleTo(event, record.playerSeat, stateAfterEvent)` 过滤（或只返回 `version`，由客户端重新 GET `project()`）；补「女巫动作响应不含 `PLAYER_DIED` / `PHASE_CHANGED server`」与「非狼提交狼动作拿不到 `WOLF_CHAT_POSTED`」的回归测试。 | **Open（阻塞）** · `src/server/routes/games.ts:132`、`src/engine/phases/night.ts:76-81`、`src/shared/visibility.ts:20-57`、`RFCs/RFC-008...:45-50`、`RULES.md:156`、`reviews/REVIEW-RFC-008.md` §5.1 / T4 |
+| **C-60** | **公开动作路由不绑定 `action.seat` 与 `record.playerSeat`。** `src/server/routes/games.ts:101-123` 只校验会话拥有该局；实测 `playerSeat = 1`（女巫）的会话可以成功提交 `WOLF_CHAT seat: 3` / `WOLF_KILL seat: 3` / `SEER_CHECK seat: 7`，并读到狼聊、狼刀与查验结果。RFC-008 §2.2 没有写「谁可以提交哪个席位」；RFC-011 负责玩家输入与编排，但其 AC 也没有这条。 | **阻塞 RFC-008**。二选一：① 在公开路由校验「`action.seat` 属于玩家席位（或该 action 不需要 seat）」，AI 动作走服务端内部编排；② 由 `/manage-changes` 明确把席位绑定 / 反作弊 AC 划给 RFC-011，并把 008 加入 011 的前置或写明接口边界。不能保持「任何席位都能由浏览器提交」。 | **Open（阻塞）** · `src/server/routes/games.ts:101-123`、`src/shared/api.ts:49-52`、`RFCs/RFC-011...:55-62`、`RFCs/RFC-008...:45-50`、`reviews/REVIEW-RFC-008.md` §5.2 / T4 |
+| **C-61** | **AC-13 的验收证据与 AC 相反。** RFC §5 AC-13 要求「finished 后 GameState 不再缓存：释放后再取该局，内部重新 replay 得到同一状态」；§8.4 的 AC-13 与 `tests/server/store.test.ts:73-91` 却断言 `release()` 清空 events 后 `stateOf(released)` **抛错**，并把「按需 replay 的前提」当成 PASS。反向探针 P5b 只对 finished 记录加普通对象缓存（release 时删除），`session + resume + store` 19/19 仍绿。 | **阻塞 RFC-008（测试证据）**。用真实 `FINISHED` 路径构造 1 局（保留在最近 3 局内），GET 两次断言 `version` 相等、`view` 深相等，并证明 `stateOf` 每次都从 events 重建（例如在测试里注入可计数的 store 或临时删缓存）；释放语义（清 events → 410）另立用例，不要拿来当 AC-13 的证据。 | **Open（阻塞）** · `RFCs/RFC-008...:131,200`、`tests/server/store.test.ts:73-91`、`src/server/store/game-registry.ts:134-137,195-200`、`reviews/REVIEW-RFC-008.md` §2 / P5b |
+| **C-62** | **§2.5 / Q-008-3 的会话列表与释放语义没有实现。** 会话超过 20 局时 `createGame` 把最旧一局从 `session.gameIds` 删除并 `release()`（`game-registry.ts:119-124`）：`GET /api/session` 只列 20 条（§2.5 要求「仍列出全部对局（含已释放的）」），第 21 局之前的那局返回 `404 GAME_NOT_FOUND` 而不是 §4 的 `410 GAME_EXPIRED`；若被删的是 active 局，事件被清空且没有 snapshot（Q-008-3 要求「降级为仅保留 snapshot」）。此外 `enforceRetention()` 扫全局 `game:` 键（`:202-217`），会话 B 打完 4 局会清掉会话 A 已终局一局的 events（实测）。 | **阻塞 RFC-008**。至少：① 保留会话内全部 gameId（或另加 `released` 标记），让 `/api/session` 仍列出；② 不对 active 局做无 snapshot 的 release；③ retention 按会话隔离，或明确全局策略并同步 §2.5 / Q-008-3；补 21 局 / 100 局 / 双会话三条回归测试。 | **Open（阻塞）** · `RFCs/RFC-008...:83-89,119-134,146-148`、`src/server/store/game-registry.ts:119-124,195-217`、`reviews/REVIEW-RFC-008.md` §2 AC-14 / §9 T1–T3 |
+| **C-63** | **手写 cookie 与依赖表 / D-1 的「属性完整」声明不一致。** RFC §2.6 指定 `@fastify/cookie`，`RULES.md:60` 登记 11.1.5，但 `package.json` 未安装；D-1 记录手写实现，却没有 `DOC-1` 要求的「用户是否同意」。更关键的是 `src/server/index.ts:26` 的生产入口只调用 `buildApp({ logger: true })`，`production` 默认 `false`，所以真实 `pnpm start` 的 cookie **没有 `Secure`**（`dist/server/index.js:2370` 同样）。`buildApp({ production: true })` 本身能正确加 `Secure`。 | **非阻塞（文档 / 依赖表）**：由 `/manage-changes` 决定安装 `@fastify/cookie` 还是把 D-1 的手写实现补上用户同意并同步 `RULES.md` §2。**生产 `Secure` 未接线是阻塞代码缺陷**，见 `reviews/REVIEW-RFC-008.md` B3：在入口传 `production` 并补两条属性测试。 | **Open（非阻塞文档部分）** · `RFCs/RFC-008...:93,168`、`RULES.md:60,219`、`package.json:22-29`、`src/server/index.ts:26`、`src/server/app.ts:30-33`、`src/server/session.ts:27-41,81-88`、`reviews/REVIEW-RFC-008.md` §1.1 / §5.3 |
+| **C-64** | **文档与测试基线漂移（非阻塞）。** ① `TEST-STRATEGY.md:32-37` 仍是 `Tests 449 passed`、且写「其余 15 个 RFC 仍为 proposed」，实际 477 / 多个 RFC 已 `Reviewed`；`:460` 的 changelog 写「基线 458 → 477」。② RFC-008 §8.4 的 AC-2 / AC-3 / AC-8 / AC-11 / AC-13 / AC-14 / AC-15 证据比测试实际断言强（AC-3 只 GET 200；AC-13 断言相反；AC-14 只 5 局）。③ §8.1 批准「打完的局 7 天后清理」，但 `SESSION_TTL_MS` 只用于 cookie 的 `Max-Age`，服务端没有 TTL 清理。④ `snapshot?: unknown` 与 §2.1 的 `ReplaySnapshot` 不一致；响应类型没有 Zod。 | **不阻塞 RFC-008 代码**。下一次 docs / 实现提交同步 TEST-STRATEGY 基线、RFC §8.4 证据行、D-1 的用户同意；把 7 天清理实现或改成「cookie 7 天、进程重启丢弃」的明确口径；补响应 schema 或写明 API-1 只覆盖请求。 | **Open（非阻塞）** · `TEST-STRATEGY.md:29-37,272-286,460`、`RFCs/RFC-008...:119-134,184-203,212-219`、`src/server/store/game-registry.ts:32-35,49`、`src/server/session.ts:39`、`src/shared/api.ts:23-41`、`reviews/REVIEW-RFC-008.md` §1.1 / §3 / §7 |
+
+> **Round 1 后的冲突状态**：C-59 / C-60 / C-61 / C-62 阻塞 RFC-008；C-63 / C-64 非阻塞。RFC-008 的 Status 为 **`Changes requested`**。上一轮没有 RFC-008 的评审记录，本轮是 Round 1。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.51 | RFC-008 Round 1 评审（Status → `Changes requested`）：门禁 58 files / 477 tests 全绿；**C-59 / C-60 / C-61 / C-62 阻塞**——动作响应泄漏 `server` / 私有事件、动作席位可替任意角色提交、AC-13 证据与 AC 相反且无缓存回归锁、20 局上限与全局 retention 违反 §2.5 / Q-008-3；C-63（手写 cookie / 依赖表 / 生产 `Secure` 未接线）与 C-64（文档基线 / 7 天清理 / 响应 schema）非阻塞。探针全部从文件备份恢复、工作树 clean、无 commit。详见 `reviews/REVIEW-RFC-008.md` Round 1 |
 | 2026-11-19 | v2.50 | RFC-008 实现完成（Status → Implemented）：`MetaStore`（唯一出口，返回副本）+ `GameRegistry`（事件流为唯一权威、按需 replay）+ 四个对局路由 + 会话 cookie；幂等按 `(gameId, expectedVersion, type, seat)` 区分重试与冲突；保留最近 3 局完整事件 |
 | 2026-11-18 | v2.49 | RFC-006 Round 4 复核（Status → `Reviewed`）：C-56 闭环（`<wolf_chat>` + 转义 + 数据声明；M3/M4 红、真实投影探针通过）；C-55 闭环（`APIUserAbortError` + `cause` 分类；M1/M2 红、两条 meta `TIMEOUT`）；N-R2 / N-R3 行为落地，TEST-STRATEGY 的 `Exists?` 回填，RFC-007 D-2 标注被本 RFC 修订；C-50 / C-55 / C-56 关闭，C-53 / C-57 保持 Open（非阻塞），新登记 C-58（RFC-006 文档回填，非阻塞）。详见 `reviews/REVIEW-RFC-006.md` Round 4 |
 | 2026-11-18 | v2.48 | RFC-006 Round 3 复核（Status → `Changes requested`）：B4 闭环（schema 不限长 + `toAction` 截断 + decide 层 301 字用例）；B6 的端点 / AC-13 闭环，但真实超时仍被记成 `SERVER_ERROR`（C-55）；B3 的私有狼聊渲染落地但未封装（C-56）；C-54 的依赖方向恢复，但 `shared/` 的 ARCH-2 例外扩大（C-57）。C-50 保持 Open，C-51 / C-52 / C-54 关闭，C-53 保持 Open。详见 `reviews/REVIEW-RFC-006.md` Round 3 |
