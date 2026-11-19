@@ -41,19 +41,22 @@ export interface OrchestratorResult {
   skipped: number;
 }
 
-/** 投影里「该谁行动」的席位。 */
-export function seatToAct(ctx: ProjectedContext): number | undefined {
-  if (ctx.pending === 'speak') {
-    // 投影已经把「轮到谁」写进 legalTargets 之外的公开事件里；用 speech 游标判断。
-    const spoken = ctx.publicEvents
-      .filter((event) => event.type === 'SPEECH' || event.type === 'SPEECH_SKIPPED')
-      .map((event) => (event.payload as { seat?: number }).seat)
-      .filter((seat): seat is number => typeof seat === 'number');
-    const alive = ctx.aliveSeats;
-    return alive.find((seat) => !spoken.includes(seat));
-  }
+/** 从状态推出「现在该谁说话」；不是发言阶段返回 `undefined`。 */
+export function seatToSpeak(state: {
+  phase: string;
+  speech?: { startSeat: number; spoken: number[] };
+  seats: { seat: number; alive: boolean }[];
+}): number | undefined {
+  if (state.phase !== 'DAY_SPEECH' || state.speech === undefined) return undefined;
 
-  return undefined;
+  const alive = state.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+  const spoken = new Set(state.speech.spoken);
+  // 从起点开始按存活顺序找第一个还没说的人（发言顺序由引擎的 startSeat 决定）。
+  const ordered = [
+    ...alive.slice(alive.indexOf(state.speech.startSeat)),
+    ...alive.slice(0, alive.indexOf(state.speech.startSeat)),
+  ];
+  return ordered.find((seat) => !spoken.has(seat));
 }
 
 export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResult> {
@@ -74,10 +77,10 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
       state,
       events: record.events,
       observer: record.playerSeat as number as never,
-      pending: null as PendingDecision | null,
+      pending: state.phase === 'DAY_SPEECH' ? ('speak' as PendingDecision) : null,
     });
 
-    const seat = seatToAct(ctx);
+    const seat = seatToSpeak(state);
     if (seat === undefined) {
       // 不是发言轮：交给 AI（或玩家）按当前阶段行动，这里用 decide 统一处理。
       const decision = await decide({ seat: record.playerSeat, ctx });

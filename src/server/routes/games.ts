@@ -12,6 +12,7 @@ import type { ProjectedContext } from '@shared/project';
 import type { PendingDecision } from '@shared/project';
 
 import { project } from '../project';
+import { isWithinLimit } from '../speech';
 import { resolveSession } from '../session';
 import type { GameRegistry } from '../store/game-registry';
 
@@ -118,6 +119,15 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
 
     // B2：玩家只能提交**自己席位**的动作。不校验的话，玩家可以代 wolf 下刀、代 seer
     // 查验——顺带还能读到对方的私有事件（响应里那条 SEER_CHECKED）。
+    // AC-5 / SEC-4：前端限制之外，后端必须再校验一次。按 Unicode 字符数算。
+    if (parsed.data.action.type === 'SPEECH' && !isWithinLimit(parsed.data.action.text)) {
+      return reply.code(400).send({
+        error: 'VALIDATION_FAILED',
+        message: '发言超过 300 字',
+        issues: ['action.text'],
+      });
+    }
+
     const seatOfAction = 'seat' in parsed.data.action ? parsed.data.action.seat : undefined;
     if (seatOfAction !== undefined && seatOfAction !== record.playerSeat) {
       return reply.code(403).send({

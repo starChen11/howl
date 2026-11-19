@@ -27,6 +27,8 @@ export class HttpInputChannel implements InputChannel {
   private readonly now: () => number;
   private readonly timeoutMs: number;
   private pending: Pending | undefined;
+  /** 当前这一轮的草稿（客户端每敲几个字同步一次）。 */
+  private draft = '';
 
   constructor(options: HttpInputChannelOptions = {}) {
     this.now = options.now ?? (() => performance.now());
@@ -40,16 +42,25 @@ export class HttpInputChannel implements InputChannel {
 
   read(prompt: InputPrompt): Promise<PlayerInput> {
     this.close();
+    this.draft = '';
 
     return new Promise<PlayerInput>((resolve) => {
       const timer = setTimeout(() => {
         this.pending = undefined;
-        // 超时：交出**已输入的内容**。这里没有增量缓存，所以是空文本 → 弃权。
-        resolve(normalizeInput({ text: '', timedOut: true }));
+        // 超时：交出**已输入的内容**（AC-6）。草稿由 `setDraft` 同步上来；
+        // 没同步过就是空 → 弃权。
+        const text = this.draft;
+        this.draft = '';
+        resolve(normalizeInput({ text, timedOut: true }));
       }, prompt.timeoutMs);
 
       this.pending = { resolve, timer };
     });
+  }
+
+  /** 客户端同步草稿；超时与 `submit` 都用它。 */
+  setDraft(text: string): void {
+    this.draft = text;
   }
 
   /** `POST /actions` 到达时兑现。返回是否有人真的在等。 */
@@ -59,6 +70,7 @@ export class HttpInputChannel implements InputChannel {
 
     clearTimeout(pending.timer);
     this.pending = undefined;
+    this.draft = '';
     pending.resolve(normalizeInput({ text, timedOut: false }));
     return true;
   }
@@ -68,5 +80,6 @@ export class HttpInputChannel implements InputChannel {
     if (pending === undefined) return;
     clearTimeout(pending.timer);
     this.pending = undefined;
+    this.draft = '';
   }
 }

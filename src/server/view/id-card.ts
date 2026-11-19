@@ -15,6 +15,8 @@ export interface IdCard {
   roleLabel: string;
   alive: boolean;
   skills: string[];
+  /** 这个角色这一轮该做什么（目标）。 */
+  goal: string;
   /** 这一局还能用几次的能力（药水、开枪）。 */
   remaining: { name: string; count: number }[];
   /** 角色专属信息（查验史、队友……）。 */
@@ -29,9 +31,12 @@ export function buildIdCard(ctx: ProjectedContext): IdCard {
     roleLabel: ROLE_LABELS[role] ?? role,
     alive: ctx.self.alive,
     skills: [],
+    goal: '',
     remaining: [],
     extras: [],
   };
+
+  card.goal = goalOf(role, ctx);
 
   switch (role) {
     case 'seer': {
@@ -77,4 +82,24 @@ export function buildIdCard(ctx: ProjectedContext): IdCard {
   }
 
   return card;
+}
+
+/** 每个角色的「目标」：一句话说清这一轮要做什么。 */
+export function goalOf(role: string, ctx: ProjectedContext): string {
+  if (!ctx.self.alive) return '你已经出局，只能旁观。';
+
+  switch (role) {
+    case 'seer':
+      return '今晚挑一个最可疑的人查验。';
+    case 'witch':
+      return ctx.knowledge.knownKillTarget === null
+        ? '留意今晚谁被袭击，决定用不用解药。'
+        : '有人被袭击了，决定救还是不救。';
+    case 'hunter':
+      return ctx.knowledge.canShoot ? '你可以开枪带走一人。' : '活着，并在出局时准备开枪。';
+    case 'wolf':
+      return '今晚和队友选一个人袭击，白天别露馅。';
+    default:
+      return '白天听发言，把票投给最像狼的人。';
+  }
 }

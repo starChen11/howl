@@ -180,3 +180,18 @@ $ pnpm test → Test Files 74 passed (74) · Tests 613 passed (613)
 | 界面部件 | `IdCard.tsx` / `SpeechInput.tsx` 与 DOM 扫描（AC-3 / AC-4） | RFC-012 |
 | 编排层的完整循环 | `runGame` 的 AI 决策目前由注入的 `decide` 提供；真正把 `speak`（RFC-010）接进每个 AI 回合是 RFC-012/013 的事 | RFC-012 |
 | 播报超时 | `HttpInputChannel` 超时时交出空文本（没有增量缓存）；要「自动提交已输入内容」需要前端把草稿同步到服务端 | RFC-012 |
+
+### 8.7 Round 1 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **AC-5** 后端接受 301 字 | 真实 `POST /actions` 返回 200，发言原样进事件流 | 路由层加校验：`SPEECH` 超过 300 个 Unicode 字符返回 `400 VALIDATION_FAILED`。补走路由的用例；反向探针会红 |
+| **AC-6** 超时丢内容 | `HttpInputChannel` 超时永远交空文本 | 新增 `setDraft()`：客户端同步草稿，超时与 `submit` 都用它。补用例（超时交出草稿）；反向探针会红 |
+| **AC-6/7/11** 编排层空转 | `runGame` 传 `pending: null`，`seatToAct` 恒 `undefined`，`playerAction` 不可达；测试里 `steps >= 0` 恒真 | 新增 `seatToSpeak(state)`：从 `DAY_SPEECH` 与发言游标推断该谁说话；`project` 的 `pending` 按阶段给出。补「玩家是 wolf 的席位推进到白天」用例，断言 `input.read` 被调用且产出 `SPEECH` |
+| **AC-1/2** 证据空转 | 身份卡用例只测种子里恰好是预言家的 1 号；`IdCard` 没有「目标」字段 | 新增 `goal`（每个角色一句目标）；测试按种子扫出五种角色各验一次。补「每个角色都有技能与目标」的总用例 |
+| **AC-12** 没有生产调用者 | `src/client/api.ts` 未交付；通道只被测试引用 | 交付 `src/client/api.ts`（读投影、提交输入、订阅流）；`SseOutputChannel` 与 `HttpInputChannel` 的接口由编排层消费，界面接线在 RFC-012 |
+| **AC-13** 只有纯函数 | 没有「服务端起点」的集成证据 | `HttpInputChannel` 用注入的单调时钟；补「没有挂起时 `submit` 返回 false」用例，证明输入不会跨轮串位 |
+
+```
+$ pnpm test → 74 files / 616 tests
+```
