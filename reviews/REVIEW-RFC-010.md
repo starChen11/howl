@@ -1,10 +1,10 @@
 # RFC-010 评审 · 流式发言、思考指示与降级
 
 > **评审会话**：独立 subagent，全新上下文；本会话没有参与本仓库任何代码 / RFC / 测试的写作。
-> **日期**：2026-11-19（Round 6；Round 5 / 4 / 3 / 2 / 1 同日）
-> **分支 / HEAD**：`main` / `be4143d`
-> **结论**：**Changes requested**（Round 6）
-> **整体风险**：**High**
+> **日期**：2026-11-19（Round 11；Round 10 / 9 / 8 / 7 / 6 / 5 / 4 / 3 / 2 / 1 同日）
+> **分支 / HEAD**：`main` / `4e3a22c`
+> **结论**：**Reviewed**（Round 11）
+> **整体风险**：**Low**（Round 10 为 Medium，Round 1 为 High）
 
 ## Round 1 -- 2026-11-19
 
@@ -3205,3 +3205,195 @@ use-stream.ts  0429ecccc6f7055c75429040168bfe6b
 - **C-98 回归锁：仍 Open（阻塞）**：新的刷新用例是总线级手工消息，不覆盖 committed 刷新 / 重连 / 最后一位 `PHASE_CHANGED`；M-R10-3 删掉 committed `DEGRADED` 映射后它仍绿。补法见 §2.2。
 - **文档（非阻塞）**：§8.14:267 现在与实现一致；§8.15 记录了最后一位的 `PHASE_CHANGED` 占号。§8.12:244 与 `turn.ts:131` 仍写旧顺序，建议下一轮 docs 提交清理。
 - **无新增 artifact 冲突**：PRD > FEATURES > RULES > RFC 的权威顺序本轮未遇到需要裁决的矛盾；本节只登记实现与 RFC / 测试计划之间的偏差。
+
+---
+
+## Round 11 -- 2026-11-19
+
+**结论：Reviewed · Overall Risk Level: Low**
+
+本轮只复核 Round 10 的唯一阻塞项：**C-98 的刷新终态用例是否已从「总线级手工消息」改成真实链路**。已关闭的 C-85 / C-86 / C-88 / C-89 / C-96 / C-97 不重查；C-87 的非 C-97 遗留、C-90 ~ C-95 按 Round 10 记录保留，本轮未重新审计。文档债务（§8.12:244、`turn.ts:131`）按非阻塞保留。
+
+一句话：**这一项修好了**。`tests/server/stream.test.ts:522-586` 现在真的用 `speak` 走到最后一位降级，再用同一个 store + 全新 `StreamBus` 建 app、经真实 `GET /api/games/:id/stream` 取帧、逐帧喂 `streamReducer`；P-R11-A 的刷新帧是 `done:15..22 / degraded:24`，终态 `phase='degraded'` / `text='我先过。'` / `lastId=24`，只有一条 `degraded` 且 `id === DEGRADED.seq`。反向探针 **M-R11-1**（删掉 committed 的 `DEGRADED` 映射）现在会红，**M-R11-2**（`degraded` 清空正文）与 **M-R11-3**（committed `degraded.id` 偏移）也都会红。没有阻塞项。
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。评审开始时 HEAD `4e3a22c`，`git status --porcelain` 为空。
+
+```
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  69 passed (69)
+      Tests  587 passed (587)
+TEST_EXIT=0
+
+$ pnpm test:e2e
+skipped：tests/e2e/ 下没有用例（Playwright 要求从 RFC-012 起生效）
+E2E_EXIT=0
+```
+
+覆盖率（`coverage/coverage-summary.json`）：
+
+```
+lines: 96.96% (544/561)   branches: 92.85% (364/392)
+```
+
+**Product Type**：`PRD.md` 是 **game（主）+ web app（交付形态）**。本轮只碰测试链路与文档；**显式跳过** UI / A11Y / 响应式 / 浏览器兼容 / Playwright（界面归 RFC-012，`tests/e2e/` 为空），以及需要真实模型的 p95 手工验收（D-6）。不把「跳过」当成 PASS。
+
+**探针方式**：临时探针 `tests/server/__r11-probe.test.ts`（1 个用例，跑完已删除）；变异用 `/tmp/howl-rfc010-r11-backup/` 的文件备份恢复（`stream.ts` / `use-stream.ts` / `speak.ts` / `stream.test.ts`），**未使用 `git checkout`**，也没有 `git commit`。恢复后全量 **69 files / 587 tests** 复跑全绿，`typecheck` / `lint` / `format:check` 复跑 exit 0，代码工作树在写入本评审前 `git status --porcelain` 为空。
+
+---
+
+### 1. 新用例确实是真实刷新 —— 关闭
+
+`tests/server/stream.test.ts:522-586` 的 `C-98 · 真实刷新`：
+
+1. `:524` 从 `setup()` 取**同一个 store**、`registry`、`session` 与 `record`；`setup()` 本身已经用真实 `registry.submit(SPEECH)` 提交了当天第一句。
+2. `:529-551` 循环真实调用 `speak`，每个席位都走 `submit(SPEECH)`；`isLast = spoken === alive - 1` 时让 `attempt` 返回 `failed:true`，由 `speak` 写出短句 `SPEECH` + `DEGRADED`。
+3. `:556-559` 只新建 **`StreamBus`**（`freshBus`），用 `buildApp({ store, bus: freshBus })` 建一个**新 app**；store 不换、总线为空，这就是刷新（进程重启后只剩已提交事件）。
+4. `:561-567` 经真实路由 `GET /api/games/:id/stream` 取帧；`:569-572` 解析 SSE `data:`。
+5. `:574-575` 逐帧喂 `streamReducer`；`:577-584` 断言 degraded 帧恰好一条、`id === degraded.seq`、`text` 非空、`lastId === degraded.seq`。
+
+**P-R11-A**（同一条真实链路，打印事件与帧；探针文件已删除）：
+
+```
+timeline = seat 3..8 正常、seat 9 isLast=true degraded=true，phaseAfter=DAY_VOTE
+events tail = SPEECH:19 / SPEECH:20 / SPEECH:21 / SPEECH:22 / PHASE_CHANGED:23 / DEGRADED:24
+fresh frames = done:15 / done:16 / done:17 / done:18 / done:19 / done:20 / done:21 / done:22 / degraded:24
+refreshState = { phase: 'degraded', text: '我先过。', lastId: 24 }
+freshDegradedCount = 1
+```
+
+> 注：`setup()` 的第一句是夹具里的真实 `registry.submit`（既有辅助函数），其余 7 个席位由 `speak` 走完；**最后一位（席位 9）确实是 `speak` 的降级路径**。这与用例名「用 speak 造出最后一位降级」一致。
+
+这条用例覆盖了 Round 10 指出的四件事：
+
+- 事件真的写进了 `record.events`（`SPEECH:22 / PHASE_CHANGED:23 / DEGRADED:24`）；
+- 刷新帧只来自 `committedMessages`（`freshBus` 为空、没有 `Last-Event-ID`）；
+- 最后一位的 `PHASE_CHANGED` 占号被真实覆盖（刷新帧从 22 直接跳到 24，没有 23）；
+- 断言被真实 reducer 消费，而不是只对总线消息做类型检查。
+
+---
+
+### 2. 反向探针 —— 三条都红
+
+| # | 变异 | 跑什么 | 结果 |
+|---|---|---|---|
+| **M-R11-1** | `src/server/routes/stream.ts:49` 的 committed `DEGRADED` 分支改成永假 | 新用例 `-t "用 speak 造出"` | **1 failed / 16 skipped**：`expected [] to have a length of 1 but got +0`，`:581`；同文件 C-86 fixture 也红（`:437` `['done']` vs `['done','degraded']`） |
+| **M-R11-2** | `src/client/use-stream.ts:98` 的 `degraded` 分支加回 `text: ''` | 同上 | **1 failed / 16 skipped**：`expected 0 to be greater than 0`，`:583` |
+| **M-R11-3** | `routes/stream.ts:50` 的 committed degraded `id: event.seq` 改成 `event.seq - 1` | 同上 | **1 failed / 16 skipped**：`expected 23 to be 24`，`:582` |
+
+M-R11-1 就是 Round 10 的 **M-R10-3** 在新用例上的复现：上一轮删掉 committed `DEGRADED` 映射后新用例仍绿，现在精确打红。三条变异都从 `/tmp/howl-rfc010-r11-backup/` 的源文件 `cp` 恢复，`md5` 与备份一致；没有用 `git checkout`。
+
+---
+
+### 3. 非阻塞观察与建议
+
+1. **新用例只覆盖刷新，没有 `Last-Event-ID` 重连**。`:469` 的旧 `describe` 仍叫「降级轮的刷新与重连终态」，但里面仍只有一个「无 Last-Event-ID」用例；新用例标题也明确是「真实刷新」。Round 10 的建议是「一条用例覆盖刷新 + 重连」，这一半没落实。**非阻塞**：AC-5 的通用重连仍由 `tests/server/stream.test.ts:121-150`（真实路由、`Last-Event-ID` 后返回空）与 `:318-376`（C-96 整段重放）覆盖；P-R11-B 从 `Last-Event-ID = SPEECH.seq` 也能拿到 `thinking:22 / done:22 / degraded:24`，终态 `degraded` / `我先过。` / `lastId 24`。建议后续补一条真实 `speak` + `Last-Event-ID` 的降级重连用例，或把 `:469` 的 describe 改窄。
+2. **断言强度**：`state.text.length > 0` 只证明「非空」，没有断言「等于那句短句」；也没有断言 `state.phase === 'degraded'`。当前实现下 P-R11-A 的 `text` 正是 `我先过。`；建议把断言收紧为 `state.text === '我先过。'` 且 `state.phase === 'degraded'`，这样「短句被别的发言顶掉」也能红。
+3. **附加观察（非阻塞，不属于本轮阻塞项）**：P-R11-B 里 `Last-Event-ID = DEGRADED.seq`（24）重连仍会收到一条 `degraded:24`，因为 `StreamBus.replay` 的 `hasSpeechAt` 把任何同 id 的消息都当成「断点处的未完成发言」（`src/server/stream/bus.ts:66-71`）。这是 C-96 整段重放的既有行为，**不是 Round 10 提交引入的**；客户端 reducer 对同 id `degraded` 幂等，终态不变。若把 AC-5 的「不重复」按字面执行，应另开 change request 只对未完成发言重放；本轮不据此阻塞。
+4. **文档**：§8.12:244 仍写「先 `DEGRADED` 再短句」，`turn.ts:131` 的注释仍是 `DEGRADED` 在前；§8.15 / §8.16 已记录当前生产顺序，但仓库里没有找到「已被 §8.15 取代」的显式字样（`grep 取代` 为空）。按 Round 10 的非阻塞文档债务保留，不阻塞 `Reviewed`。
+5. `tests/server/stream.test.ts:526` 又动态 `import { currentSpeaker }`，而文件顶部 `:5` 已经导入；无功能影响，顺手可删。
+
+---
+
+### 4. 逐条验收标准（只列本轮受影响的）
+
+| AC | Round 10 | Round 11 | 依据 |
+|---|---|---|---|
+| 5 | PASS（行为）· 回归锁不完整 | **PASS（行为 + 刷新回归锁）** | P-R11-A：真实路由刷新帧 `done:15..22 / degraded:24`，唯一 `degraded` 的 `id === DEGRADED.seq`，`lastId=24`；M-R11-1 / M-R11-3 均红。通用重连仍由 `:121-150` / `:318-376` 覆盖；降级专用重连未加，非阻塞（§3.1） |
+| 9 | PASS | **PASS** | P-R11-A 终态 `text='我先过。'`；M-R11-2（`degraded` 清空正文）→ 新用例 `:583` 红 |
+| 7 / 10 / 12 | PASS | **未重查** | 本轮未改降级短句 / 事件落盘 / 相位推进；Round 9 / 10 的 `SPEECH:22 / PHASE_CHANGED:23 / DEGRADED:24 → DAY_VOTE` 证据保留 |
+| 1 / 2 / 3 / 4 / 6 / 8 / 11 | — | **未重查** | 本轮没有触碰；属已关闭或按记录保留的非阻塞项 |
+
+---
+
+### 5. 五个审查维度
+
+#### 5.1 RFC ADHERENCE —— **PASS**
+
+- Round 10 的唯一阻塞项（刷新终态用例是总线级手工消息）已关闭：新用例真实走 `speak` → store → 全新总线 → 真实路由 → `committedMessages` → `streamReducer`；M-R11-1 证明 committed `DEGRADED` 映射坏掉会红。
+- 没有新增未记录的实现偏离；§8.16 已按本轮实现记录。§8.12 / `turn.ts:131` 的旧顺序是历史文档债务，非阻塞（§3.4）。
+
+#### 5.2 RULES COMPLIANCE —— **PASS**
+
+| 规则 | 结论 |
+|---|---|
+| `TEST-1` | **PASS（本轮范围）**：AC-5 的刷新终态与 AC-9 的「降级不清正文」都有能红的自动化锁；上一轮 M-R10-3 的洞已补。降级专用重连仍缺，但没有对应的计划测试条目（TEST-STRATEGY 的 RFC-010 AC-5 行本来就归 C-92 非阻塞）。 |
+| `TEST-2` | **PASS**：覆盖率行 96.96% / 分支 92.85%，未下降。 |
+| `API-2` | **PASS**：刷新帧 `degraded:24 === DEGRADED.seq`；`done:22 === SPEECH.seq`；M-R11-3 改 id 会红。 |
+| `DATA-1` | **PASS**：P-R11-A 事件 `22 / 23 / 24` 连续，`state.seq === 24 === events.length`。 |
+| `ARCH-1` / `ARCH-4` / `ARCH-9` | **PASS（未变）**：本轮只改测试；`speak` 仍经 `submit(SPEECH)` 写回引擎，引擎仍是唯一权威。 |
+| `SEC-5` | **PASS（未变）**：刷新帧仍先过 `isVisibleTo`；没有新增密钥或完整状态序列化。 |
+| `DOC-1` | **NEEDS WORK（非阻塞）**：§8.16 已记录本轮；§8.12:244 / `turn.ts:131` 的旧顺序仍在。 |
+
+#### 5.3 SECURITY —— **PASS**
+
+本轮改动只涉及测试与实现记录，没有新增对外输入面、密钥或日志；`freshBus` 为空，刷新帧仍由 `committedMessages` 先过 `isVisibleTo` 生成。C-90 的可见性回归锁仍是未重查的非阻塞项。
+
+#### 5.4 PERFORMANCE —— **N/A**
+
+本轮是测试改动 + 约 70 行用例；没有新增循环、查询或 N+1。既有「`committedMessages` 每次连接扫描全部历史」「`PassThrough` 无 backpressure」等旧非阻塞项本轮不重审。
+
+#### 5.5 MAINTAINABILITY —— **PASS**
+
+- **正向**：新用例用真实链路覆盖了「最后一位降级 + `PHASE_CHANGED` 占号 + 刷新终态」，M-R11-1 / 2 / 3 三条反向探针都能精确打红；测试结构清楚，读者能从事件尾直接看出 `22 / 23 / 24` 的占号关系。
+- **可改进（非阻塞）**：断言从「非空」收紧到「等于短句」+ `phase='degraded'`；补降级重连或把 `:469` 的 describe 改窄；删掉 `:526` 的重复动态 import。
+
+---
+
+### 6. 探针与恢复
+
+| # | 探针 / 变异 | 跑什么 | 结果 |
+|---|---|---|---|
+| P-R11-A | 真实 `speak` 走完当天（最后一位降级），同 store + 全新总线建 app，真实路由 + `streamReducer` | `tests/server/__r11-probe.test.ts`（已删除） | 事件尾 `SPEECH:22 / PHASE_CHANGED:23 / DEGRADED:24`；刷新帧 `done:15..22 / degraded:24`；`phase='degraded'` / `text='我先过。'` / `lastId=24`；`freshDegradedCount=1` |
+| P-R11-B | 同一场景，用带历史的总线与 `Last-Event-ID` 重连 | 同上 | 从 22：`thinking:22 / done:22 / degraded:24` → `degraded` / `我先过。` / `lastId 24`；从 23：`degraded:24`；从 24：`degraded:24`（既有 C-96 同 id 整段重放行为，终态不变，见 §3.3） |
+| M-R11-1 | 删掉 committed `DEGRADED` 映射 | 新用例 | **1 failed / 16 skipped**，`:581` `expected [] to have a length of 1` |
+| M-R11-2 | `degraded` 分支加回 `text: ''` | 新用例 | **1 failed / 16 skipped**，`:583` `expected 0 to be greater than 0` |
+| M-R11-3 | committed degraded id 改 `event.seq - 1` | 新用例 | **1 failed / 16 skipped**，`:582` `expected 23 to be 24` |
+| （观察） | 正常实现下跑全量 | `pnpm test` | **69 files / 587 tests 全绿**；全绿套件仍然发现不了 §3.3 的重连重复帧（非阻塞） |
+
+备份在 `/tmp/howl-rfc010-r11-backup/`：
+
+```
+speak.ts        686b940f63e905deab4c6f6dbfc1054b
+stream.ts       070fdb37d5f118119feb2030addc52b6
+stream.test.ts  a576b58d45d7bad19f40d54c51749bdf
+use-stream.ts   0429ecccc6f7055c75429040168bfe6b
+```
+
+- M-R11-1 / M-R11-3 改到的 `src/server/routes/stream.ts`、M-R11-2 改到的 `src/client/use-stream.ts` 均从上述备份 `cp` 恢复；四处 `md5` 与备份一致。
+- 临时探针 `tests/server/__r11-probe.test.ts` 已删除；恢复后 `git status --porcelain` 为空。
+- 恢复后复跑 `pnpm test`：**69 files / 587 tests** 全绿；`typecheck` / `lint` / `format:check` 复跑 exit 0；没有 `git commit`。
+
+---
+
+### 7. 结论
+
+- **Overall Risk Level: Low**
+- **Summary**：Round 10 的唯一阻塞项已真实修复。新用例用真实 `speak` 走到最后一位降级（事件 `SPEECH:22 / PHASE_CHANGED:23 / DEGRADED:24`），用同一个 store + 全新总线经真实路由刷新，帧只来自 `committedMessages`；喂 `streamReducer` 后 `phase='degraded'` / `text='我先过。'` / `lastId=24`，且只有一条 `degraded:24`，`id === DEGRADED.seq`。M-R11-1 删掉 committed `DEGRADED` 映射后新用例精确打红，M-R11-2 / 3 也分别锁住「不清正文」与「id 对齐」。文档旧顺序与「降级专用重连未覆盖」为非阻塞改进项。
+- **Blocking Issues**：无。
+- **Improvement Suggestions**：① 补一条真实 `speak` + `Last-Event-ID` 的降级重连用例，或把 `stream.test.ts:469` 的 describe 改窄；② 把 `state.text.length > 0` 收紧为 `state.text === '我先过。'` 并断言 `phase='degraded'`；③ 若 AC-5 的「不重复」按字面执行，另开 change request 处理 `StreamBus.replay` 在 `Last-Event-ID = DEGRADED.seq` 时重发同帧的既有行为；④ 给 §8.12:244 标「已被 §8.15 取代」、把 `turn.ts:131` 的 `degradeEvents()` 标成 fixture-only；⑤ C-87 的非 C-97 遗留与 C-90 ~ C-95 非阻塞项按 Round 10 记录继续保留。
+- **Suggested status**：**`Reviewed`**。
+
+---
+
+### 8. Open conflicts（登记到 `RFCS.md` §8.31 Round 11 段）
+
+- **C-98 回归锁：关闭**：新用例 `tests/server/stream.test.ts:522-586` 走真实 `speak` → 同 store / 新总线 → 真实路由 → `committedMessages` → `streamReducer`；P-R11-A 刷新帧 `done:15..22 / degraded:24`、`degraded.id === DEGRADED.seq`、正文 `我先过。`、`lastId 24`；M-R11-1 删 committed `DEGRADED` 映射 → 1 failed。
+- **无阻塞项**：Round 10 的「刷新终态用例不真实」已关闭；C-85 / C-86 / C-87 / C-88 / C-89 / C-96 / C-97 早已关闭，本轮不重查。
+- **非阻塞（测试）**：降级专用 `Last-Event-ID` 重连未加；新用例的正文 / phase 断言可再收紧；`Last-Event-ID = DEGRADED.seq` 会重发同帧（既有 C-96 行为，终态不变）。
+- **非阻塞（文档）**：§8.12:244 与 `turn.ts:131` 的旧顺序；§8.15 / §8.16 已记录当前顺序，但没有显式「已被取代」字样。
+- **无新增 artifact 冲突**：PRD > FEATURES > RULES > RFC 的权威顺序本轮未遇到需要裁决的矛盾。
