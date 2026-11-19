@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.119 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.120 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -48,7 +48,7 @@
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
-| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Implemented |
+| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Changes requested |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Not started |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Not started |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Not started |
@@ -855,11 +855,30 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 2 后的状态**：C-116 ~ C-123 **仍 Open（阻塞；其中 C-117 / C-118 / C-120 是实现已修、测试未锁，C-116 / C-119 / C-121 部分修复，C-122 未修，C-123 部分修复）**；新增 C-127 ~ C-130 阻塞、C-131 非阻塞。RFC-012 的 Status = **`Changes requested`**。已确认有牙的：AC-8 等待挂载 + min-width（重建后红）、AC-13 对比度（2.80 → 红）、超时草稿（真实 60 秒）、跨天推导（探针）、DAY_VOTE 投票 UI（真机 Tab+Enter）。未锁的：AC-2/3 术语、AC-6/7 跨天、AC-10 输入框几何、AC-11 RUNOFF/投票 e2e、AC-15 身份卡与读屏、`gameId`、e2e 构建。
 
+### 8.43 RFC-012 Round 3 评审（2026-11-19）
+
+> 由 `/review-rfc 012` 登记；完整证据见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 3。评审时 HEAD `1f97297`，工作树 clean；门禁 **79 files / 678 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0；`pnpm test:e2e` **8/8 passed**。用户本轮按内容点名 Round 2 的八项；已关闭项不重查。探针从 `/tmp/howl-rfc012-r3-probes/backup/` 的文件备份恢复（**未用 `git checkout` / `git restore`**），8 个文件 SHA-256 与探针前一致；`IdCard.tsx` 的探针漏做备份，已按原文回填并由 `git diff --exit-code` 验证；没有 `git commit`。
+
+| # | 冲突 / 复核 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-116** | **AC-2 / AC-3 术语（Round 3 部分修复）**：引导里 `GLOSSARY` 已覆盖 8 个 `TermKey`，`a11y.test.tsx:149-168` 断言八个标签都在；但 `<span>放逐</span>` 写进 `StatusBar.tsx` 后静态扫描仍 **3/3 绿**（`no-hardcoded-terms.test.ts:66` 只拦字符串字面量）；删掉 `TermHint` 的 `onMouseEnter` / `onFocus` 后 client **43/43 绿**，没有八个词的悬停/聚焦用例。 | **阻塞（AC-2 / AC-3 / TEST-1）。** 扫描 JSX 文本节点；补八个词汇表的 hover + 键盘聚焦 tooltip 断言（或 terms.spec.ts）。 | **仍 Open（阻塞，Round 3 部分修复）** · `src/client/components/OnboardingHints.tsx:14-22,46-50`、`tests/client/a11y.test.tsx:149-168`、`tests/security/no-hardcoded-terms.test.ts:66`、`src/client/components/TermHint.tsx:29,31`；`reviews/REVIEW-RFC-012.md` Round 3 §2.5 / M-R3-7 / M-R3-8 |
+| **C-118** | **AC-10 几何（Round 3 关闭）**：`game.spec.ts:92-102` 直接比较输入框自身与 `banner` / `timer`；把 `.input` 单独 `position:fixed;top:0` 后 **1 failed**，重叠 **30.39px**（`game.spec.ts:98`）。 | **Closed。** | **Closed（Round 3）** · `tests/e2e/game.spec.ts:92-102`、`src/client/styles/global.css:222-228`；`reviews/REVIEW-RFC-012.md` Round 3 §2.3 / M-R3-4 |
+| **C-119** | **AC-11 投票键盘（Round 3 部分修复）**：投票 e2e 确实锁住了 DAY_VOTE 玩家路径（删 `playerPhase` 的 `DAY_VOTE` → **1 failed**，25s 等不到按钮）；但测试用 `voteButton.focus()` 而不是 Tab，给投票按钮加 `tabIndex={-1}` 后仍 **1 passed**。 | **阻塞（AC-11 / TEST-1）。** 改成从页面/发言框按 Tab 到投票按钮再 Enter；保留「投票后按钮消失」断言。 | **仍 Open（阻塞，Round 3 部分修复）** · `tests/e2e/game.spec.ts:184-190`、`src/client/components/VoteInput.tsx:15`；`reviews/REVIEW-RFC-012.md` Round 3 §2.4 / M-R3-5 / M-R3-6 |
+| **C-120** | **UI-4 草稿（Round 3 部分修复）**：跨天回退 → `game-state.test.ts` **1 failed**（`:141`）；删 `SpeechInput` 的 `onDraft?.()` → components **1 failed**（`:182`）；但删掉 `App.tsx:147` 的 `onDraft={syncDraft}` 后 client **43/43 绿**，`/input` 与 60 秒超时仍没有用例。 | **阻塞（UI-4 / TEST-1）。** 补 App 集成测试断言 `draft()` 被调用；补「超时后草稿文本进入 `SPEECH`」用例。 | **仍 Open（阻塞，Round 3 部分修复）** · `src/client/App.tsx:147`、`src/client/components/SpeechInput.tsx:57`、`tests/client/components.test.tsx:166-184`、`tests/client/game-state.test.ts:115-143`；`reviews/REVIEW-RFC-012.md` Round 3 §2.6 / M-R3-9 ~ M-R3-11 |
+| **C-121** | **AC-15 / F21 / F24 身份卡（Round 3 部分修复）**：`IdCard.tsx:21-35` 补了目标、技能、剩余次数，组件测试删掉会红；`OnboardingHints` 已用 `ROLE_LABELS`。但 live region 用 `boardAnnouncement(view.view, 0)`，开局 60 秒时播「时间到」；公告不含 role、RUNOFF 显示原始枚举；删掉 `App` 的 `<IdCard>` + status 区后 client **43/43 绿**，仍无 App 集成测试。 | **阻塞（AC-15 / TEST-1 / UI-2）。** 修 live region 文案（不含倒计时或传节流后的真实剩余）；把 role 写进公告；补 App 集成测试。 | **仍 Open（阻塞，Round 3 部分修复）** · `src/client/App.tsx:62-69,137,142-144`、`src/client/game-state.ts:95-101`、`src/client/components/IdCard.tsx:21-35`；`reviews/REVIEW-RFC-012.md` Round 3 §2.7 / M-R3-12 / M-R3-13 |
+| **C-122** | **AC-15 整局入口（Round 3 关闭 `gameId` 子项）**：`orchestrator.ts:148` 已用 `deps.gameId ?? last`；回退为 `session.gameIds[last]` → C-122 用例 **1 failed**（`game-loop.test.ts:162`）。玩家夜间动作仍由 `decide` 代打（Round 2 遗留，未在本轮八项内，未重查）。 | **Closed（`gameId` 子项）。** | **Closed（Round 3，`gameId`）** · `src/server/orchestrator.ts:148`、`src/server/game-loop.ts:58-69`、`tests/server/game-loop.test.ts:128-164`；`reviews/REVIEW-RFC-012.md` Round 3 §2.1 / M-R3-1 |
+| **C-123** | **e2e 证据链（Round 3 部分修复）**：`pnpm test:e2e` 已通过 webServer 先 `pnpm build`，不手动 build 也能让 360px 在 `min-width:500px` 下 **1 failed（140px）**；但 live region / App 集成 / Tab 仍见 C-121 / C-119；`reuseExistingServer` 仍可复用旧服务（非阻塞）。 | **部分 Closed；其余按 C-119 / C-121 处理。** | **部分 Closed（Round 3）** · `playwright.config.ts:22-26`；`reviews/REVIEW-RFC-012.md` Round 3 §2.8 / M-R3-14 |
+| **C-127** | **`DAY_VOTE_RUNOFF` 玩家缺口（Round 3 部分修复）**：`playerPhase` 与 `VoteInput` 都接上了 RUNOFF；但删掉 RUNOFF 分支后 server **233/233**、client **43/43** 仍绿；`App.tsx:150-153` 传 `aliveSeats` 而不是 `legalTargets`，重投时列出全部存活席位 + 弃权，而引擎只允许并列者且不可弃权（`targets.ts:28-29`、`vote.ts:122-135`）。实测按钮 `2..6` + 弃权；点非法目标会被 `INVALID_RUNOFF_TARGET` 拒绝，路由不兑现通道，编排层 60 秒后再次提交弃权并空转。 | **阻塞（AC-11 / RUL-2 / PRD FR-6）。** `VoteInput` 用 `ctx.legalTargets`、重投不显示弃权；补平票 → 重投用例。 | **仍 Open（阻塞，Round 3 部分修复）** · `src/server/orchestrator.ts:184-187,234-247`、`src/client/App.tsx:149-154`、`src/server/project/targets.ts:28-29`、`src/engine/phases/vote.ts:122-135`；`reviews/REVIEW-RFC-012.md` Round 3 §2.2 / M-R3-2 / M-R3-3 / M-R3-16 |
+| **C-130** | **`pnpm test:e2e` 不构建（Round 3 关闭核心）**：`playwright.config.ts` 的 `webServer.command` 已改为 `pnpm build && pnpm exec tsx scripts/e2e-server.ts`；源码加 `.app{min-width:500px}`、不手动 build，360px **1 failed（overflow=140）**。`reuseExistingServer: !CI` 下手工起服务仍会复用旧 bundle（非阻塞）。 | **Closed（核心）；`reuseExistingServer` 为非阻塞建议。** | **Closed（Round 3，核心）** · `playwright.config.ts:22-26`、`scripts/e2e-server.ts`；`reviews/REVIEW-RFC-012.md` Round 3 §2.8 / M-R3-14 / M-R3-15 |
+| **C-132** | **新 · live region 恒播「时间到」**：`App.tsx:62-69` 用 `boardAnnouncement(view.view, 0)` 更新 `role="status"`；`countdownText(0)` 是「时间到」，开局 60 秒时也播「时间到」；公告只含「你是 N 号」不含 role，RUNOFF 显示 `DAY_VOTE_RUNOFF`。实测 `SPEECH_STATUS=…时间到。`、`RUNOFF_STATUS=…DAY_VOTE_RUNOFF，时间到。` | **阻塞（A11Y-1 / AC-15 / F30）。** 公告不要伪造倒计时：省略倒计时或使用节流后的真实 `remaining`；把 role 写进公告；阶段用中文映射。 | **Open（阻塞，Round 3 新登记）** · `src/client/App.tsx:62-69`、`src/client/game-state.ts:95-101`、`src/client/components/VoteInput.tsx:15`；`reviews/REVIEW-RFC-012.md` Round 3 §2.7 / M-R3-17 |
+
+> **Round 3 后的状态**：**C-118 / C-122（`gameId`）/ C-130 关闭**；**C-116 / C-119 / C-120 / C-121 / C-123 / C-127 仍 Open（阻塞）**，新增 **C-132 阻塞**；C-131 非阻塞。RFC-012 的 Status = **`Changes requested`**。已确认有牙的：C-122 的 `gameId`（M-R3-1 红）、C-118 的输入框几何（M-R3-4 红）、C-130 的自动 build（M-R3-14 红）、跨天过滤（M-R3-9 红）、`onDraft` 回调（M-R3-10 红）、IdCard 内容（M-R3-12 红）、DAY_VOTE 投票路径（M-R3-6 红）。未锁的：AC-2/3 术语、AC-11 Tab、AC-15 读屏与 App 集成、UI-4 全链路、RUNOFF 选项集与平票用例。
 
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-19 | v2.120 | RFC-012 Round 3 复核（Status → `Changes requested`）：八项中 **C-122 的 `gameId`、C-118 的输入框几何、C-130 的自动 build 关闭**；C-116 / C-119 / C-120 / C-121 / C-123 / C-127 仍 Open——术语 JSX 扫描与 hover/focus 无锁、Tab→投票 e2e 实际用 `.focus()`、`onDraft` App 接线无锁、live region 恒播「时间到」且缺 role、RUNOFF `VoteInput` 列出全部存活席位+弃权且无平票用例。新增 **C-132**（live region 恒播「时间到」）。门禁 79 files / 678 tests、8/8 e2e 全绿；探针从 `/tmp/howl-rfc012-r3-probes/backup/` 文件备份恢复、8 个文件 SHA-256 一致（IdCard 漏备份，已按原文回填并 `git diff` 验证）、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 3 |
 | 2026-11-19 | v2.119 | RFC-012 Round 2 修复（Status → Implemented）：`runGame(gameId)` 真的生效、RUNOFF 走玩家、输入框几何直接断言、Tab→投票 e2e、八个术语词汇表、跨天/草稿回归锁、身份卡补项、e2e 先构建 |
 | 2026-11-19 | v2.118 | RFC-012 Round 2 复核（Status → `Changes requested`）：八项中「等 `.app` 再量宽度」「跨天过滤」「三段式布局」「草稿同步」的实现已修；但 `runGame` 仍忽略 `gameId`（A/B 探针 `requested=A → advanced=B`）、`DAY_VOTE_RUNOFF` 由 AI 代打、IdCard 缺技能/目标/剩余次数、`role="status"` 每秒播报、AC-10 输入框 e2e 假绿、AC-11 无 Tab→投票 e2e、跨天/草稿/IdCard 无回归锁、`pnpm test:e2e` 仍不构建。新增 C-127 ~ C-130 阻塞、C-131 非阻塞。门禁 79 files / 674 tests、7/7 e2e 全绿；探针从 `/tmp/howl-rfc012-r2-probes/backup/` 文件备份恢复、10 个文件 SHA-256 一致、工作树 clean；无 commit。详见 [`reviews/REVIEW-RFC-012.md`](reviews/REVIEW-RFC-012.md) Round 2 |
 | 2026-11-19 | v2.117 | RFC-012 Round 1 修复（Status → Implemented）：e2e 等挂载再量；三段式 grid 消除 42px 重叠；投票走输入通道 + VoteInput；真浏览器焦点/对比度用例；术语接进界面；跨天过滤；草稿同步；IdCard 与 `runGame(gameId)` |

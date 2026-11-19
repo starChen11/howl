@@ -937,3 +937,549 @@ UI。这些都有真实浏览器/真实超时的正向证据。
 （**未使用 `git checkout` / `git restore`**），10 个文件 SHA-256 与探针前一致；
 `git status --porcelain` 为空；临时探针脚本在 `/tmp`，仓库内无残留；最终
 `pnpm test` 79 files / 674 tests、`pnpm test:e2e` 7/7、五条命令 exit 0。
+
+---
+
+## Round 3 -- 2026-11-19
+
+> 评审方式：全新上下文 subagent，只读仓库文件；本会话没有写过 RFC-012 的实现代码。
+> 被评审提交：`1f97297 fix(rfc-012): runGame 目标局、重投投票与几何/术语回归锁（Round 2）`。
+> 评审开始时 HEAD `1f97297`，工作树 clean。结论：**Changes requested**。
+>
+> 用户本轮点名的八项与 `RFCS.md` §8.42 的编号不同（用户把跨天与草稿都归到 C-120，
+> 把身份卡/读屏归到 C-121/C-123）。按内容复核；映射如下，避免下一轮看错行：
+>
+> | 用户消息 | 实际内容 | `RFCS.md` §8.42 |
+> |---|---|---|
+> | C-122 | `runGame` 使用 `deps.gameId` | C-122 |
+> | C-127 | `DAY_VOTE_RUNOFF` 走玩家输入 + `VoteInput` | C-127 |
+> | C-118 | e2e 比较输入框自身与 banner/timer | C-118 |
+> | C-119 | 「发言 → Tab → Enter 投票」e2e | C-119 |
+> | C-116 | 引导里八个术语的词汇表 | C-116 |
+> | C-120 | 跨天 + 草稿回归锁 | C-117 + C-120 |
+> | C-121/C-123 | IdCard 补项 + 读屏公告节流 | C-121 + C-123 + C-128/C-129 |
+> | C-130 | e2e 先 build | C-130 |
+
+---
+
+### 0. STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · HEAD `1f97297` · 评审开始时工作树 clean。
+
+```text
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  79 passed (79)
+      Tests  678 passed (678)
+    Duration  33.88s
+TEST_EXIT=0
+
+$ pnpm test:e2e
+Running 8 tests using 1 worker
+  ✓  1 tests/e2e/game.spec.ts:12:3 › 整局界面 › 主路径：能开一局、看到状态条与席位、发言区可达 (425ms)
+  ✓  2 tests/e2e/game.spec.ts:22:3 › 整局界面 › 360px 视口没有横向滚动 (234ms)
+  ✓  3 tests/e2e/game.spec.ts:35:3 › 整局界面 › 1024px 视口用桌面布局（席位在侧栏） (415ms)
+  ✓  4 tests/e2e/game.spec.ts:49:3 › 整局界面 › 手机视口下输入区不遮挡状态条 (306ms)
+  ✓  5 tests/e2e/game.spec.ts:113:3 › 整局界面 › 焦点可见：Tab 之后焦点元素有可见 outline (239ms)
+  ✓  6 tests/e2e/game.spec.ts:131:3 › 整局界面 › 对比度：正文与次要文字达到 AA (376ms)
+  ✓  7 tests/e2e/game.spec.ts:172:3 › 整局界面 › 键盘：Tab 能到投票按钮，Enter 能投票 (348ms)
+  ✓  8 tests/e2e/game.spec.ts:193:3 › 整局界面 › 键盘：Tab 能到发言区，Enter 能提交 (249ms)
+  8 passed (5.3s)
+E2E_EXIT=0
+```
+
+绿色本身不是结论：下面用定向变异把「这八项声称锁住的行为」逐项打了一遍。所有探针从
+`/tmp/howl-rfc012-r3-probes/backup/` 的文件备份恢复（**未使用 `git checkout` / `git restore`**），
+恢复后 `git status --porcelain` 为空；探针文件 SHA-256 见 §7。
+
+---
+
+### 1. 八项复核结论（先看这张表）
+
+| 用户项 | 本轮结论 | 一句话证据 |
+|---|---|---|
+| **C-122** `runGame` 用 `deps.gameId` | **Closed** | 把 `orchestrator.ts:148` 回退成取 `session.gameIds[last]`，C-122 用例 **1 failed**（`expected 1 to be greater than 1`，`game-loop.test.ts:162`） |
+| **C-127** RUNOFF 走玩家 | **Open（阻塞，部分修复）** | 服务端与界面都接上了；但删掉 RUNOFF 分支后 server **233/233**、client **43/43** 仍绿；`VoteInput` 仍把全部存活席位+弃权交给重投，引擎只允许并列者 |
+| **C-118** 输入框几何 | **Closed** | 把 `.input` 单独 `position:fixed; top:0` 后，手机用例 **1 failed**，输入框与 banner 重叠 **30.39px**（`game.spec.ts:98`） |
+| **C-119** 发言 → Tab → 投票 | **Open（阻塞，部分修复）** | 用例确实锁住了 DAY_VOTE 的玩家投票路径（删 `playerPhase` 的 `DAY_VOTE` → 1 failed），但测试里是 `voteButton.focus()` 不是 Tab；给投票按钮加 `tabIndex={-1}` 后仍 **1 passed** |
+| **C-116** 八个术语 | **Open（阻塞，部分修复）** | 引导里 8 个标签都在；但 `<span>放逐</span>` 写进 `StatusBar` 后静态扫描仍 **3/3 绿**；删掉 `TermHint` 的 `onMouseEnter` / `onFocus` 后 client **43/43 绿** |
+| **C-120** 跨天 + 草稿 | **Open（阻塞，部分修复）** | 跨天回退 → `game-state.test.ts` **1 failed**；删 `onDraft?.()` → components **1 failed**；但删掉 `App` 的 `onDraft={syncDraft}` 后 client **43/43 绿**，`/input` 与 60 秒超时仍无锁 |
+| **C-121/C-123** 身份卡 + 读屏 | **Open（阻塞，部分修复）** | IdCard 的技能/目标/剩余有组件测试（删掉会红）；但 live region 恒说「时间到」、不含 role、RUNOFF 显示原始枚举；删掉 `App` 里的 `<IdCard>` 与整个 status 区后 client **43/43 绿** |
+| **C-130** e2e 先 build | **Closed（核心）** | 源码加 `.app{min-width:500px}`、不手动 build，360px 用例 **1 failed（overflow=140）**；`reuseExistingServer` 的残留见 §2.8（非阻塞） |
+
+---
+
+### 2. 逐项证据
+
+#### 2.1 C-122 / AC-15 整局入口：`gameId` 子项真的修好了
+
+`src/server/orchestrator.ts:148`：
+
+```ts
+const targetId = deps.gameId ?? session.gameIds[session.gameIds.length - 1] ?? '';
+```
+
+`GameLoop.run` 已经把 `gameId` 传进 `runGame`（`src/server/game-loop.ts:58-69`）。反向探针：
+
+```text
+源码改成 const targetId = session.gameIds[session.gameIds.length - 1] ?? '';
+pnpm exec vitest run --project unit tests/server/game-loop.test.ts -t "C-122"
+→ 1 failed / 2 skipped
+  expected 1 to be greater than 1
+  tests/server/game-loop.test.ts:162
+```
+
+即 A/B 两局同 session 时，回退实现会让第一局停在 1 条事件、第二局被推进，测试会红。
+**C-122 的 `gameId` 子项 Closed。** 但 Round 2 同一条里还记了「玩家夜间动作由 AI 代打」；
+本轮用户只声明了 `gameId`，这一半不在八项内，未重查（见 §5 的 AC-15 行）。
+
+#### 2.2 C-127 / AC-11：RUNOFF 接上了，但选项集是错的，且没有回归锁
+
+**接上的部分**：
+
+- `orchestrator.ts:184-187` 的 `playerPhase` 包含 `DAY_VOTE_RUNOFF`；
+- `orchestrator.ts:234-247` 的 `playerAction` 在两个投票阶段都读 `kind:'vote'`；
+- `App.tsx:149-154` 在 `DAY_VOTE` 与 `DAY_VOTE_RUNOFF` 都渲染 `VoteInput`；
+- `VoteInput` 的按钮是真实的 `button`，Enter 可以触发。
+
+**但有两个实质问题。**
+
+（a）**没有「平票 → 重投」用例。** 把 RUNOFF 从 `playerPhase` 删掉：
+
+```text
+pnpm exec vitest run --project unit tests/server
+→ 26 files / 233 tests 全绿
+```
+
+把 RUNOFF 从 `App.tsx:149` 的条件里删掉：
+
+```text
+pnpm exec vitest run --project client
+→ 4 files / 43 tests 全绿
+```
+
+Round 2 的 C-127 明确要求「补平票 → 重投的用例」；现在这两处删掉都没有测试会红。
+
+（b）**`VoteInput` 在重投阶段给出非法选项。** `App.tsx:150-153` 传的是：
+
+```tsx
+aliveSeats={ctx.aliveSeats.filter((seat) => seat !== ctx.self.seat)}
+```
+
+而不是投影里的 `ctx.legalTargets`。`src/server/project/targets.ts:28-29` 写得很清楚：
+
+```ts
+// 重投阶段（DAY_VOTE_RUNOFF）只能投并列者，且不能弃权（RUL-2）。
+return state.phase === 'DAY_VOTE_RUNOFF' ? [...(state.runoff ?? [])] : [...alive, 'abstain'];
+```
+
+用假 `ApiClient` 渲染 `App`（临时探针，已删除），投影是 `phase=DAY_VOTE_RUNOFF`、
+`aliveSeats=[1..6]`、`legalTargets=[2,6]`、`self=1`，实测：
+
+```text
+RUNOFF_VOTE_BUTTONS=["投 2 号","投 3 号","投 4 号","投 5 号","投 6 号"]
+RUNOFF_ABSTAIN=true
+```
+
+引擎的 `vote.ts:122-135` 对非并列者与弃权都返回 `INVALID_RUNOFF_TARGET`。路由
+（`routes/games.ts` 的 `accepted` 分支）只在引擎接受后通知挂起的输入通道，所以：
+
+- 点「投 3/4/5 号」或「弃权」：引擎写 `REJECTED`，路由 200 但不兑现通道；
+- 编排层仍在 `input.read` 等这一票，60 秒后超时提交 `abstain`，再次被拒绝；
+- `nextActor` 仍返回同一玩家，循环会一轮 60 秒地空转，直到 `maxSteps` 才停。
+
+这不是「少一个测试」，而是重投路径上的功能缺陷。**C-127 仍 Open（阻塞）。**
+
+#### 2.3 C-118 / AC-10：几何断言真的能打红
+
+`tests/e2e/game.spec.ts:92-102` 现在直接取输入框自身的 `boundingBox()`，与
+`banner`、`timer` 的矩形做重叠计算（另保留 `elementFromPoint`）。反向探针：
+
+```css
+.input { position: fixed; top: 0; left: 12px; right: 12px; z-index: 999; }
+```
+
+重建后跑 `-g "手机视口下输入区不遮挡状态条"`：
+
+```text
+1 failed
+Expected: <= 0
+Received:    30.390625
+  tests/e2e/game.spec.ts:98:55
+```
+
+Round 2 的假绿已消失。**C-118 Closed。**
+
+#### 2.4 C-119 / AC-11：投票路径有锁，但「Tab」是假的
+
+`tests/e2e/game.spec.ts:172-191` 的标题是「Tab 能到投票按钮」，正文却是：
+
+```ts
+const voteButton = page.getByRole('button', { name: /投 \d+ 号/ }).first();
+await expect(voteButton).toBeVisible({ timeout: 25_000 });
+await voteButton.focus();
+await page.keyboard.press('Enter');
+```
+
+`.focus()` 是程序聚焦，不是键盘 Tab；测试没有按过一次 `Tab`。反向探针：
+
+```text
+给 VoteInput 的每个按钮加 tabIndex={-1}
+pnpm exec playwright test -g "键盘：Tab 能到投票按钮"
+→ 1 passed (516ms)
+```
+
+如果 Tab 可达性被锁住，`tabIndex={-1}` 应该让这条红。**没有。**
+
+正向的一半是存在的：把 `DAY_VOTE` 从 `playerPhase` 删掉后，同一用例
+**1 failed**（25 秒内等不到投票按钮），说明它确实锁住了「玩家投票走输入通道」。
+但 AC-11 要求「存在一条用纯键盘完成『发言 → 投票』的 Playwright 用例」，
+当前用例不满足「纯键盘」；Round 2 的 C-119 也没有闭合。**C-119 仍 Open（阻塞）。**
+
+#### 2.5 C-116 / AC-2、AC-3：八个词出现了，锁只锁了「出现」
+
+**正向**：`OnboardingHints.tsx:14-22` 的 `GLOSSARY` 覆盖 8 个 `TermKey`，
+`OnboardingHints.tsx:46-50` 用 `TERMS[key].label` 渲染（不是硬编码）。
+`a11y.test.tsx:149-168` 断言八个标签都在，删掉一个会红。这一半成立。
+
+**但 Round 2 的 C-116 还要求两件事，都没做：**
+
+（a）**JSX 文本节点仍逃过扫描。** `tests/security/no-hardcoded-terms.test.ts:66`
+只匹配字符串字面量：
+
+```ts
+const literal = new RegExp(`['"\`]\\s*${label}\\s*['"\`]`);
+```
+
+把 `<span>放逐</span>` 写进 `StatusBar.tsx` 后：
+
+```text
+pnpm exec vitest run --project unit tests/security/no-hardcoded-terms.test.ts
+→ 3 passed
+```
+
+AC-3 要求「扫描 `src/client/` 断言不出现术语字面量」；JSX 文本是术语最自然的写法，
+这个缺口就是 AC-3 的缺口。
+
+（b）**八个术语的悬停 / 键盘聚焦没有测试。** 删掉 `TermHint.tsx:29,31` 的
+`onMouseEnter` 与 `onFocus`（只留点击）：
+
+```text
+pnpm exec vitest run --project client
+→ 4 files / 43 tests 全绿
+```
+
+现有只有 `components.test.tsx:77-93` 对 `knife` 的**点击**断言；没有八个词汇表的
+hover/focus 用例，也没有 `tests/e2e/terms.spec.ts`。**C-116 仍 Open（阻塞）。**
+
+#### 2.6 C-120 / AC-6、AC-7、UI-4：两条锁有牙，但 App 到 `/input` 的链路仍没锁
+
+**跨天（C-117 部分）有牙。** 把 `spokenSeats` 回退成「统计全部 publicEvents」：
+
+```text
+pnpm exec vitest run --project client tests/client/game-state.test.ts
+→ 1 failed / 8 passed
+  expected [ 1, 2, 3 ] to deeply equal []
+  tests/client/game-state.test.ts:141
+```
+
+**`onDraft` 回调有牙。** 删掉 `SpeechInput.tsx:57` 的 `onDraft?.(event.target.value)`：
+
+```text
+pnpm exec vitest run --project client tests/client/components.test.tsx
+→ 1 failed / 12 passed
+  expected undefined to be '我怀疑 7 号。'
+  tests/client/components.test.tsx:182
+```
+
+**但 App 的接线仍没锁。** 删掉 `App.tsx:147` 的 `onDraft={syncDraft}`：
+
+```text
+pnpm exec vitest run --project client
+→ 4 files / 43 tests 全绿
+```
+
+也就是说：组件会回调，但「App 把回调接到 `ApiClient.draft` / `POST /input`」这一层
+仍然是裸的；Round 2 要求的「输入 → `/input` 调用 → 60 秒超时 → 事件含草稿文本」
+没有落地（现有用例只到回调）。另外草稿仍无防抖、`ApiClient.draft` 不检查
+`response.ok`（Round 2 非阻塞建议，未要求本轮修）。**C-120 仍 Open（阻塞，测试）。**
+
+#### 2.7 C-121/C-123 / AC-15：身份卡补上了，读屏公告改出了一个新错误
+
+**（a）IdCard 内容成立。** `IdCard.tsx:21-35` 增加了目标、技能、剩余次数；
+`components.test.tsx:186-214` 对女巫断言了「一瓶解药」「解药 1 次」「决定用不用解药」。
+删掉这三段后该用例 **1 failed**，说明组件级有牙。`OnboardingHints.tsx:41` 也改用了
+`ROLE_LABELS`，不再显示 `wolf`。
+
+**（b）live region 的文本是错的。** `App.tsx:62-69`：
+
+```ts
+const announcementKey = ...;
+useEffect(() => {
+  if (view === null) return;
+  setAnnouncement(boardAnnouncement(view.view, 0));
+}, [announcementKey]);
+```
+
+`boardAnnouncement` 总会拼上倒计时（`game-state.ts:95-101`），而 `countdownText(0)`
+是「时间到」。实测（临时 App 探针，已删除）：
+
+```text
+SPEECH_STATUS=你是 1 号，第 2 天，轮流发言，轮到 1 号发言，时间到。
+RUNOFF_STATUS=你是 1 号，第 2 天，DAY_VOTE_RUNOFF，时间到。
+```
+
+开局还有 60 秒，读屏却会播「时间到」；`DAY_VOTE_RUNOFF` 是原始枚举；文本里只有
+「你是 1 号」（席位），没有 role。Round 2 的 C-121/C-123 要求「status 复用节流并含 role」，
+现在节流有了（只在阶段/天数/轮次变化时更新），但内容和身份仍不对。**这是新错误，登记为
+C-132。**
+
+**（c）没有 App 集成测试。** 删掉 `App.tsx:137` 的 `<IdCard>` 和 `App.tsx:142-144`
+整个 `role="status"` 区：
+
+```text
+pnpm exec vitest run --project client
+→ 4 files / 43 tests 全绿
+```
+
+组件测试直接 import `IdCard`，所以它保护不了「App 是否渲染 IdCard / 公告」。Round 2
+明确要求「补 App 集成测试」；仍缺。**C-121/C-123 仍 Open（阻塞）。**
+
+#### 2.8 C-130 / TEST-1、TEST-6：e2e 现在会先 build；复用旧服务的旁路仍在
+
+`playwright.config.ts` 的 `webServer.command` 已改为：
+
+```text
+pnpm build && pnpm exec tsx scripts/e2e-server.ts
+```
+
+**反向探针（不手动 build）**：给 `global.css` 加 `.app{min-width:500px}`，直接跑：
+
+```text
+E2E_PORT=4184 pnpm exec playwright test -g "360px"
+→ 1 failed
+  Expected: <= 0
+  Received:    140
+```
+
+说明 webServer 真的先 build 了，360px 用例能发现源码变更。**C-130 的核心 Closed。**
+
+**残留（非阻塞）**：`reuseExistingServer: !process.env.CI`。先手工起一个 4185 的服务，
+再改源码、不 build，跑 `E2E_PORT=4185 pnpm exec playwright test -g "360px"`：
+
+```text
+→ 1 passed (436ms)
+```
+
+旧 bundle 被复用了。CI 设置 `CI=1` 时不会复用；本地只要没有手工服务，也不会触发。
+建议把 `pnpm build` 放进 `scripts/test-e2e.mjs`，或本地也设 `reuseExistingServer: false`，
+但这不是本轮阻塞项。
+
+---
+
+### 3. 变异探针汇总
+
+| 探针 | 注入的改动 | 定向命令 | 结果 | 证明 |
+|---|---|---|---|---|
+| **M-R3-1** | `orchestrator.ts:148` 回退为 `session.gameIds[last]` | `vitest ... game-loop.test.ts -t "C-122"` | **1 failed**（`:162`） | C-122 有牙 |
+| **M-R3-2** | `playerPhase` 删掉 RUNOFF | `vitest ... tests/server` | **233/233 passed** | RUNOFF 服务端路径无锁 |
+| **M-R3-3** | `App` 的 VoteInput 条件删掉 RUNOFF | `vitest ... --project client` | **43/43 passed** | RUNOFF 界面无锁 |
+| **M-R3-4** | `.input{position:fixed;top:0;...}` | `playwright -g "手机视口..."` | **1 failed**，重叠 **30.39px** | C-118 有牙 |
+| **M-R3-5** | `VoteInput` 按钮加 `tabIndex={-1}` | `playwright -g "键盘：Tab 能到投票按钮"` | **1 passed** | C-119 的 Tab 无锁 |
+| **M-R3-6** | `playerPhase` 删掉 DAY_VOTE | `playwright -g "键盘：Tab 能到投票按钮"` | **1 failed**（25s 无按钮） | 投票路径有锁 |
+| **M-R3-7** | `StatusBar` 加 `<span>放逐</span>` | `vitest ... no-hardcoded-terms` | **3/3 passed** | AC-3 扫描漏 JSX |
+| **M-R3-8** | `TermHint` 删 `onMouseEnter`/`onFocus` | `vitest ... --project client` | **43/43 passed** | 悬停/聚焦无锁 |
+| **M-R3-9** | `spokenSeats` 回退为全天统计 | `vitest ... game-state.test.ts` | **1 failed**（`:141`） | 跨天有牙 |
+| **M-R3-10** | `SpeechInput` 删 `onDraft?.()` | `vitest ... components.test.tsx` | **1 failed**（`:182`） | 回调有牙 |
+| **M-R3-11** | `App` 删 `onDraft={syncDraft}` | `vitest ... --project client` | **43/43 passed** | App→/input 无锁 |
+| **M-R3-12** | `IdCard` 删 goal/skills/remaining | `vitest ... components.test.tsx` | **1 failed**（`:211`） | IdCard 组件有牙 |
+| **M-R3-13** | `App` 删 `<IdCard>` + status 区 | `vitest ... --project client` | **43/43 passed** | 无 App 集成测试 |
+| **M-R3-14** | `.app{min-width:500px}`，不手动 build | `playwright -g "360px"`（E2E_PORT 4184） | **1 failed**，overflow **140** | C-130 核心有牙 |
+| **M-R3-15** | 手工起 4185 服务后同源码改动 | 同上（E2E_PORT 4185） | **1 passed** | `reuseExistingServer` 旁路 |
+| **M-R3-16** | 临时 App 探针：RUNOFF `legalTargets=[2,6]` | `vitest ... __probe-app` | 按钮 `2..6` + 弃权 | RUNOFF 选项集错误 |
+| **M-R3-17** | 临时 App 探针：60 秒时的 live region | 同上 | 文本含「时间到」 | 读屏公告内容错误 |
+
+---
+
+### 4. 验收标准逐条（Round 3）
+
+| AC | 判定 | 一手证据 |
+|---|---|---|
+| 1 三块区域、阶段与天数 | **PASS（沿用前轮，证据 PARTIAL）** | e2e 主路径只验 heading，不验天数/阶段值；非阻塞 |
+| 2 8 个术语悬停/聚焦 | **NEEDS WORK / OPEN** | 8 个标签在词汇表里；无 hover/focus 用例，删 handlers 仍绿（M-R3-8） |
+| 3 术语来自 terms.ts、扫描 client | **NEEDS WORK / OPEN** | `<span>放逐</span>` 逃过扫描（M-R3-7） |
+| 4 发言提示不代填 | **PASS** | 沿用 Round 2 的 `a11y.test.tsx:133-147`，本轮未重查 |
+| 5 引导可关闭、刷新不再出现 | **PASS（实现）** | 沿用 Round 2；仍是 unmount/remount，无真刷新 e2e（非阻塞） |
+| 6 三项发言状态 | **PASS（实现）** | 跨天回退 → M-R3-9 红；无 App 渲染用例（C-117 的残项） |
+| 7 当前发言者由事件流推导 | **PASS（实现）** | 同上；`spokenSeats` 锁有牙 |
+| 8 360px 无横向滚动 | **PASS** | 沿用 Round 2；C-130 的自动 build 让这条不再跑旧包 |
+| 9 ≥1024px 桌面布局 | **PASS** | 沿用 Round 2；仍只断言列数（非阻塞） |
+| 10 输入不遮挡轮次/倒计时/当前发言 | **PASS** | M-R3-4 红，重叠 30.39px |
+| 11 纯键盘「发言 → 投票」 | **NEEDS WORK / OPEN** | DAY_VOTE 路径有 e2e 锁（M-R3-6 红），但测试用 `.focus()` 不是 Tab（M-R3-5 绿）；RUNOFF 选项集错误（M-R3-16） |
+| 12 焦点可见 | **PASS** | 沿用 Round 2；焦点 e2e 仍测 UA 默认 outline（已知，非本轮八项） |
+| 13 对比度 AA | **PASS** | 沿用 Round 2 |
+| 14 倒计时/阵营/存活有文字 | **PARTIAL** | 倒计时/存活有；阵营仍无显式文字，`StatusBar`/公告仍显示原始枚举（C-128 未关闭） |
+| 15 读屏身份/阶段/轮到谁 | **NEEDS WORK / OPEN** | IdCard 有 role（组件测试有牙）；live region 恒「时间到」、无 role、RUNOFF 原始枚举；无 App 集成测试（M-R3-13） |
+| 15（整局入口） | **PARTIAL** | `gameId` 子项 Closed（M-R3-1）；玩家夜间动作仍由 `decide` 代打（Round 2 遗留，未在本轮八项内） |
+| 16 不双写 | **PASS（行为）** | 沿用 Round 2；本轮未改路由/编排的写入路径 |
+
+**测试计划**：`TEST-STRATEGY.md:332-345` 的 RFC-012 小节仍全部 `proposed`，六个 e2e 文件
+仍不存在；本轮新增的覆盖没有回填。RFC §8.8 写「发言 → Tab 到投票按钮 → Enter」，
+与 `game.spec.ts:186` 的 `.focus()` 不符；RFC §8.6 仍写「投票 UI 归 RFC-013」。这些属于
+C-124 / C-131 的文档漂移，非阻塞，但会误导下一轮评审。
+
+---
+
+### 5. 五个维度
+
+#### 5.1 RFC ADHERENCE — **NEEDS WORK**
+
+- **已成立**：C-122 的 `gameId`（M-R3-1 红）、C-118 的输入框几何（M-R3-4 红）、
+  C-130 的自动 build（M-R3-14 红）、跨天过滤（M-R3-9 红）、`onDraft` 回调（M-R3-10 红）、
+  IdCard 技能/目标/剩余（M-R3-12 红）。
+- **未成立 / 未锁**：C-116 的 AC-3 JSX 扫描与 hover/focus；C-119 的 Tab；C-127 的重投
+  选项集与平票用例；C-120 的 App→`/input`→超时全链路；C-121/C-123 的 live region 内容
+  与 App 集成。
+- **新错误**：live region 在开局 60 秒时播「时间到」（C-132）。
+- **未重查**：C-128 的原始枚举、C-122 的夜间动作、焦点 e2e 的 UA outline。
+
+#### 5.2 RULES COMPLIANCE — **NEEDS WORK**
+
+- **UI-1 / SEC-5**：通过。IdCard、VoteInput、Feed 都只消费投影；没有直接序列化状态。
+- **UI-2**：**部分违反**。`OnboardingHints` 已改 `ROLE_LABELS`；但 `boardAnnouncement`
+  仍输出 `DAY_VOTE_RUNOFF`，`StatusBar` 仍输出 `NIGHT` / `DAY_VOTE`（C-128，未关闭）。
+- **UI-3**：通过（流式渲染未改）。
+- **UI-4**：实现成立（Round 2 真实 60 秒探针）；回归锁只到 `onDraft` 回调，App 接线
+  仍可被删而不红（M-R3-11）。
+- **A11Y-1**：部分。Tab→投票没有真键盘锁；RUNOFF 的非法选项会让键盘用户投出必然被拒的票。
+- **A11Y-2**：通过（沿用 Round 2）。
+- **A11Y-3**：部分。倒计时/存活有文字；阵营仍无；live region 的「时间到」是错误文字。
+- **A11Y-4**：通过（语义标签未改）。
+- **TEST-1 / TEST-6**：**不通过**。八个计划 spec 仍 `proposed`；Tab、术语扫描、App 集成、
+  平票重投、草稿全链路都没有测试。
+- **DOC-1**：**不通过**。RFC §8.8 的「Tab」与代码不符；§8.6 的投票归属过期；
+  TEST-STRATEGY 未回填；README 状态行仍停在 RFC-008 的进度。
+
+#### 5.3 SECURITY — **PASS**
+
+- 本轮改动没有扩大数据面：IdCard 只读投影；VoteInput 只提交自己的 `seat`；路由仍校验
+  席位与版本；`/input` 仍校验 300 字。
+- `as never` 的投票 target 是类型问题（`'abstain' | SeatId` 本可表达），不是注入面。
+- 非阻塞旧项：`POST /play` 无频率限制（C-126）。
+
+#### 5.4 PERFORMANCE — **PASS（本轮）**
+
+- 公告从每秒更新改为 key 变化时更新，减少了 live region 的写次数；方向正确。
+- 草稿仍每个字符一次 `POST /input`（无防抖），但这是 Round 2 的非阻塞建议，不是本轮回归。
+- 每秒全量 `GET /api/games/:id` 的旧问题（C-126）未动，不在八项内。
+
+#### 5.5 MAINTAINABILITY — **NEEDS WORK**
+
+- **没有 App 集成测试**：删 IdCard、status 区、`onDraft` 接线都不红（M-R3-11 / M-R3-13）。
+  这是本轮多个「组件有牙、界面没锁」的共同根因。
+- **测试名与实现不符**：`键盘：Tab 能到投票按钮` 实际是 `.focus()`；下一轮读名字会误判。
+- **RUNOFF 选项集**：`App` 手写 `aliveSeats.filter` 而不是用投影的 `legalTargets`，把
+  「谁能被投」的规则复制到了客户端，违反「状态由投影推导」的方向。
+- **IdCard 与 server `buildIdCard` 两套语义**：技能/目标在客户端手写，未复用 shared；
+  长期会漂移。
+- **新 CSS 类**：`.idcard__goal` / `.idcard__skills` / `.idcard__remaining` 没有样式，
+  只有 `.idcard__extras` 被样式覆盖；功能不受影响，但观感与旁边的事实列表不一致。
+- **文档漂移**：RFC §8.8、§8.6、TEST-STRATEGY、README 见 §5.2。
+
+---
+
+### 6. 结论
+
+**Overall Risk Level: High。**
+
+八项里 **3 项完全闭合**（C-122 的 `gameId`、C-118 的输入框几何、C-130 的自动 build），
+**5 项只是部分修复**：C-127 的服务端/界面接线在，但重投选项集是错的且没有平票用例；
+C-119 的投票路径有锁，但「Tab」是 `.focus()`；C-116 的八个词出现了，但扫描和 hover/focus
+没锁；C-120 的跨天/回调有锁，但 App→`/input`→超时没锁；C-121/C-123 的身份卡内容有了，
+但 live region 恒播「时间到」、缺 role、没有 App 集成测试。测试套件 79 files / 678 tests、
+8/8 e2e 全绿，但这些绿灯没有覆盖上面这些退路——M-R3-2/3/5/7/8/11/13 都是「删掉行为仍然全绿」。
+
+**Blocking Issues（必须修复后才能合并）**
+
+1. **C-127（阻塞）· RUNOFF 的非法选项集与缺测试。** `App.tsx:150-153` 把
+   `ctx.aliveSeats.filter(...)` 传给 VoteInput；重投阶段应传 `ctx.legalTargets`
+   （只有并列者、无弃权）。当前会列出 3 个非法席位 + 弃权；点击后引擎 `INVALID_RUNOFF_TARGET`，
+   路由不兑现通道，编排层 60 秒后再次提交弃权并继续空转。补「平票 → 玩家重投 → 只列并列者、
+   无弃权」的用例。
+2. **C-119（阻塞）· Tab→投票 e2e 不是 Tab。** `game.spec.ts:186` 用
+   `voteButton.focus()`；M-R3-5 证明 `tabIndex={-1}` 仍绿。改成从发言框/页面起点按
+   `Tab` 到投票按钮，再 `Enter`，并保留「投票后按钮消失」断言。
+3. **C-116（阻塞）· AC-3 扫描与 AC-2 悬停/聚焦没锁。** 把 JSX 文本节点纳入
+   `no-hardcoded-terms` 扫描；补八个词汇表 trigger 的 hover + focus tooltip 断言
+   （或一条 `terms.spec.ts`），并让 M-R3-8 变红。
+4. **C-132 / C-121 / C-123（阻塞）· live region 内容错误 + 无 App 集成测试。**
+   `boardAnnouncement(view.view, 0)` 在 60 秒时播「时间到」；公告不含 role；RUNOFF 显示原始
+   枚举。改成不含倒计时（或传节流后的真实 `remaining`）的中文公告，并把 role 放进文本；
+   补一个用假 `ApiClient` 渲染 `App` 的集成测试，断言 IdCard、`role="status"` 的内容与
+   节流（以及删除接线会红）。
+5. **C-120（阻塞，测试）· App→`/input`→超时的全链路没有锁。** M-R3-11 删掉
+   `onDraft={syncDraft}` 仍 43/43 绿。补 App 集成测试（假 `ApiClient` 断言 `draft()` 被调用）
+   与服务端/可控制时钟的「超时后草稿文本进入 `SPEECH`」用例。
+
+**Improvement Suggestions（非阻塞）**
+
+1. `VoteInput` 只在「玩家是当前投票者、存活、未投票」时显示；用 `legalTargets` 而不是
+   `aliveSeats`，并把「重投不可弃权」写进组件条件。
+2. 去掉 `as never`：`VOTE.target` 用 `'abstain' | SeatId`，让编译器校验。
+3. 草稿同步加 200–300ms debounce；`ApiClient.draft` 检查 `response.ok`，失败进 `app__error`。
+4. 把 `boardAnnouncement` 的阶段文案统一走中文映射（`DAY_VOTE_RUNOFF` → 「重投」），
+   `StatusBar` 同样处理；关闭 C-128。
+5. IdCard 的技能/目标/剩余改为 shared 层的一份数据，客户端与服务端 `buildIdCard` 共用。
+6. 给 `.idcard__goal` / `.idcard__skills` / `.idcard__remaining` 补上 `.idcard__facts`
+   同款样式。
+7. 把 `pnpm build` 放进 `scripts/test-e2e.mjs`，或本地也 `reuseExistingServer: false`，
+   消除 M-R3-15 的旧 bundle 旁路。
+8. 回填 `TEST-STRATEGY.md:332-345` 的 `Exists?` 与实际文件；修正 RFC §8.8 的「Tab」、
+   §8.6 的投票归属；同步 README 状态行。
+9. 修焦点 e2e：当前 Tab #1 落在 `.feed__list`，测的是 Chrome UA 的默认 outline；
+   应聚焦 textarea/button 并断言应用自己的 3px `--accent`（Round 2 已记，未在本轮八项内）。
+
+---
+
+### 7. 探针恢复与最终门禁
+
+探针前备份的 8 个文件与恢复后的 SHA-256（`git diff --exit-code` 为空）：
+
+```text
+b4db721a83d1b056b375bc0bc574585337d33aa8515ebf6dc4d4bb463798b9ca  src/server/orchestrator.ts
+415d1de2d14da496b2fdec9fe471f712505c5dc6b1cf5fc12ba06a193f527983  src/client/App.tsx
+10df1394944a0568dc4fff602563ff595f665fb5caf924b92fadafd1c4a758ac  src/client/components/VoteInput.tsx
+1b1feb0e82013281424207b4ba7bb1467cedd4009daa3143dd3b622868920922  src/client/components/StatusBar.tsx
+9b27d20cc94937a98afb0bfc1e5cca4b9701f7eec3326f811a12fd5aa61a40b1  src/client/components/SpeechInput.tsx
+eb1dbebadd2590475993d8667c53ea9fc6c30a4ae8b6590dfac6d174f42b0d62  src/client/game-state.ts
+801f88ca459eaea1545c835448579bd300a84120cb2e471881a188f60e634786  src/client/styles/global.css
+d3dabdfe6aa2b990ed6e5641b3bb1aa68773e2f9eef5dc092b054280f6039c74  src/client/components/TermHint.tsx
+01b6fdeb554cffd46351eecc9fa37f2f7747f213f572170136cfb404915e2acc  src/client/components/IdCard.tsx
+```
+
+`IdCard.tsx` 的探针在修改前漏做文件备份，已按原文逐字回填并用 `git diff --exit-code`
+验证与 HEAD 一致（**未使用 `git checkout` / `git restore`**）；其余 8 个文件均从
+`/tmp/howl-rfc012-r3-probes/backup/` 恢复。临时探针测试已删除；仓库内无残留；
+`git status --porcelain` 为空；没有 `git commit`。
+
+最终（恢复后）重跑：
+
+```text
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → 79 files / 678 tests 全绿
+$ pnpm test:e2e → 8 passed
+```
+
+**状态**：RFC-012 → **`Changes requested`**。
