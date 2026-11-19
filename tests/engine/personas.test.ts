@@ -113,8 +113,11 @@ describe('AC-4 · 风格画像至少三档不同', () => {
 });
 
 describe('AC-5 · 人格标签可读出', () => {
-  it('personaOf 返回可展示的 label；未知 id 抛错', () => {
-    expect(personaOf('blunt').label).toBeTruthy();
+  it('personaOf 返回的 label 与库里逐项一致；未知 id 抛错', () => {
+    for (const persona of PERSONAS) {
+      expect(personaOf(persona.id).label, persona.id).toBe(persona.label);
+    }
+    expect(personaOf('careful').label).toBe('谨慎观察');
     expect(() => personaOf('nope')).toThrow(/未知人格/);
   });
 });

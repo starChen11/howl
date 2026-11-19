@@ -393,3 +393,38 @@ describe('C-55 · 真实超时路径（AbortSignal.timeout）', () => {
     expect(log.all().every((meta) => meta.errorCode === 'TIMEOUT')).toBe(true);
   });
 });
+
+describe('C-77 · 人格的 verbosity 影响 maxOutputTokens', () => {
+  async function maxTokensForPersona(personaId: string | null): Promise<number> {
+    let body: { max_tokens?: number } = {};
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body)) as { max_tokens?: number };
+      return chatResponse(GOOD_BODY);
+    }) as unknown as typeof fetch;
+
+    await decide(
+      { config: CONFIG, fetchImpl },
+      { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side', personaId },
+    );
+
+    if (body.max_tokens === undefined) throw new Error('请求里没有 max_tokens');
+    return body.max_tokens;
+  }
+
+  it('短话痨 vs 絮叨：1 档是 0.5 倍、3 档是 1.5 倍', async () => {
+    const quiet = await maxTokensForPersona('quiet'); // verbosity 1
+    const chatty = await maxTokensForPersona('chatty'); // verbosity 3
+
+    expect(quiet).toBe(400); // 800 * 0.5
+    expect(chatty).toBe(1200); // 800 * 1.5
+  });
+
+  it('没有人格（玩家席位）时用配置值', async () => {
+    expect(await maxTokensForPersona(null)).toBe(800);
+  });
+
+  it('超时不受人格影响', async () => {
+    // 人格只改输出上限，不改 timeoutMs —— 超时是网络问题，与性格无关。
+    expect(CONFIG.timeoutMs).toBe(50);
+  });
+});

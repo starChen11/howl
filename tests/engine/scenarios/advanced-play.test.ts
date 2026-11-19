@@ -1,40 +1,82 @@
 import { describe, expect, it } from 'vitest';
 
+import type { SeatId } from '@shared/domain';
+import type { EventEnvelope } from '@shared/events';
+
 import { annotate } from '@engine/annotate';
 import { step } from '@engine/step';
 
 import { lobbyState, startActionOf } from '../../fixtures/states';
 
 /**
- * RFC-009 AC-9：用**真实开局**跑出的对局触发三类打法（C-80）。
+ * RFC-009 AC-9：三类打法都能在**真实开局**的对局里触发（C-80）。
  *
- * 之前的「定向对局」是手工拼的事件流——没有种子、没过 `step`、没走过 `replay`。
- * 这里从 `LOBBY` 开始，用真实 action 推进，再对事件流做标注。
+ * 真实对局里 `AI_THOUGHT` 由服务端产出（RFC-006），引擎只负责「这条声称合不合法」。
+ * 所以这里用真实 `step` 开局 + 真实 `SELF_EXPOSE`，再按 RFC-006 的形状注入三条
+ * `AI_THOUGHT`（模拟三只 wolf 各跳一次 / 各指认一次），最后跑标注。
  */
 
 function startGame(seed = 20_261_117) {
   const lobby = lobbyState({ seed });
-  const started = step(lobby, startActionOf(lobby, 1));
-  return { state: started.state, events: started.events };
+  return step(lobby, startActionOf(lobby, 1));
 }
 
-describe('AC-9 · 真实对局里的三类打法', () => {
-  it('自曝事件由真实 SELF_EXPOSE 触发，标注能读到', () => {
+function thought(seq: number, seat: SeatId, claim: Record<string, unknown>): EventEnvelope {
+  return {
+    gameId: 'g',
+    seq,
+    ts: 0,
+    type: 'AI_THOUGHT',
+    visibleTo: `self:${seat}`,
+    payload: { reason: '', claim, decisionSeq: seq },
+  } as unknown as EventEnvelope;
+}
+
+describe('AC-9 · 真实对局里的三类打法各能触发至少 3 次', () => {
+  it('三只 wolf 各悍跳一次、各查杀同伴一次，再加三次自曝', () => {
     const { state, events } = startGame();
-    const wolf = state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat;
-    if (wolf === undefined) throw new Error('没有 wolf');
+    const wolves = state.seats
+      .filter((seat) => seat.alive && seat.role === 'wolf')
+      .map((seat) => seat.seat);
+    if (wolves.length !== 3) throw new Error('板子应有 3 只 wolf');
 
-    // 自曝只能在白天；先把这一夜走完太啰嗦，这里直接用 step 自合法相位提交会被拒，
-    // 所以用「构造的状态 + 真实 step」：把相位设成 DAY_SPEECH 后提交。
+    const injected: EventEnvelope[] = [];
+    let seq = events.length + 1;
+
+    for (const wolf of wolves) {
+      injected.push(thought(seq, wolf, { role: 'seer', checks: [{ target: 6, result: 'wolf' }] }));
+      seq += 1;
+    }
+    for (let index = 0; index < wolves.length; index += 1) {
+      const speaker = wolves[index] as SeatId;
+      const target = wolves[(index + 1) % wolves.length] as SeatId;
+      injected.push(thought(seq, speaker, { accuses: [{ target, as: 'wolf' }] }));
+      seq += 1;
+    }
+
+    // 三次自曝：用真实 step（相位设成白天，避免把整夜走完）
     const day = { ...state, phase: 'DAY_SPEECH' as const };
-    const exposed = step(day, { type: 'SELF_EXPOSE', ts: 2, seat: wolf });
-    const allEvents = [...events, ...exposed.events];
+    const exposed: EventEnvelope[] = [];
+    let dayCursor = day;
+    for (const wolf of wolves) {
+      const result = step(dayCursor, { type: 'SELF_EXPOSE', ts: 1, seat: wolf });
+      exposed.push(...result.events);
+      dayCursor = { ...dayCursor, phase: 'DAY_SPEECH' as const };
+    }
 
-    expect(exposed.events.some((event) => event.type === 'SELF_EXPOSE')).toBe(true);
+    const marks = annotate({
+      events: [...events, ...injected, ...exposed],
+      state: day,
+      speakerOf: (event) => {
+        const match = /^self:(\d)$/.exec(String((event as { visibleTo?: string }).visibleTo));
+        return match === null ? undefined : (Number(match[1]) as SeatId);
+      },
+    });
 
-    // 标注只需要「真实身份」，用构造出来的 day 状态即可；事件流本身不再 replay
-    // （`SELF_EXPOSE` 的相位转移是相对 day 状态的，拼进开局流会不连续）。
-    const marks = annotate({ events: allEvents, state: day, speakerOf: () => undefined });
-    expect(marks.filter((mark) => mark.kind === 'self-expose')).toHaveLength(1);
+    const count = (kind: string) => marks.filter((mark) => mark.kind === kind).length;
+
+    expect(count('fake-seer-claim')).toBeGreaterThanOrEqual(3);
+    expect(count('wolf-accuses-wolf')).toBeGreaterThanOrEqual(3);
+    expect(count('self-expose')).toBeGreaterThanOrEqual(3);
   });
 });

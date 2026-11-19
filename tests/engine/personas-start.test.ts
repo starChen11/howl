@@ -87,3 +87,24 @@ describe('AC-10 · 人格不影响合法性', () => {
     }
   });
 });
+
+describe('C-79 · 整局不变（跨 action）', () => {
+  it('连续几次夜聊之后，每个席位的人格仍与开局一致', () => {
+    const { state } = started();
+    const before = state.seats.map((seat) => seat.personaId ?? null);
+
+    let cursor = state;
+    for (let guard = 0; guard < 3 && cursor.phase === 'NIGHT_WOLF_CHAT'; guard += 1) {
+      const speaker = cursor.seats.find(
+        (seat) =>
+          seat.alive &&
+          seat.role === 'wolf' &&
+          !(cursor.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+      )?.seat;
+      if (speaker === undefined) break;
+      cursor = step(cursor, { type: 'WOLF_CHAT', ts: 1, seat: speaker, text: '' }).state;
+    }
+
+    expect(cursor.seats.map((seat) => seat.personaId ?? null)).toEqual(before);
+  });
+});

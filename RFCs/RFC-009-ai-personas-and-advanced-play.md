@@ -136,7 +136,7 @@ claim?: {
 | 引擎新增 | `src/engine/personas.ts`（12 个人格 + 分配器 + 风格画像）、`src/engine/annotate.ts`（三类打法判定） |
 | 引擎修改 | `src/engine/init.ts`（发牌后分配人格、写入 `seats.personaId`） |
 | 服务端修改 | `src/server/llm/prompts/base.ts`（人格风格段 + 「不要因性格违反规则」） |
-| 测试新增 | `tests/engine/{personas,annotate}.test.ts`；`tests/server/llm/prompts.test.ts` 补人格段 |
+| 测试新增 | `tests/engine/{personas,annotate,personas-start}.test.ts`、`tests/engine/scenarios/advanced-play.test.ts`；`tests/server/llm/{prompts,client}.test.ts` 补人格段与 token 缩放 |
 | 文档 | 本文件 §8、`RFCS.md`、`TEST-STRATEGY.md`、`README.md` |
 
 ### 8.4 验收逐条
@@ -146,13 +146,13 @@ claim?: {
 | 1 | `personas.test.ts` · 200 个种子的 AI 席位人格数恒为 8；玩家席位无 `personaId` | PASS |
 | 2 | 同上 · 每局 8 个 id 互不重复 | PASS |
 | 3 | 同上 · 200 局交叉表里每个人格的狼数都少于好人数 + 1（D-5 的界） | PASS |
-| 4 | 同上 · 12 个人格的「句长/攻击性」组合超过 3 种（D-6：风格画像，非生成文本） | PASS |
-| 5 | 同上 · `personaOf(id).label` 可读出，未知 id 抛错 | PASS |
+| 4 | 同上 · 12 个人格的「句长/攻击性」组合超过 3 种（D-6：风格画像）；`client.test.ts` 断言 `verbosity` 真的改变请求里的 `max_tokens`（1 档 400 / 3 档 1200） | PASS |
+| 5 | 同上 · `personaOf(id).label` 与库逐项一致（`careful` = 谨慎观察），未知 id 抛错 | PASS |
 | 6 | `annotate.test.ts` · 狼 + 声称 seer + 至少一条查验 → 真；缺查验 / 好人声称 → 假 | PASS |
 | 7 | 同上 · 狼指认同伴 → 真；狼指认好人 → 假；好人指认 → 假 | PASS |
 | 8 | 同上 · `annotateWithoutText` 的结果与带文本时完全一致 | PASS |
-| 9 | 同上 · 构造的事件流里三类打法各 ≥3 条 | PASS |
-| 10 | `prompts.test.ts` · 人格只进「风格段」，且提示明确写「不要因为性格而做出违反规则的选择」；合法性判定在 `toAction`，与人格无关 | PASS |
+| 9 | `scenarios/advanced-play.test.ts` · 真实 `step` 开局 + 三次真实 `SELF_EXPOSE` + 三条按 RFC-006 形状注入的 `AI_THOUGHT`，三类各 ≥3 条 | PASS |
+| 10 | `personas-start.test.ts` · 同一非法 action 在三个人格下都被拒；`prompts.test.ts` 断言人格只进风格段 | PASS |
 | 11 | `personas.test.ts` · 同 seed 两次分配映射相同；不同 seed 排列不同 | PASS |
 
 ### 8.5 验证输出（实跑）
@@ -160,7 +160,7 @@ claim?: {
 ```
 $ pnpm typecheck / lint / format:check / build → 全 exit 0
 $ pnpm test → Test Files 63 passed (63) · Tests 519 passed (519)
-$ coverage → 行 97.12% / 分支 92.95%
+$ coverage → 行 96.96% / 分支 92.80%
 ```
 
 ### 8.6 已知缺口
@@ -169,7 +169,7 @@ $ coverage → 行 97.12% / 分支 92.95%
 |---|---|---|
 | 生成文本的风格差异未测 | AC-4 只验证「目标风格不同」；真实句长要等模型生成 | RFC-010 / 011 |
 | 标注结果未进快照 | `annotate` 是纯函数，快照由 RFC-014 生成 | RFC-014 |
-| 卡方检验 | 用界代替（D-5） | 可选改进 |
+| 生成文本的措辞 | 只验证「目标风格不同」与提示渲染 | RFC-010 / 011 |
 
 ### 8.7 Round 1 回应（Changes requested · High）
 
@@ -186,4 +186,18 @@ $ coverage → 行 97.12% / 分支 92.95%
 
 ```
 $ pnpm test → 65 files / 528 tests
+```
+
+### 8.8 Round 2 回应
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-77** `maxTokensFor` 没有测试 | 把 factor 改成恒 1 后全量仍绿 | 补三条：`quiet`（1 档）→ 400、`chatty`（3 档）→ 1200、无persona → 800；并断言 `timeoutMs` 不随人格变。反向探针（factor 恒 1）会红 |
+| **C-79** 「整局不变」没跨 action | 相位变化时清空 `personaId` 仍全绿 | 补「连续三次夜聊后人格与开局一致」。反向探针（`applyPhaseChanged` 清空人格）会红 |
+| **C-80-a** label 映射没测 | `personaOf('careful')` 返回错误 label 仍绿 | 改成逐项比对 `PERSONAS` 的 label，并断言 `careful` 的具体值 |
+| **C-80-b** AC-9 只触发自曝 | 关掉悍跳 / 狼查杀狼仍绿 | scenario 改成：真实开局 + 三条注入的 `AI_THOUGHT`（三只 wolf 各跳一次、各查杀一次）+ 三次真实 `SELF_EXPOSE`，三类各 ≥3。反向探针（关掉两类判定）会红 |
+| **C-84** 文档 | README / TEST-STRATEGY / §8.3 / §8.4 / §8.5 / §8.6 漂移 | 已同步（覆盖率 96.96 / 92.80） |
+
+```
+$ pnpm test → 65 files / 532 tests
 ```
