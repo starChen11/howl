@@ -9,6 +9,7 @@ import { EventPanel, buildPanelEntries } from './components/EventPanel';
 import { SpectatorBar } from './components/SpectatorBar';
 import { Notepad } from './components/Notepad';
 import { toggleTruth, initialTruthState } from './state/truth-view';
+import type { TruthView } from '@shared/truth';
 import { SeatGrid } from './components/SeatGrid';
 import { SpeechFeed, type SpeechLine } from './components/SpeechFeed';
 import { SpeechInput } from './components/SpeechInput';
@@ -28,9 +29,7 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   const [remaining, setRemaining] = useState(60);
   const [error, setError] = useState<string | null>(null);
   const [truth, setTruth] = useState(initialTruthState);
-  const [truthData, setTruthData] = useState<{
-    seats: { seat: number; roleLabel: string; alive: boolean }[];
-  } | null>(null);
+  const [truthData, setTruthData] = useState<TruthView | null>(null);
   const [highlight, setHighlight] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
@@ -185,6 +184,16 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
                 <li key={seat.seat}>
                   {seat.seat} 号：{seat.roleLabel}
                   {seat.alive ? '' : '（已出局）'}
+                  {seat.actions.length > 0 ? `：${seat.actions.join('；')}` : ''}
+                </li>
+              ))}
+            </ul>
+            <h3>出局</h3>
+            <ul>
+              {truthData.deaths.length === 0 ? <li>还没有人出局。</li> : null}
+              {truthData.deaths.map((death, index) => (
+                <li key={`${death.seat}-${index}`}>
+                  {death.seat} 号（第 {death.day} 天，{death.cause}）
                 </li>
               ))}
             </ul>

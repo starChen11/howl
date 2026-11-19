@@ -1,6 +1,7 @@
 import type { ApiError, SessionResponse, SubmitActionBody } from '@shared/api';
 import type { ProjectedContext } from '@shared/project';
 import { parseSseData, type StreamMessage } from '@shared/stream';
+import { TruthViewSchema, type TruthView } from '@shared/truth';
 
 /**
  * 浏览器侧的 HTTP 客户端（RFC-011 §3）。
@@ -59,16 +60,15 @@ export class ApiClient {
   }
 
   /** 真相视图数据；活着的玩家会拿到 403（SEC-6）。 */
-  async truth(
-    gameId: string,
-  ): Promise<{ seats: { seat: number; roleLabel: string; alive: boolean }[] } | null> {
+  async truth(gameId: string): Promise<TruthView | null> {
     const response = await this.fetchImpl(`${this.baseUrl}/api/games/${gameId}/truth`, {
       credentials: 'same-origin',
     });
     if (!response.ok) return null;
-    return (await response.json()) as {
-      seats: { seat: number; roleLabel: string; alive: boolean }[];
-    };
+
+    // 与客户端同一份契约（API-1）：服务端字段一改，这里会直接失败而不是静默错位。
+    const parsed = TruthViewSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data : null;
   }
 
   /** 同步草稿：超时由服务端用最后一次草稿提交（RFC-011 AC-6）。 */

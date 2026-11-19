@@ -63,9 +63,10 @@ function fakeClient(ctx: ProjectedContext) {
       calls.truth += 1;
       return {
         seats: [
-          { seat: 1, roleLabel: '村民', alive: false },
-          { seat: 2, roleLabel: '狼人', alive: true },
+          { seat: 1, role: 'villager', roleLabel: '村民', alive: false, actions: [] },
+          { seat: 2, role: 'wolf', roleLabel: '狼人', alive: true, actions: ['袭击了 1 号'] },
         ],
+        deaths: [{ seat: 1, day: 2, cause: 'wolf' }],
       };
     },
   } as unknown as ApiClient;
@@ -140,5 +141,134 @@ describe('AC-13 ~ AC-15 · 记事板', () => {
     expect((screen.getByLabelText('记事板内容') as HTMLTextAreaElement).value).toBe(
       '3 号发言太急，可疑。',
     );
+  });
+});
+
+describe('AC-4 · 点面板条目真的定位到发言', () => {
+  it('高亮对应 data-seq 的行并调用 scrollIntoView', async () => {
+    const user = userEvent.setup();
+    const scrolls: string[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function scrollIntoView(this: HTMLElement) {
+      scrolls.push(this.dataset['seq'] ?? '');
+    };
+
+    try {
+      const ctx = view({
+        self: { seat: 1, role: 'villager', alive: false, personaId: null },
+        publicEvents: [
+          {
+            gameId: 'g',
+            seq: 1,
+            ts: 0,
+            type: 'DAY_STARTED',
+            visibleTo: 'public',
+            payload: { day: 2, diedLastNight: [1], speechStartSeat: 2 },
+          } as never,
+          {
+            gameId: 'g',
+            seq: 2,
+            ts: 0,
+            type: 'SPEECH',
+            visibleTo: 'public',
+            payload: { seat: 2, text: '我觉得 3 号像' },
+          } as never,
+        ],
+      });
+      const { client } = fakeClient(ctx);
+      render(<App gameId="g" client={client} />);
+
+      await screen.findByRole('heading', { name: '你的身份' });
+      await user.click(screen.getByRole('button', { name: /1 号出局/ }));
+
+      await waitFor(() => expect(scrolls).toContain('2'));
+      const line = document.querySelector('[data-seq="2"]');
+      expect(line?.className).toContain('feed__line--highlight');
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+});
+
+describe('AC-5 / AC-7 · 观战仍能看发言与公开事件', () => {
+  it('出局后发言流与事件面板都在', async () => {
+    const ctx = view({
+      publicEvents: [
+        {
+          gameId: 'g',
+          seq: 1,
+          ts: 0,
+          type: 'DAY_STARTED',
+          visibleTo: 'public',
+          payload: { day: 2, diedLastNight: [1], speechStartSeat: 2 },
+        } as never,
+        {
+          gameId: 'g',
+          seq: 2,
+          ts: 0,
+          type: 'SPEECH',
+          visibleTo: 'public',
+          payload: { seat: 2, text: '后面这局我看完了' },
+        } as never,
+      ],
+    });
+    const { client } = fakeClient(ctx);
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByRole('heading', { name: '你的身份' });
+    expect(screen.getByText('后面这局我看完了')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '公开事件' })).toBeTruthy();
+  });
+});
+
+describe('AC-13 / AC-14 · 记事板内容不会随发言提交', () => {
+  it('写了记事板再发言，提交的文本里不含记事板内容', async () => {
+    const user = userEvent.setup();
+    const submitted: string[] = [];
+    const ctx = view({
+      self: { seat: 1, role: 'villager', alive: true, personaId: null },
+      aliveSeats: [1, 2, 3],
+      deadSeats: [],
+      publicEvents: [
+        {
+          gameId: 'g',
+          seq: 1,
+          ts: 0,
+          type: 'DAY_STARTED',
+          visibleTo: 'public',
+          payload: { day: 2, diedLastNight: [], speechStartSeat: 1 },
+        } as never,
+      ],
+    });
+    const drafts: string[] = [];
+    const client = {
+      game: async () => ({ version: 3, view: ctx }),
+      openStream: () => () => undefined,
+      draft: async (_gameId: string, text: string) => {
+        drafts.push(text);
+      },
+      submit: async (_gameId: string, body: { action: { text?: string } }) => {
+        submitted.push(body.action.text ?? '');
+        return { ok: true as const };
+      },
+      truth: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+    const notepad = await screen.findByLabelText('记事板内容');
+    await user.click(notepad);
+    await user.paste('3 号可疑（私密）');
+
+    const box = await screen.findByLabelText('你的发言');
+    await user.click(box);
+    await user.paste('我只说公开的话。');
+    // 提交按钮（与 Enter 等价；这里用按钮更贴近真实操作）
+    await user.click(screen.getByRole('button', { name: '发言' }));
+
+    await waitFor(() => expect(submitted).toContain('我只说公开的话。'));
+    for (const text of submitted) expect(text).not.toContain('3 号可疑');
+    // 草稿同样不能把记事板带出去（C-140 的真实泄漏路径）
+    expect(drafts.length).toBeGreaterThan(0);
+    for (const text of drafts) expect(text).not.toContain('3 号可疑');
   });
 });

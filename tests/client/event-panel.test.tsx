@@ -136,3 +136,44 @@ describe('AC-4 · 没有可定位的发言时按钮不可点', () => {
     );
   });
 });
+
+describe('AC-1 · 放逐与枪杀也是独立条目', () => {
+  it('lynch 与 shoot 都进入面板，且不重复计夜间死亡', () => {
+    const banish = {
+      gameId: 'g',
+      seq: 5,
+      ts: 0,
+      type: 'PLAYER_DIED',
+      visibleTo: 'public',
+      payload: { seat: 3, cause: 'lynch' },
+    };
+    const shoot = {
+      gameId: 'g',
+      seq: 6,
+      ts: 0,
+      type: 'PLAYER_DIED',
+      visibleTo: 'public',
+      payload: { seat: 4, cause: 'shoot' },
+    };
+    const entries = buildPanelEntries(ctx([dayStarted, banish, shoot]));
+
+    expect(entries.map((entry) => entry.kind)).toEqual(['death', 'banish', 'death']);
+    expect(entries.some((entry) => entry.text.includes('被放逐'))).toBe(true);
+    expect(entries.some((entry) => entry.text.includes('被开枪带走'))).toBe(true);
+  });
+
+  it('同一天两名夜间死者不会产生重复 key', () => {
+    const twoDeaths = {
+      gameId: 'g',
+      seq: 1,
+      ts: 0,
+      type: 'DAY_STARTED',
+      visibleTo: 'public',
+      payload: { day: 2, diedLastNight: [1, 4], speechStartSeat: 2 },
+    };
+    const entries = buildPanelEntries(ctx([twoDeaths]));
+    const keys = entries.map((entry) => `${entry.seq}-${entry.kind}-${entry.text}`);
+
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});

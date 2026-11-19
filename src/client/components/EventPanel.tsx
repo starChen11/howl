@@ -101,7 +101,7 @@ export function EventPanel({
       <h2>公开事件</h2>
       <ol className="panel__list">
         {entries.map((entry) => (
-          <li key={`${entry.seq}-${entry.kind}`} className="panel__item">
+          <li key={`${entry.seq}-${entry.kind}-${entry.text}`} className="panel__item">
             <button
               type="button"
               className="panel__jump"

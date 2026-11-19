@@ -177,3 +177,22 @@ $ pnpm test:e2e → 8 passed
 $ pnpm test → 84 files / 704 tests
 $ pnpm test:e2e → 9 passed
 ```
+
+### 8.8 Round 2 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-148** 真相的夜间行动永远为空 | 用 `payload['seat']` 找动作者，但这些事件的 payload 不带 `seat` | 按角色归因：狼刀记到每个狼头上、查验记到 seer、用药记到 witch、开枪用自带的 `seat`。补用例断言狼/预言家头上真的有动作；回退成空会红 |
+| **AC-9 客户端不渲染 actions / deaths** | 真相区只显示角色 | 客户端渲染动作与出局记录（含死因） |
+| **C-138** AC-11 事件流深度没验证 | 只断言 `submit`/`draft` 为 0 | 见下：`GET /truth` 是只读路由，补「调用前后 `version` 不变」的断言（同一视图快照） |
+| **C-141** AC-5/7 没测观战内容 | 隐藏发言流与面板仍绿 | 补 App 级用例：出局后发言与「公开事件」标题都在 |
+| **C-135** AC-4 没有 App 级锁 | 只测孤立组件的回调 | 补 App 级用例：点面板条目后目标 `data-seq` 行高亮且调用 `scrollIntoView`；`jumpTo` 改 no-op 会红 |
+| **C-149** 同一天两名死者 key 重复 | `seq + kind` 相同 | key 加上 `text`；补「两名夜间死者 key 唯一」用例 |
+| **C-140** 记事板泄漏路径没被覆盖 | 只断言 `submit` 文本 | 同时收集 `draft`，断言草稿里也不含记事板文本；把记事板拼进 `draft` 的探针会红 |
+| **C-151** API-1 只做了一半 | 客户端仍是内联窄类型 | `ApiClient.truth` 改用 `TruthViewSchema.safeParse` |
+| **AC-1** 放逐/枪杀没测 | 删 lynch 分支仍绿 | 补 `lynch` / `shoot` 两类条目的用例 |
+
+```
+$ pnpm test → 85 files / 710 tests
+$ pnpm test:e2e → 9 passed
+```

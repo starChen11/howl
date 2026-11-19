@@ -16,33 +16,50 @@ export function canSeeTruth(state: GameState, playerSeat: number): boolean {
   return player !== undefined && !player.alive;
 }
 
-/** 把某个席位的动作记成一句话。 */
-function actionsOf(events: readonly EventEnvelope[], seat: number): string[] {
-  const actions: string[] = [];
+/**
+ * 把动作事件归到「谁做的」。
+ *
+ * 这些事件的 payload **不带 `seat`**（它们的受众由 `visibleTo` 表达）：
+ * - 狼刀：所有狼共同决定 → 记在每个狼头上；
+ * - 查验：只有 seer 可见；
+ * - 用药：只有 witch 可见；
+ * - 开枪：`HUNTER_SHOOT` 自带 `seat`。
+ */
+function actionsBySeat(state: GameState, events: readonly EventEnvelope[]): Map<number, string[]> {
+  const result = new Map<number, string[]>();
+  const push = (seat: number, text: string): void => {
+    const list = result.get(seat) ?? [];
+    list.push(text);
+    result.set(seat, list);
+  };
+
+  const wolves = state.seats.filter((seat) => seat.role === 'wolf').map((seat) => seat.seat);
+  const seer = state.seats.find((seat) => seat.role === 'seer')?.seat;
+  const witch = state.seats.find((seat) => seat.role === 'witch')?.seat;
 
   for (const event of events) {
     const payload = event.payload as Record<string, unknown>;
-    const actor = payload['seat'];
 
-    if (event.type === 'WOLF_KILL_CHOSEN' && actor === seat) {
-      actions.push(`袭击了 ${String(payload['target'])} 号`);
+    if (event.type === 'WOLF_KILL_CHOSEN') {
+      for (const wolf of wolves) push(wolf, `袭击了 ${String(payload['target'])} 号`);
     }
-    if (event.type === 'SEER_CHECKED' && actor === seat) {
-      const result = payload['result'] === 'wolf' ? ROLE_LABELS.wolf : '好人';
-      actions.push(`查验了 ${String(payload['target'])} 号：${result}`);
+    if (event.type === 'SEER_CHECKED' && seer !== undefined) {
+      const resultLabel = payload['result'] === 'wolf' ? ROLE_LABELS.wolf : '好人';
+      push(seer, `查验了 ${String(payload['target'])} 号：${resultLabel}`);
     }
-    if (event.type === 'WITCH_POTION_USED' && actor === seat) {
+    if (event.type === 'WITCH_POTION_USED' && witch !== undefined) {
       const potion = payload['potion'] === 'heal' ? '解药' : '毒药';
-      actions.push(
-        `使用了${potion}${payload['target'] === undefined ? '' : ` 对 ${String(payload['target'])} 号`}`,
-      );
+      push(witch, `使用${potion}（目标 ${String(payload['target'])} 号）`);
     }
-    if (event.type === 'HUNTER_SHOOT' && actor === seat) {
-      actions.push(`开枪带走了 ${String(payload['target'])} 号`);
+    if (event.type === 'HUNTER_SHOOT' && typeof payload['seat'] === 'number') {
+      push(
+        payload['seat'] as number,
+        payload['target'] === null ? '没有开枪' : `开枪带走 ${String(payload['target'])} 号`,
+      );
     }
   }
 
-  return actions;
+  return result;
 }
 
 export function buildTruth(state: GameState, events: readonly EventEnvelope[]): TruthView {
@@ -53,13 +70,15 @@ export function buildTruth(state: GameState, events: readonly EventEnvelope[]): 
       return { seat: payload.seat, day: state.day, cause: payload.cause };
     });
 
+  const actions = actionsBySeat(state, events);
+
   return {
     seats: state.seats.map((seat) => ({
       seat: seat.seat,
       role: seat.role,
       roleLabel: ROLE_LABELS[seat.role] ?? seat.role,
       alive: seat.alive,
-      actions: actionsOf(events, seat.seat),
+      actions: actions.get(seat.seat) ?? [],
     })),
     deaths,
   };

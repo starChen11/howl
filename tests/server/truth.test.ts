@@ -149,3 +149,34 @@ describe('AC-9 / AC-10 · 出局后能看真相，且全席位身份齐全', () 
     expect(JSON.stringify(registry.stateOf(record))).toBe(before);
   });
 });
+
+describe('AC-9 · 夜间行动结果真的落到对应席位', () => {
+  it('狼刀记在狼头上、查验记在预言家头上', async () => {
+    const store = new InMemoryMetaStore();
+    const { registry, session, record, playerSeat } = await gameWithDeadPlayer(store);
+    const state = registry.stateOf(record);
+    const truth = buildTruth(state, record.events);
+
+    expect(truth.deaths.length).toBeGreaterThan(0);
+
+    const wolfSeats = state.seats.filter((seat) => seat.role === 'wolf').map((seat) => seat.seat);
+    for (const wolf of wolfSeats) {
+      const seat = truth.seats.find((candidate) => candidate.seat === wolf);
+      expect(
+        seat?.actions.some((action) => action.includes('袭击')),
+        `wolf ${wolf}`,
+      ).toBe(true);
+    }
+
+    const seer = state.seats.find((seat) => seat.role === 'seer')?.seat;
+    if (seer !== undefined) {
+      const seat = truth.seats.find((candidate) => candidate.seat === seer);
+      expect(seat?.actions.some((action) => action.includes('查验'))).toBe(true);
+    }
+
+    // 出局记录带死因（不再是 pendingDeaths）
+    expect(truth.deaths.some((death) => death.cause.length > 0)).toBe(true);
+    void playerSeat;
+    void session;
+  });
+});
