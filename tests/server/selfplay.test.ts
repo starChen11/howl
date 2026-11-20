@@ -430,5 +430,22 @@ describe('C-184（Round 3）· 端到端：玩家投已出局席位 → 实现�
     expect(outcomes[0]?.ok).toBe(false);
     expect(outcomes[0]?.failure?.kind).toBe('implementation');
     expect(outcomes[0]?.failure?.error).toContain('TARGET_NOT_ALIVE');
+    // 真的是「打完之后的扫描」，不是未终局分支的假象（C-204）
+    expect(outcomes[0]?.events).toBeGreaterThan(10);
+    expect(outcomes[0]?.usage).toBeDefined();
+  });
+});
+
+describe('C-203 · 未终局局也带 usage', () => {
+  it('maxSteps=1 的 outcome 有 usage 字段', async () => {
+    const outcomes = await runSelfplay({
+      games: 1,
+      seed: 12,
+      decide: () => scriptedAgent,
+      maxSteps: 1,
+    });
+
+    expect(outcomes[0]?.ok).toBe(false);
+    expect(outcomes[0]?.usage).toBeDefined();
   });
 });

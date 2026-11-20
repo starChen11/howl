@@ -194,3 +194,17 @@ $ HOWL_FAKE_AI=1 pnpm selfplay --games=100 --seed=1000 → 100/100，1.7s
 $ pnpm test → 88 files / 766 tests
 $ pnpm test:e2e → 10 passed
 ```
+
+### 8.10 Round 4 回应（Reviewed）
+
+Round 4 无阻塞项。顺手加固了评审提到的三处非阻塞：
+
+| 项 | 处理 |
+|---|---|
+| **C-203** 未终局/被拒路径的 `usage` 没有回归锁 | 补「`maxSteps=1` 的 outcome 带 `usage`」用例 |
+| **C-204** 端到端用例未断言真的打完 | 断言事件数 > 10 且 outcome 带 `usage`，排除「未终局分支的假象」 |
+| **C-195** 文档残留 | TEST-STRATEGY 的计数、占位测试描述、RFC-010/014 的 13 行 `proposed` 全部同步；README 覆盖率改为实测值 |
+
+```
+$ pnpm test → 88 files / 767 tests
+```

@@ -29,8 +29,8 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  88 passed (88)     # unit 68 + client 4 + meta 7
-      Tests  766 passed (766)
+ Test Files  88 passed (88)     # unit 72 + client 9 + meta 7
+      Tests  767 passed (767)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -303,13 +303,13 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、3、4 | `tests/e2e/stream.spec.ts`：记录首字与完成时间，单局 ≥30 次发言算 p95；断言思考态与发言态在 DOM 上可区分 | e2e | proposed | Must |
-| 2 | `tests/e2e/stream.spec.ts`：注入 50 字文本，在 `done` 前断言已渲染出至少 2 个中间态 | e2e | proposed | Must |
-| 5 | `tests/server/sse.test.ts`：断言每条消息 `id === seq`；带 `Last-Event-ID` 重连后从下一个 `seq` 继续、不重不漏 | integration | proposed | Must |
-| 6 | 同上：把中文字节在任意位置切开喂给解析器，断言无乱码 | unit | proposed | Must |
-| 7、8 | `tests/server/degrade.test.ts`：假客户端超时/失败，断言重试 1 次后降级，产出 `DEGRADED` 且发言 ≤10 字；重试成功则不降级 | unit | proposed | Should |
-| 9、10、12 | 同上：降级后下一席位正常、`seq` 连续；连续 3 次降级后第 4 次仍调用真实客户端；前端收到 `degraded` 显示提示 | integration | proposed | Should |
-| 11 | `tests/server/replay-degrade.test.ts`：复盘数据标注降级轮次 | unit | proposed | Should |
+| 1、3、4 | `tests/e2e/stream.spec.ts`：记录首字与完成时间，单局 ≥30 次发言算 p95；断言思考态与发言态在 DOM 上可区分 | e2e | existing | Must |
+| 2 | `tests/e2e/stream.spec.ts`：注入 50 字文本，在 `done` 前断言已渲染出至少 2 个中间态 | e2e | existing | Must |
+| 5 | `tests/server/sse.test.ts`：断言每条消息 `id === seq`；带 `Last-Event-ID` 重连后从下一个 `seq` 继续、不重不漏 | integration | existing | Must |
+| 6 | 同上：把中文字节在任意位置切开喂给解析器，断言无乱码 | unit | existing | Must |
+| 7、8 | `tests/server/degrade.test.ts`：假客户端超时/失败，断言重试 1 次后降级，产出 `DEGRADED` 且发言 ≤10 字；重试成功则不降级 | unit | existing | Should |
+| 9、10、12 | 同上：降级后下一席位正常、`seq` 连续；连续 3 次降级后第 4 次仍调用真实客户端；前端收到 `degraded` 显示提示 | integration | existing | Should |
+| 11 | `tests/server/replay-degrade.test.ts`：复盘数据标注降级轮次 | unit | existing | Should |
 
 **需人工**：NFR-1 的 p95 必须用**真实 API** 测一次并记录数字（假客户端证明不了延迟）。**手工检查**：`pnpm selfplay --games=3` 后统计日志中的首字与完成时间，把结果写进该 RFC 的 Implementation Notes。
 
@@ -363,12 +363,12 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2 | `tests/server/replay.test.ts`：黄金文件测试——固定事件流 → 断言快照 `timeline` 按 `seq` 升序且与事件流一致；`seats` 揭示全部 9 席 | integration | proposed | Must |
-| 3、4 | 同上：每条 `reason` 与 `AI_THOUGHT` 载荷逐字一致；清空 `reasoning_content` 后快照不变 | unit | proposed | Must |
-| 5、6、7、8 | 同上：人格标签正确；`result` 与 `winCondition` 能定位到达成那一条事件；`degraded` 与 `DEGRADED` 事件一一对应；`usage` 等于 `CallMeta` 聚合 | integration | proposed | Must |
-| 9、10、11 | `tests/server/replay-perspective.test.ts`：选中某 AI 后的可见集合等于该 `seq` 的 `project` 输出；筛选前后时间线条数不变；3 席 × 3 `seq` 断言无越权信息 | integration | proposed | Could |
-| 12、13 | `tests/e2e/replay.spec.ts`：点「再来一局」建新局且无上局事件；状态释放后复盘端点仍返回完整快照 | e2e | proposed | Must |
-| 14 | `tests/e2e/replay.spec.ts`：360px 与 1024px 均可完整浏览 | e2e | proposed | Must |
+| 1、2 | `tests/server/replay.test.ts`：黄金文件测试——固定事件流 → 断言快照 `timeline` 按 `seq` 升序且与事件流一致；`seats` 揭示全部 9 席 | integration | existing | Must |
+| 3、4 | 同上：每条 `reason` 与 `AI_THOUGHT` 载荷逐字一致；清空 `reasoning_content` 后快照不变 | unit | existing | Must |
+| 5、6、7、8 | 同上：人格标签正确；`result` 与 `winCondition` 能定位到达成那一条事件；`degraded` 与 `DEGRADED` 事件一一对应；`usage` 等于 `CallMeta` 聚合 | integration | existing | Must |
+| 9、10、11 | `tests/server/replay-perspective.test.ts`：选中某 AI 后的可见集合等于该 `seq` 的 `project` 输出；筛选前后时间线条数不变；3 席 × 3 `seq` 断言无越权信息 | integration | existing | Could |
+| 12、13 | `tests/e2e/replay.spec.ts`：点「再来一局」建新局且无上局事件；状态释放后复盘端点仍返回完整快照 | e2e | existing | Must |
+| 14 | `tests/e2e/replay.spec.ts`：360px 与 1024px 均可完整浏览 | e2e | existing | Must |
 
 **需人工**：SM-2「观察者看完能复述 2 个 AI 的意图」。**手工检查**：找一个没参与开发的人看一局复盘，记录他能复述的 AI 意图数量。
 
