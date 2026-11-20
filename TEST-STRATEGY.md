@@ -378,11 +378,11 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2、3 | `tests/server/selfplay.test.ts`：假 LLM 下跑 3 局，断言退出码 0、种子为 `seed+N`、输出含 `summary.json` 与每局事件流 | integration | proposed | Must |
-| 4 | 同上：`summary.json` 含总局数/成功/失败/原因/胜负分布/降级次数/token | integration | proposed | Must |
-| 5、6 | 同上：注入必抛错的假客户端，断言其余局仍跑完且失败局单独记录；脚本化玩家产生非法行动时归类为「实现缺陷」 | integration | proposed | Must |
-| 7 | 同上：跑 100 局后断言进程内存峰值不随局数线性增长（采样 `process.memoryUsage().heapUsed`） | performance | proposed | Must |
-| 8、9 | 同上：命令不再以「未实现」退出；每局事件流 `seq` 连续且 `replay` 通过 | integration | proposed | Must |
+| 1、2、3 | `tests/server/selfplay.test.ts`：假 LLM 下跑 3 局，断言退出码 0、种子为 `seed+N`、输出含 `summary.json` 与每局事件流 | integration | existing: tests/server/selfplay.test.ts + tests/meta/selfplay-entry.test.ts | Must |
+| 4 | 同上：`summary.json` 含总局数/成功/失败/原因/胜负分布/降级次数/token | integration | existing: tests/server/selfplay.test.ts + tests/meta/selfplay-entry.test.ts | Must |
+| 5、6 | 同上：注入必抛错的假客户端，断言其余局仍跑完且失败局单独记录；脚本化玩家产生非法行动时归类为「实现缺陷」 | integration | existing: tests/server/selfplay.test.ts + tests/meta/selfplay-entry.test.ts | Must |
+| 7 | 同上：跑 100 局后断言进程内存峰值不随局数线性增长（采样 `process.memoryUsage().heapUsed`） | performance | existing: tests/server/selfplay.test.ts + tests/meta/selfplay-entry.test.ts | Must |
+| 8、9 | 同上：命令不再以「未实现」退出；每局事件流 `seq` 连续且 `replay` 通过 | integration | existing: tests/server/selfplay.test.ts + tests/meta/selfplay-entry.test.ts | Must |
 
 **需人工**：SM-1 的真实 100 局。**手工检查**：用真实 API 跑一次 `pnpm selfplay --games=100`，记录成功率与 token 合计（费用估算见 `PRD-REVIEW.md` §2，flash 约 ¥30–80）。
 

@@ -143,7 +143,7 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
             error: `${last?.code ?? 'UNFINISHED'}：${last?.message ?? '对局没有结束'}`,
           },
         });
-        await options.onGame?.(outcomes[outcomes.length - 1] as GameOutcome, finished.events);
+        await report(options, outcomes[outcomes.length - 1] as GameOutcome, finished.events);
         continue;
       }
 
@@ -240,4 +240,23 @@ export function findPlayerRejection(
       ['SPEECH', 'SPEECH_SKIP', 'VOTE', 'SELF_EXPOSE'].includes(payload.actionType)
     );
   });
+}
+
+/**
+ * 成局之后的归类（AC-6）：玩家动作被拒 = 实现缺陷。
+ *
+ * 单拎出来是为了能用「真实完成局 + 人为注入的 REJECTED」测这条路径——真正的玩家
+ * 输入通道在服务端会截断/归一化，很难从端到端制造一次拒绝。
+ */
+export function classifyFinished(
+  events: readonly EventEnvelope[],
+  playerSeat: number,
+): { kind: 'implementation'; error: string } | null {
+  const rejected = findPlayerRejection(events, playerSeat);
+  if (rejected === undefined) return null;
+  const payload = rejected.payload as { code?: string; message?: string };
+  return {
+    kind: 'implementation',
+    error: `${payload.code ?? 'REJECTED'}：${payload.message ?? '玩家动作被拒'}`,
+  };
 }

@@ -76,7 +76,8 @@ export function summarize(outcomes: readonly GameOutcome[]): SelfplaySummary {
     avgDurationMs: succeeded.length === 0 ? 0 : totalDuration / succeeded.length,
     degradedCount: succeeded.reduce((sum, outcome) => sum + (outcome.degraded ?? 0), 0),
     wolfWinRate: succeeded.length === 0 ? 0 : wolf / succeeded.length,
-    usage: succeeded.reduce(
+    // 失败局也可能已经花掉 token（跑了一半才超时），成本要算全（C-191）。
+    usage: outcomes.reduce(
       (sum, outcome) => addUsage(sum, outcome.usage ?? EMPTY_USAGE),
       EMPTY_USAGE,
     ),

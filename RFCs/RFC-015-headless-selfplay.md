@@ -165,3 +165,19 @@ $ pnpm test → 88 files / 762 tests
 $ pnpm test:e2e → 10 passed
 $ 同 seed 跑两次：结果与事件数完全一致（只有耗时不同）
 ```
+
+### 8.8 Round 2 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-184** 成局扫描没有回归锁 | 官方用例只测谓词，关掉 `runner` 的成局扫描仍绿；真实玩家输入在服务端会被截断/归一化，端到端造不出拒绝 | 抽出 `classifyFinished(events, playerSeat)`（runner 就是调用它）；用「真实完成局 + 人为注入一条 `REJECTED`」测这条路径。关掉判定会红 |
+| **C-187** 未终局路径仍直接 `onGame` | 写盘失败会多记一条 outcome（每局变两条） | 未终局路径也走 `report()`；补 `maxSteps=1` + `onGame` 恒抛的用例，断言 outcomes 数是局数而不是两倍。改回直接调用会红 |
+| **C-189** Windows CLI 用例 | 仍写死 `pnpm` | 按平台选 `pnpm.cmd` 并在 Windows 上走 `shell` |
+| **C-191** 失败局 token 没计入 | 只聚合成功局 | `summarize` 改为对全部 outcomes 求 usage；补带 usage 的失败局用例 |
+| **C-195** 文档漂移 | README 仍写 8 个 RFC / 720 用例；TEST-STRATEGY 引用已删除的占位测试 | 同步为 15 个 RFC、765 用例、RFC-015 行改成 `existing`，占位测试名改为 `selfplay-entry.test.ts` |
+
+```
+$ pnpm test → 88 files / 765 tests
+$ pnpm test:e2e → 10 passed
+$ HOWL_FAKE_AI=1 pnpm selfplay --games=100 --seed=1000 → 100/100，1.7s
+```

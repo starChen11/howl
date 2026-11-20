@@ -199,10 +199,15 @@ describe('AC-1 / AC-3 · CLI 真的产出文件并以 0 退出', () => {
     const run = promisify(execFile);
 
     const out = await mkdtemp(join(tmpdir(), 'howl-selfplay-'));
+    const pnpmBin = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
     const result = await run(
-      'pnpm',
+      pnpmBin,
       ['exec', 'tsx', 'scripts/selfplay.ts', '--games=2', '--seed=3', `--out=${out}`],
-      { env: { ...process.env, HOWL_FAKE_AI: '1' }, timeout: 120_000 },
+      {
+        env: { ...process.env, HOWL_FAKE_AI: '1' },
+        timeout: 120_000,
+        shell: process.platform === 'win32',
+      },
     );
 
     expect(result.stdout).toContain('跑完 2 局');
@@ -276,6 +281,40 @@ describe('C-184 · 玩家动作被拒 → 实现缺陷', () => {
     expect(findPlayerRejection([rejection('self:1', 'WOLF_KILL')], 1)).toBeUndefined();
   });
 
+  it('真实完成局 + 注入的玩家拒绝 → classifyFinished 判为实现缺陷', async () => {
+    const { classifyFinished } = await import('@server/selfplay/runner');
+    let finished: readonly never[] = [];
+    await runSelfplay({
+      games: 1,
+      seed: 55,
+      decide: () => scriptedAgent,
+      maxSteps: 400,
+      onGame: (_outcome, events) => {
+        finished = events as never;
+      },
+    });
+
+    expect(classifyFinished(finished, 1)).toBeNull();
+
+    const injected = [
+      ...finished,
+      {
+        gameId: 'g',
+        seq: 999,
+        ts: 0,
+        type: 'REJECTED',
+        visibleTo: 'self:1',
+        payload: { actionType: 'VOTE', code: 'INVALID_TARGET', message: '目标不合法' },
+      } as never,
+    ];
+    expect(classifyFinished(injected, 1)).toEqual({
+      kind: 'implementation',
+      error: 'INVALID_TARGET：目标不合法',
+    });
+    // 别的席位被拒不算玩家缺陷
+    expect(classifyFinished(injected, 2)).toBeNull();
+  });
+
   it('真实对局里没有玩家侧拒绝（脚本玩家合法）', async () => {
     const outcomes = await runSelfplay({
       games: 2,
@@ -319,5 +358,49 @@ describe('C-185 · 事件流能被 replay 到终局', () => {
       expect(state.phase).toBe('FINISHED');
       expect(stream.events[stream.events.length - 1]?.type).toBe('GAME_ENDED');
     }
+  });
+});
+
+describe('C-187 · 未终局路径的写盘失败同样隔离', () => {
+  it('maxSteps=1 制造未终局，onGame 抛错也不会多记 outcome', async () => {
+    const outcomes = await runSelfplay({
+      games: 2,
+      seed: 11,
+      decide: () => scriptedAgent,
+      maxSteps: 1,
+      onGame: () => {
+        throw new Error('磁盘满');
+      },
+    });
+
+    // 不能被记成「每局两条」（UNFINISHED + REPORT_FAILED）
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes.every((outcome) => outcome.ok === false)).toBe(true);
+    expect(outcomes.every((outcome) => outcome.failure?.error.includes('REPORT_FAILED'))).toBe(
+      true,
+    );
+  });
+});
+
+describe('C-191 · 失败局已经花掉的 token 也计入汇总', () => {
+  it('一条失败局带 usage 时，summary.usage 不为 0', () => {
+    const summary = summarize([
+      {
+        seed: 1,
+        ok: false,
+        events: 3,
+        durationMs: 10,
+        usage: { calls: 2, inputTokens: 100, outputTokens: 40, cachedTokens: 10 },
+        failure: { seed: 1, kind: 'model', error: 'TIMEOUT', errorType: 'TimeoutError' },
+      },
+    ]);
+
+    expect(summary.usage).toEqual({
+      calls: 2,
+      inputTokens: 100,
+      outputTokens: 40,
+      cachedTokens: 10,
+    });
+    expect(summary.failures[0]?.errorType).toBe('TimeoutError');
   });
 });
