@@ -428,3 +428,31 @@ describe('RUL-13 · 旧 WOLF_KILL 走路由会被拒绝', () => {
     expect(res.json()).toEqual(expect.objectContaining({ error: 'LEGACY_ACTION_DISABLED' }));
   });
 });
+
+describe('RFC-018 · 空狼队消息不能当准备', () => {
+  it('空 WOLF_CHAT 返回 EMPTY_WOLF_CHAT，不推进/不准备', async () => {
+    const store = new InMemoryMetaStore();
+    const app = buildApp({ store });
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side', seed: 3, playerSeat: 1 },
+    });
+    const raw = created.headers['set-cookie'];
+    const cookie = String(Array.isArray(raw) ? raw[0] : raw).split(';')[0] ?? '';
+    const { gameId } = created.json<{ gameId: string }>();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/games/${gameId}/actions`,
+      headers: { cookie },
+      payload: {
+        action: { type: 'WOLF_CHAT', ts: 0, seat: 1, text: '   ' },
+        expectedVersion: 1,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(expect.objectContaining({ error: 'EMPTY_WOLF_CHAT' }));
+  });
+});

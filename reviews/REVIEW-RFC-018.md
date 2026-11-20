@@ -283,3 +283,50 @@ RFC-018 把「一句一轮」改成了真实的聊天室形态，引擎侧的多
 #   client 用例：两夜各一条 WOLF_READY_MARKED / WOLF_CHAT_POSTED
 #   断言第二夜只显示本夜事件；实际：两夜都显示
 ```
+
+---
+
+## Round 2 -- 2026-11-21
+
+复核范围：**只复核 Round 1 的 B1–B4 是否闭合**，不重审已通过项。按 lead 指令未跑
+`pnpm test` / `test:e2e` / meta 套件 / e2e / perf；只跑定向测试与静态门禁。
+
+### 0. 本轮实测
+
+```
+$ pnpm exec vitest run --project unit tests/engine/wolf-vote.test.ts tests/server/wolf-chat-room.test.ts
+ ✓ tests/engine/wolf-vote.test.ts (10 tests) 7ms
+ ✓ tests/server/wolf-chat-room.test.ts (3 tests) 100ms
+ Test Files  2 passed (2) / Tests 13 passed (13)   # 284ms
+
+$ pnpm exec vitest run --project client tests/client/shoot.test.tsx
+ ✓ tests/client/shoot.test.tsx (16 tests) 298ms
+ Test Files  1 passed (1) / Tests 16 passed (16)   # 939ms
+
+$ pnpm typecheck   → 0
+$ pnpm lint        → 0
+$ pnpm format:check→ 0（All matched files use Prettier code style!）
+```
+
+`pnpm build` / e2e / perf / meta **未复跑**（按 lead 时限要求），verdict 只覆盖上述命令
+与代码阅读；meta 的 N-8 环境挂起问题本轮不重新认定。
+
+### 1. B1–B4 逐项结论
+
+| 项 | 结论 | 证据 |
+|---|---|---|
+| **B1** 重投弃权 / 超时 | **未完全闭合（阻塞）** | ① 显式弃权已拒：`night.ts:212-221` 在 `NIGHT_WOLF_RUNOFF` 返回 `INVALID_RUNOFF_TARGET`，新用例 `wolf-vote.test.ts:94-105` 断言拒绝码且相位不变（本轮通过）；② 但**重投超时自动投并列者没有真正实现**：`orchestrator.ts:369-379` 对 `NIGHT_WOLF_RUNOFF && input.kind==='timeout'` 仍返回 `target:'abstain'`，引擎按 ① 拒绝后 `runGame` 在 `orchestrator.ts:286-289` 直接抛 `动作被拒绝：INVALID_RUNOFF_TARGET`。RFC-018 §8.1 与 commit 声称的「重投超时改为投第一个并列者」在代码中不存在。空输入超时之所以能走通，是因为 `normalizeInput('')` 变成 `skip` 后落到 `nightTarget()` 的 `legalTargets[0]`（重投投影恰好只剩并列者），属旁路而非声明中的超时处理。③ 无任何「重投超时」回归用例。 |
+| **B2** AI 每次用最新投影 | **闭合** | `orchestrator.ts:500-515` 的 `chatFromAi` 每次从 `registry.stateOf(record)` + `record.events` 重新 `project()`，不再用进入聊天室前的 `ctxFor` 闭包；`handle` 在玩家消息写入后（`:607-624`）调用 `chatFromAi`。新用例 `wolf-chat-room.test.ts:67-119` 用真实 `runGame` 断言玩家 `WOLF_CHAT_POSTED` 出现在 AI 决策的 `ctx.privateEvents`，本轮通过。队友发言同样走同一投影（`record.events` 全量），但用例只单独断言了玩家消息，队友可见性未单独断言（非阻塞）。 |
+| **B3** 无跳过 / 空消息 / 5 秒门槛 | **未闭合（阻塞）** | 已改：`NightAction.tsx` 删除「跳过」且空提交不调 `onChat`（`shoot.test.tsx:518-536` 覆盖）；`App.tsx:337-340` 用 Vite 注入的 `__HOWL_FAKE_AI__` 在 5/30 秒间切换。**仍开**：① 服务端路径未修——`routes/games.ts:353-355` 对 `WOLF_CHAT` 仍 `channels.submit(gameId, parsed.data.action.text)`；`wolf-chat.ts:28-55` 接受空 `text`；`HttpInputChannel.submit('')` 经 `normalizeInput` 变成 `{kind:'skip'}`，`orchestrator.ts:593-595` 立即 `markReady(playerSeat)`。即直接 POST 空 `WOLF_CHAT` 仍可绕过 30 秒门槛，「空消息不触发准备」只在 UI 层成立。② `?fast=1` 仍保留：真实模型局加 `?fast=1` 依旧降到 5 秒；`__HOWL_FAKE_AI__` 是构建期常量、服务端不校验，RUL-14「仅玩家+脚本替身」的判定仍不在服务端。③ `WOLF_READY` 仍随时被引擎接受，门槛仍只是按钮 `disabled`。 |
+| **B4** 跨夜截断 / wolfCount | **闭合** | `App.tsx:445-457` 的 `currentNightWolfEvents` 以最后一次 `WOLF_VOTE_REVEALED` / `WOLF_KILL_CHOSEN` 为界截断，`readySeats` / `selfReady` / `wolfChats` 均改用它；`wolfCount` 改为 `teammates.filter(t => ctx.aliveSeats.includes(t)).length + 1`（`:344-347`）。第二夜用例 `shoot.test.tsx:543-607` 断言旧夜聊天不显示、`已准备 0/`，本轮通过。`wolfCount` 分母没有专门断言死狼用例，但实现直接依赖投影的 `aliveSeats`，逻辑无歧义（非阻塞）。 |
+
+### 2. 结论
+
+- **B2、B4 闭合**；**B1、B3 仍有阻塞**。
+- **RFC-018 Status 保持 `Changes requested`**。B1 需要修 `playerAction` 的 `timeout` 分支
+  （重投超时直接投 `ctx.legalTargets[0]` 或 `state.wolfRunoff[0]`）并补一条编排级
+  「重投超时」用例；B3 需要把空 `WOLF_CHAT` 与 `WOLF_READY` 的「准备」在服务端拆开
+  （空消息只发聊天/忽略，不 `markReady`），并移除或严格限制 `?fast=1` 在真实模型局的
+  生效（推荐由服务端投影给出 `readyAfterSeconds`）。
+- 本轮未新增冲突；C-235 / C-238 仍 Open，C-237 的测试计划回填仍未做。
+

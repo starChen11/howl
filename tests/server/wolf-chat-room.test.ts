@@ -118,3 +118,66 @@ describe('RFC-018 AC-8 · AI 能看到玩家刚发的消息', () => {
     expect(sawPlayerMessage).toBe(true);
   }, 20_000);
 });
+
+describe('RFC-018 B1 · 重投超时不能弃权', () => {
+  it('玩家在重投里超时 → 自动投并列者，而不是弃权', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 3,
+      playerSeat: 1,
+    });
+    let reads = 0;
+
+    const result = await runGame({
+      registry,
+      session,
+      gameId: record.gameId,
+      input: {
+        async read() {
+          reads += 1;
+          return reads === 1 ? { kind: 'skip' } : { kind: 'timeout', text: '' };
+        },
+        close() {},
+      },
+      output: { emit() {}, async flush() {} },
+      decide: async (input) => {
+        if (input.phase === 'NIGHT_WOLF_CHAT') {
+          return {
+            action: { type: 'WOLF_CHAT', ts: 0, seat: input.seat as never, text: '' },
+          };
+        }
+        if (input.phase === 'NIGHT_WOLVES' || input.phase === 'NIGHT_WOLF_RUNOFF') {
+          const targets = input.ctx.legalTargets
+            .filter((candidate) => typeof candidate === 'number')
+            .map((candidate) => Number(candidate));
+          const target = targets[input.seat % targets.length];
+          return target === undefined
+            ? { action: undefined }
+            : {
+                action: {
+                  type: 'WOLF_VOTE',
+                  ts: 0,
+                  seat: input.seat as never,
+                  target: target as never,
+                },
+              };
+        }
+        return scriptedAgent(input);
+      },
+      wolfChatMs: 300,
+      wolfReadyMs: 0,
+      wolfVoteMs: 30,
+      maxSteps: 8,
+    });
+
+    expect(registry.stateOf(result.record).phase).not.toBe('NIGHT_WOLF_RUNOFF');
+    const casts = result.record.events
+      .filter((event) => event.type === 'WOLF_VOTE_CAST')
+      .map((event) => event.payload as { seat: number; target: string | number })
+      .filter((payload) => payload.seat === 1);
+    // 第一轮弃权、重投那一票必须是合法目标
+    expect(casts.some((payload) => payload.target !== 'abstain')).toBe(true);
+  }, 20_000);
+});

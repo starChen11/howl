@@ -367,14 +367,18 @@ async function playerAction(
   }
 
   if (phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF' || phase === 'NIGHT_SEER') {
-    // 狼队投票 10 秒超时 → 按弃权处理（用户裁定）；引擎拒绝在重投里弃权时保持原地。
+    // 狼队投票 10 秒超时：普通轮按弃权；重投不能弃权，自动投第一个并列者。
     if ((phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF') && input.kind === 'timeout') {
+      const fallback =
+        phase === 'NIGHT_WOLF_RUNOFF'
+          ? (ctx.legalTargets.find((target) => typeof target === 'number') ?? 'abstain')
+          : 'abstain';
       return {
         action: {
           type: 'WOLF_VOTE',
           ts: now(),
           seat: seat as never,
-          target: 'abstain' as never,
+          target: fallback as never,
         },
       };
     }

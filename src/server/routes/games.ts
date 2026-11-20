@@ -345,6 +345,13 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       const target = parsed.data.action.target;
       channels.submit(record.gameId, target === 'abstain' ? '' : String(target));
     }
+    if (accepted && parsed.data.action.type === 'WOLF_CHAT' && parsed.data.action.text.trim() === '') {
+      return reply.code(400).send({
+        error: 'EMPTY_WOLF_CHAT',
+        message: '狼队聊天不能是空消息；要结束讨论请点「准备完成」',
+      });
+    }
+
     // 夜间动作同理：把目标/文本交给挂起的输入，避免 60 秒后提交迟到动作。
     // 自曝会让白天立即结束：挂起的发言等待要被兑现，否则编排层会等 60 秒超时。
     if (accepted && parsed.data.action.type === 'SELF_EXPOSE') {
