@@ -291,6 +291,17 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
                 </li>
               ))}
             </ul>
+            <h3>狼队票型</h3>
+            <ul>
+              {truthData.wolfVotes.length === 0 ? <li>还没有狼队投票。</li> : null}
+              {truthData.wolfVotes.map((round, index) => (
+                <li key={`wolf-${round.day}-${index}`}>
+                  第 {round.day} 夜：
+                  {round.votes.map((vote) => `${vote.seat}→${vote.target}`).join('、')}
+                  {round.tied === undefined ? '' : `（平票：${round.tied.join('、')}）`}
+                </li>
+              ))}
+            </ul>
             <h3>出局</h3>
             <ul>
               {truthData.deaths.length === 0 ? <li>还没有人出局。</li> : null}

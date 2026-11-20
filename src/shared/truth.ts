@@ -17,6 +17,14 @@ export const TruthSeatSchema = z.object({
 
 export const TruthViewSchema = z.object({
   seats: z.array(TruthSeatSchema),
+  /** 每一夜的狼队票型（RUL-13）。 */
+  wolfVotes: z.array(
+    z.object({
+      day: z.number().int().min(1),
+      votes: z.array(z.object({ seat: z.number().int(), target: z.number().int() })),
+      tied: z.array(z.number().int()).optional(),
+    }),
+  ),
   deaths: z.array(
     z.object({
       seat: z.number().int().min(1).max(9),

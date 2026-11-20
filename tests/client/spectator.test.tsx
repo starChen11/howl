@@ -68,6 +68,7 @@ function fakeClient(ctx: ProjectedContext) {
           { seat: 2, role: 'wolf', roleLabel: '狼人', alive: true, actions: ['袭击了 1 号'] },
         ],
         deaths: [{ seat: 1, day: 2, cause: 'wolf' }],
+        wolfVotes: [{ day: 1, votes: [{ seat: 2, target: 1 }] }],
       };
     },
   } as unknown as ApiClient;
@@ -318,6 +319,7 @@ describe('AC-9 · 真相区渲染动作与出局记录', () => {
 
     await waitFor(() => expect(screen.getByText(/袭击了 1 号/)).toBeTruthy());
     expect(screen.getByText(/第 2 天，wolf/)).toBeTruthy();
+    expect(screen.getByText(/第 1 夜：2→1/)).toBeTruthy();
   });
 });
 

@@ -83,7 +83,8 @@ export class ApiClient {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ mode }),
+      // 再来一局换一个玩家座位，避免每次都是 1 号。
+      body: JSON.stringify({ mode, playerSeat: Math.floor(Math.random() * 9) + 1 }),
     });
     if (!created.ok) return null;
     const body = (await created.json()) as { gameId?: string };

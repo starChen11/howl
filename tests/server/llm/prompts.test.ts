@@ -237,3 +237,56 @@ describe('C-56 · 私有狼聊是玩家输入，必须转义', () => {
     expect(buildUserMessage(seerCtx)).toContain('你查验了 2 号');
   });
 });
+
+describe('RUL-13 · 提示词包含狼队票型', () => {
+  it('模型能看到队友的票与唱票结果', async () => {
+    const { buildUserMessage } = await import('@server/llm/prompts/base');
+
+    const ctx = {
+      self: { seat: 1, role: 'wolf', alive: true, personaId: null },
+      phase: 'NIGHT',
+      day: 1,
+      aliveSeats: [1, 4, 8, 2],
+      deadSeats: [],
+      publicEvents: [],
+      privateEvents: [
+        {
+          gameId: 'g',
+          seq: 2,
+          ts: 0,
+          type: 'WOLF_VOTE_CAST',
+          visibleTo: 'wolves',
+          payload: { seat: 4, target: 2 },
+        },
+        {
+          gameId: 'g',
+          seq: 3,
+          ts: 0,
+          type: 'WOLF_VOTE_REVEALED',
+          visibleTo: 'wolves',
+          payload: {
+            votes: [
+              { seat: 4, target: 2 },
+              { seat: 8, target: 2 },
+            ],
+            tied: [2, 3],
+          },
+        },
+      ],
+      knowledge: {
+        teammates: [4, 8],
+        checks: [],
+        potions: { heal: 'used', poison: 'used' },
+        canShoot: false,
+        knownKillTarget: null,
+      },
+      legalTargets: [2, 3],
+      pending: 'wolf-vote',
+    } as never;
+
+    const message = buildUserMessage(ctx);
+    expect(message).toContain('4 号投了 2 号（狼队投票）');
+    expect(message).toContain('狼队票型：4→2、8→2');
+    expect(message).toContain('平票（2、3）');
+  });
+});

@@ -114,7 +114,29 @@ export function buildTruth(state: GameState, events: readonly EventEnvelope[]): 
 
   const actions = actionsBySeat(state, events);
 
+  // 每一夜的狼队票型（复盘/真相里展示「他们当时怎么定的刀」）。
+  let voteDay = 0;
+  const wolfVotes: { day: number; votes: { seat: number; target: number }[]; tied?: number[] }[] =
+    [];
+  for (const event of events) {
+    if (event.type === 'DAY_STARTED') {
+      voteDay = (event.payload as { day: number }).day;
+      continue;
+    }
+    if (event.type !== 'WOLF_VOTE_REVEALED') continue;
+    const payload = event.payload as {
+      votes: { seat: number; target: number }[];
+      tied?: number[];
+    };
+    wolfVotes.push({
+      day: Math.max(voteDay, 1),
+      votes: payload.votes,
+      ...(payload.tied === undefined ? {} : { tied: payload.tied }),
+    });
+  }
+
   return {
+    wolfVotes,
     seats: state.seats.map((seat) => ({
       seat: seat.seat,
       role: seat.role,

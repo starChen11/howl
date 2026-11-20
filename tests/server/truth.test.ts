@@ -336,3 +336,43 @@ describe('出局后仍待决定时不能看真相（防作弊）', () => {
     expect(buildTruth(state, current.events).seats).toHaveLength(9);
   });
 });
+
+describe('真相视图包含每一夜的狼队票型（RUL-13）', () => {
+  it('出局后能看到的真相里有 wolfVotes', async () => {
+    const { runGame } = await import('@server/orchestrator');
+    const { scriptedAgent } = await import('@server/ai/agent');
+    const store = new InMemoryMetaStore();
+    const registry = new GameRegistry(store);
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 3,
+      playerSeat: 1,
+    });
+
+    const result = await runGame({
+      registry,
+      session,
+      gameId: record.gameId,
+      input: {
+        async read() {
+          return { kind: 'skip' };
+        },
+        close() {},
+      },
+      output: { emit() {}, async flush() {} },
+      decide: scriptedAgent,
+      maxSteps: 400,
+    });
+
+    const truth = buildTruth(registry.stateOf(result.record), result.record.events);
+    expect(truth.wolfVotes.length).toBeGreaterThan(0);
+    expect(truth.wolfVotes[0]?.votes.length).toBeGreaterThan(0);
+    for (const round of truth.wolfVotes) {
+      for (const vote of round.votes) {
+        expect(vote.seat).toBeGreaterThanOrEqual(1);
+        expect(vote.target).toBeGreaterThanOrEqual(1);
+      }
+    }
+  });
+});

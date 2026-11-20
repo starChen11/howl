@@ -85,6 +85,20 @@ function renderEvent(event: ProjectedContext['publicEvents'][number]): string {
       const payload = event.payload as { target: number; result: 'wolf' | 'not-wolf' };
       return `你查验了 ${payload.target} 号：${payload.result === 'wolf' ? ROLE_LABELS.wolf : '好人'}。`;
     }
+    case 'WOLF_VOTE_CAST': {
+      const payload = event.payload as { seat: number; target: number };
+      return `${payload.seat} 号投了 ${payload.target} 号（狼队投票）。`;
+    }
+    case 'WOLF_VOTE_REVEALED': {
+      const payload = event.payload as {
+        votes: { seat: number; target: number }[];
+        tied?: number[];
+      };
+      const tally = payload.votes.map((vote) => `${vote.seat}→${vote.target}`).join('、');
+      return payload.tied === undefined
+        ? `狼队票型：${tally}。`
+        : `狼队票型：${tally}；平票（${payload.tied.join('、')}），进入重投。`;
+    }
     case 'WOLF_KILL_CHOSEN': {
       const payload = event.payload as { target: number };
       return `狼队决定袭击 ${payload.target} 号。`;

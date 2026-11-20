@@ -288,3 +288,9 @@ $ pnpm test → 55 files / 458 tests
 
 RUL-13 之后，模型在 `NIGHT_WOLVES` 的 `kill` 决策翻译为 `WOLF_VOTE`（狼队投票），
 不再直接产生 `WOLF_KILL`；提示词说明同步更新。
+
+### 8.10 提示词渲染狼队票（RUL-13 后续）
+
+`buildUserMessage` 现在把 `WOLF_VOTE_CAST` / `WOLF_VOTE_REVEALED` 渲染成
+「N 号投了 M 号（狼队投票）」与「狼队票型：…；平票（…）→ 重投」，
+模型在投票前能看到队友的票。

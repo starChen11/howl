@@ -24,6 +24,7 @@ describe('truth 响应校验', () => {
     const client = clientReturning({
       seats: [{ seat: 1, role: 'wolf', roleLabel: '狼人', alive: true, actions: ['袭击了 2 号'] }],
       deaths: [{ seat: 2, day: 1, cause: 'wolf' }],
+      wolfVotes: [{ day: 1, votes: [{ seat: 1, target: 2 }] }],
     });
 
     const truth = await client.truth('g');
