@@ -340,6 +340,10 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       channels.submit(record.gameId, target === 'abstain' ? '' : String(target));
     }
     // 夜间动作同理：把目标/文本交给挂起的输入，避免 60 秒后提交迟到动作。
+    // 自曝会让白天立即结束：挂起的发言等待要被兑现，否则编排层会等 60 秒超时。
+    if (accepted && parsed.data.action.type === 'SELF_EXPOSE') {
+      channels.submit(record.gameId, '');
+    }
     if (accepted && parsed.data.action.type === 'WOLF_CHAT') {
       channels.submit(record.gameId, parsed.data.action.text);
     }

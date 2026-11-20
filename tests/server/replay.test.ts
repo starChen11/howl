@@ -524,3 +524,15 @@ describe('复盘时间线：天数与相位名要说人话', () => {
     void registry;
   });
 });
+
+describe('复盘时间线包含狼队投票（RUL-13）', () => {
+  it('有 WOLF_VOTE_CAST 的对局会显示每狼的票与唱票', async () => {
+    const { registry, record } = await finishedGame();
+    const snapshot = record.snapshot as ReturnType<typeof buildReplaySnapshot>;
+    const votes = snapshot.timeline.filter((entry) => entry.text.includes('（狼队）'));
+
+    expect(votes.length).toBeGreaterThan(0);
+    expect(snapshot.timeline.some((entry) => entry.text.startsWith('狼队票型'))).toBe(true);
+    void registry;
+  });
+});

@@ -215,3 +215,8 @@ $ pnpm test:e2e → 10 passed
 $ pnpm test → 87 files / 748 tests
 $ pnpm test:e2e → 10 passed
 ```
+
+### 8.12 后续补齐：复盘时间线显示狼队票型
+
+RUL-13 之后，复盘的夜间段落会显示每条 `WOLF_VOTE_CAST`（`N 号投 M 号（狼队）`）与
+`WOLF_VOTE_REVEALED` 的唱票结果（`狼队票型：1→2、4→2、8→3`；平票时附「→ 重投」）。

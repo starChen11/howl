@@ -493,6 +493,8 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 10 | `tests/server/llm/to-action.test.ts`：`kill` 在 `NIGHT_WOLVES` 与 `NIGHT_WOLF_RUNOFF` 都翻译成 `WOLF_VOTE` | unit | existing | Must |
 | 11 | `tests/server/orchestrator.test.ts`：LLM 形状的决策在重投也能推进，不停住 | integration | existing | Must |
 | 9 | `tests/engine/wolf-vote.test.ts`：旧 `WOLF_KILL` 仍能推进（兼容） | unit | existing | Should |
+| 12 | `tests/client/shoot.test.tsx`：存活狼白天有自曝入口、两步确认后提交；非狼没有 | unit(jsdom) | existing | Must |
+| 13 | `tests/server/replay.test.ts`：复盘时间线包含狼队票与唱票 | unit | existing | Must |
 
 **已知时序偏离**：本小节与实现同批落地（先代码后计划），违反 RULES 硬规则 3；
 记录在 `CHANGE-REQUEST-011` §8 与 `RFCs/RFC-017` §8。

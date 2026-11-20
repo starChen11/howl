@@ -6,6 +6,7 @@ import { boardAnnouncement, buildBoard, speakingSeat } from './game-state';
 import { IdCard } from './components/IdCard';
 import { VoteInput } from './components/VoteInput';
 import { ShootInput } from './components/ShootInput';
+import { SelfExposeButton } from './components/SelfExposeButton';
 import { NightAction } from './components/NightAction';
 import { EventPanel, buildPanelEntries } from './components/EventPanel';
 import { SpectatorBar } from './components/SpectatorBar';
@@ -183,6 +184,15 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
   const ctx = view.view;
   const speaking = speakingSeat(ctx);
   const myTurn = speaking === ctx.self.seat;
+
+  const expose = async () => {
+    const result = await api.submit(gameId, {
+      action: { type: 'SELF_EXPOSE', ts: Date.now(), seat: ctx.self.seat },
+      expectedVersion: view.version,
+    });
+    if (!result.ok) setError(result.error.message);
+    await refresh();
+  };
 
   const nightAction = async (action: {
     type: string;
@@ -378,6 +388,11 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
             allowAbstain={ctx.phase === 'DAY_VOTE'}
             onVote={vote}
           />
+        ) : null}
+        {ctx.self.alive &&
+        ctx.self.role === 'wolf' &&
+        (ctx.phase === 'DAY_SPEECH' || ctx.phase === 'DAY_VOTE') ? (
+          <SelfExposeButton onExpose={() => void expose()} />
         ) : null}
         <p className="app__hint">轮到你时可以说说你的怀疑；不认识的词可以在下方的说明里查。</p>
         <OnboardingHints role={ctx.self.role} goal="先听一两轮，再决定信谁。" />

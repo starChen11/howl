@@ -373,3 +373,62 @@ describe('RUL-13 · 票型只显示当前一轮', () => {
     expect(screen.queryByText(/1 号投 5 号/)).toBeNull();
   });
 });
+
+describe('狼人自曝入口', () => {
+  it('存活狼在白天看到自曝，确认后提交 SELF_EXPOSE', async () => {
+    const user = userEvent.setup();
+    const submitted: unknown[] = [];
+    const view = {
+      ...hunterView(),
+      self: { seat: 1, role: 'wolf', alive: true, personaId: null },
+      phase: 'DAY_SPEECH',
+      aliveSeats: [1, 2, 3],
+      deadSeats: [],
+      pending: null,
+      legalTargets: [],
+    };
+    const client = {
+      game: async () => ({ version: 5, view }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async (_gameId: string, body: unknown) => {
+        submitted.push(body);
+        return { ok: true as const };
+      },
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+
+    await user.click(await screen.findByRole('button', { name: /自曝身份/ }));
+    await user.click(screen.getByRole('button', { name: '确认自曝' }));
+
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toMatchObject({ action: { type: 'SELF_EXPOSE', seat: 1 } });
+  });
+
+  it('非狼看不到自曝按钮', async () => {
+    const view = {
+      ...hunterView(),
+      self: { seat: 1, role: 'villager', alive: true, personaId: null },
+      phase: 'DAY_SPEECH',
+      aliveSeats: [1, 2, 3],
+      deadSeats: [],
+      pending: null,
+      legalTargets: [],
+    };
+    const client = {
+      game: async () => ({ version: 5, view }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async () => ({ ok: true as const }),
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+    await screen.findByRole('heading', { name: '你的身份' });
+    expect(screen.queryByRole('button', { name: /自曝身份/ })).toBeNull();
+  });
+});

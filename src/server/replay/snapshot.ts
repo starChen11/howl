@@ -80,6 +80,30 @@ export function buildTimeline(state: GameState, events: readonly EventEnvelope[]
         });
         break;
       }
+      case 'WOLF_VOTE_CAST':
+        if (day === 0) day = 1;
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text: `${String(payload['seat'])} 号投 ${String(payload['target'])} 号（狼队）`,
+        });
+        break;
+      case 'WOLF_VOTE_REVEALED': {
+        const votes = payload['votes'] as { seat: number; target: number }[];
+        const tally = votes.map((vote) => `${vote.seat}→${vote.target}`).join('、');
+        const tied = payload['tied'] as number[] | undefined;
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text:
+            tied === undefined
+              ? `狼队票型：${tally}`
+              : `狼队票型：${tally}；平票（${tied.join('、')}）→ 重投`,
+        });
+        break;
+      }
       case 'WOLF_CHAT_POSTED':
         // 夜聊发生在第一个 PHASE_CHANGED 之前时也要记成第 1 天
         if (day === 0) day = 1;
