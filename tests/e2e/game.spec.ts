@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { passNight, waitForMyTurn } from './helpers';
+import { waitForMyTurn } from './helpers';
 
 /**
  * RFC-012 §5 AC-1 / AC-8 / AC-9 / AC-10 / AC-11。
@@ -237,25 +237,83 @@ test.describe('整局界面', () => {
 
 test.describe('复盘（RFC-014）', () => {
   test('打完后出现复盘：时间线、身份与推理，360px 无横滚', async ({ page }) => {
-    test.setTimeout(120_000);
-    await page.setViewportSize({ width: 360, height: 720 });
-    await page.goto('/?seed=13');
-    await expect(page.locator('.app')).toBeVisible();
+    test.setTimeout(150_000);
 
-    // 玩家一旦轮到就过/弃权；循环到复盘出现为止。
-    for (let step = 0; step < 80; step += 1) {
-      if ((await page.getByRole('heading', { name: '复盘' }).count()) > 0) break;
-      await passNight(page);
-      const skip = page.getByRole('button', { name: '过' });
-      if ((await skip.count()) > 0) await skip.click({ timeout: 1000 }).catch(() => undefined);
-      const abstain = page.getByRole('button', { name: '弃权' });
-      if ((await abstain.count()) > 0) {
-        await abstain.click({ timeout: 1000 }).catch(() => undefined);
+    // 用 API 把一局打完（玩家每次都用合法动作过掉），再打开页面看复盘。
+    // 用 `page.request`：它与页面共享 cookie，否则后面 goto 会没有会话。
+    const created = await page.request.post('/api/games', {
+      data: { mode: 'slaughter-side', seed: 13 },
+    });
+    const { gameId } = (await created.json()) as { gameId: string };
+    await page.request.post(`/api/games/${gameId}/play`);
+
+    const act = async (version: number, action: unknown) => {
+      await page.request.post(`/api/games/${gameId}/actions`, {
+        data: { action, expectedVersion: version },
+      });
+    };
+
+    for (let step = 0; step < 600; step += 1) {
+      const res = await page.request.get(`/api/games/${gameId}`);
+      const body = (await res.json()) as {
+        version: number;
+        view: {
+          phase: string;
+          pending: string | null;
+          self: { seat: number };
+          legalTargets: (number | string)[];
+        };
+      };
+      if (step % 40 === 0)
+        console.log('step', step, body.view.phase, body.view.pending, body.version);
+      if (body.view.phase === 'FINISHED') break;
+
+      const seat = body.view.self.seat;
+      const target = body.view.legalTargets.find(
+        (candidate) => typeof candidate === 'number' && candidate !== seat,
+      );
+      const ts = 0;
+
+      switch (body.view.pending) {
+        case 'speak':
+          await act(body.version, { type: 'SPEECH_SKIP', ts, seat });
+          break;
+        case 'vote':
+          await act(body.version, {
+            type: 'VOTE',
+            ts,
+            seat,
+            target: typeof target === 'number' ? target : 'abstain',
+          });
+          break;
+        case 'chat':
+          await act(body.version, { type: 'WOLF_CHAT', ts, seat, text: '' });
+          break;
+        case 'kill':
+          if (typeof target === 'number') {
+            await act(body.version, { type: 'WOLF_KILL', ts, seat, target });
+          }
+          break;
+        case 'check':
+          if (typeof target === 'number') {
+            await act(body.version, { type: 'SEER_CHECK', ts, seat, target });
+          }
+          break;
+        case 'witch':
+          await act(body.version, { type: 'WITCH_ACT', ts, seat, potion: 'none' });
+          break;
+        case 'shoot':
+          await act(body.version, { type: 'HUNTER_SHOOT', ts, seat });
+          break;
+        default:
+          await page.waitForTimeout(50);
       }
-      await page.waitForTimeout(250);
     }
 
-    await expect(page.getByRole('heading', { name: '复盘' })).toBeVisible();
+    await page.setViewportSize({ width: 360, height: 720 });
+    await page.goto(`/?game=${gameId}`);
+
+    await expect(page.getByRole('heading', { name: '复盘' })).toBeVisible({ timeout: 30_000 });
     for (const seat of [1, 5, 9]) {
       await expect(page.getByText(new RegExp(`${seat} 号：`)).first()).toBeVisible();
     }
@@ -266,12 +324,11 @@ test.describe('复盘（RFC-014）', () => {
     );
     expect(overflow).toBeLessThanOrEqual(0);
 
-    // 再来一局：回到对局界面（新一局可能立刻进入发言/投票，所以等的是 .app 里的输入区）
+    // 再来一局：新局可能立刻进对局页，也可能（玩家第一夜就死）直接进复盘。
     await page.getByRole('button', { name: '再来一局' }).click();
     await expect(page.locator('.app').or(page.getByRole('heading', { name: '复盘' }))).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByRole('heading', { name: '复盘' })).toHaveCount(0);
   });
 });
 

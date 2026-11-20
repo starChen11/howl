@@ -16,7 +16,7 @@ import { replay } from '@engine/replay';
 import { buildTruth, canSeeTruth } from '../view/truth';
 import { TruthViewSchema } from '@shared/truth';
 import { ReplaySnapshotSchema } from '@shared/replay-schema';
-import { nextActor, pendingForPhase } from '../orchestrator';
+import { nextActor, pendingForPhase, seatToSpeak } from '../orchestrator';
 import { isWithinLimit, remainingSeconds } from '../speech';
 import { resolveSession } from '../session';
 import type { GameRegistry } from '../store/game-registry';
@@ -100,7 +100,8 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       // 否则前端的投票/查验按钮会没有目标（RFC-012 C-127）。
       // 默认 `pending` **只给当前行动者**：夜间给所有人投影一个具体动作，
       // 等于告诉旁观者「某个神职还活着并且正在行动」（C-133，RFC-007 C-28）。
-      const actor = nextActor(state);
+      // 发言阶段的行动者由发言顺序决定（`nextActor` 只覆盖按角色/投票的相位）。
+      const actor = seatToSpeak(state) ?? nextActor(state);
       const defaultPending = actor === record.playerSeat ? pendingForPhase(state.phase) : null;
       const pending = (pendingParsed.data.pending ?? defaultPending) as PendingDecision | null;
       const view: ProjectedContext = project({

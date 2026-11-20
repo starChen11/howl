@@ -102,7 +102,24 @@ export function NightAction({
       className="night"
       aria-label={pending === 'kill' ? `${ROLE_LABELS.wolf}刀人` : `${ROLE_LABELS.seer}查验`}
     >
-      <p className="night__hint">选择今晚要{verb}的人。</p>
+      {pending === 'kill' ? (
+        <>
+          <p className="night__hint">
+            狼队今晚只有一刀：<strong>你选谁，今晚就刀谁</strong>。
+          </p>
+          {wolfChats.length === 0 ? null : (
+            <ul className="night__chat-log" aria-label="狼队消息">
+              {wolfChats.map((chat, index) => (
+                <li key={`${chat.seat}-${index}`}>
+                  {chat.seat} 号：{chat.text === '' ? '（没说话）' : chat.text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <p className="night__hint">选择今晚要{verb}的人。</p>
+      )}
       <div className="night__buttons">
         {targets.map((seat) => (
           <button key={seat} type="button" className="button" onClick={() => onTarget(seat)}>

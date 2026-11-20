@@ -28,14 +28,36 @@ export type Decider = (input: {
 
 export type AgentKind = 'llm' | 'scripted';
 
-/** 从投影里挑一个合法目标（跳过自己）。 */
-function pickTarget(ctx: ProjectedContext): number | 'abstain' | undefined {
-  return ctx.legalTargets.find((target) => target !== ctx.self.seat);
+/**
+ * 从投影里挑一个合法目标（跳过自己与狼队友）。
+ *
+ * **不能用 `Math.random`**：selfplay 靠种子复现批次。这里用「天 × 席位」的确定性
+ * 轮转，让脚本 AI 的票型分散开——否则它永远投第一个合法目标，玩家会在第一天被
+ * 全票放逐（用户实测反馈）。
+ */
+function pickTarget(ctx: ProjectedContext, phase?: string): number | 'abstain' | undefined {
+  const candidates = ctx.legalTargets
+    .filter((target) => typeof target === 'number')
+    .map((target) => Number(target))
+    .filter((target) => target !== ctx.self.seat)
+    .filter(
+      (target) => phase !== 'NIGHT_WOLVES' || !ctx.knowledge.teammates.includes(target as never),
+    );
+  if (candidates.length === 0) {
+    return ctx.legalTargets.includes('abstain') ? 'abstain' : undefined;
+  }
+
+  // 只在**投票**时分散目标：夜间行动保持原来的「第一个合法目标」，
+  // 这样固定种子的 e2e（例如某席位第一夜被刀）仍然稳定可复现。
+  if (phase !== 'DAY_VOTE' && phase !== 'DAY_VOTE_RUNOFF') return candidates[0];
+
+  const index = (ctx.day * 31 + ctx.self.seat * 17 + ctx.self.seat) % candidates.length;
+  return candidates[index];
 }
 
 /** 脚本化替身：每个阶段都给出一个合法动作，足以把一局推完。 */
 export const scriptedAgent: Decider = async ({ seat, ctx, phase }) => {
-  const target = pickTarget(ctx);
+  const target = pickTarget(ctx, phase);
   const ts = Date.now();
 
   switch (phase) {
@@ -54,10 +76,20 @@ export const scriptedAgent: Decider = async ({ seat, ctx, phase }) => {
     case 'DAY_SPEECH':
       return { action: { type: 'SPEECH', ts, seat: seat as never, text: '我先过，听后面的。' } };
     case 'DAY_VOTE':
-    case 'DAY_VOTE_RUNOFF':
       return target === undefined || target === 'abstain'
         ? { action: { type: 'VOTE', ts, seat: seat as never, target: 'abstain' } }
         : { action: { type: 'VOTE', ts, seat: seat as never, target: target as never } };
+    case 'DAY_VOTE_RUNOFF': {
+      // RUL-2：重投只能投并列者，且**不能弃权**。并列者里可能包含自己，
+      // 这里不能套用「跳过自己」的挑选逻辑，否则会退化成 abstain 被拒。
+      const tied = ctx.legalTargets
+        .filter((candidate) => typeof candidate === 'number')
+        .map((candidate) => Number(candidate));
+      const choice = tied[Math.min(tied.length - 1, (ctx.day * 31 + seat * 17) % tied.length)];
+      return choice === undefined
+        ? { action: undefined }
+        : { action: { type: 'VOTE', ts, seat: seat as never, target: choice as never } };
+    }
     case 'NIGHT_HUNTER_SHOOT':
     case 'DAY_HUNTER_SHOOT':
       // 出局后的开枪决定；没有目标就选择不开枪（规则允许）。

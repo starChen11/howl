@@ -50,6 +50,25 @@ export async function waitForMyTurn(page: Page, timeoutMs = 45_000): Promise<voi
     if (await page.getByRole('heading', { name: '复盘' }).count()) {
       throw new Error('对局已经结束，等不到发言输入框');
     }
+
+    // 轮到我投票时先投掉，否则等不到下一次发言（平票重投不能弃权）
+    const abstain = page.getByRole('button', { name: '弃权' });
+    if ((await abstain.count()) > 0) {
+      await abstain
+        .first()
+        .click({ timeout: 2_000 })
+        .catch(() => undefined);
+      continue;
+    }
+    const vote = page.getByRole('button', { name: /^投 \d+ 号$/ });
+    if ((await vote.count()) > 0) {
+      await vote
+        .first()
+        .click({ timeout: 2_000 })
+        .catch(() => undefined);
+      continue;
+    }
+
     await passNight(page);
     await page.waitForTimeout(250);
   }

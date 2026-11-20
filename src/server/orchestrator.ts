@@ -247,7 +247,15 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
       action.action,
       registry.stateOf(latest).seq,
     );
-    if (!result.ok) break;
+    if (!result.ok) {
+      // 版本冲突 = 别人（玩家路由请求或上一轮循环）刚提交过：重读即可，
+      // 不能当成致命错误把整局停在这里。
+      if (result.code === 'ALREADY_APPLIED') {
+        steps += 1;
+        continue;
+      }
+      break;
+    }
 
     // 引擎拒绝了 AI/玩家的动作：不能当作成功继续，否则同一个非法动作会被反复提交
     // （真实对局里表现为「卡在某个相位」且日志刷屏）。直接抛出，让调用方看见。
@@ -383,6 +391,20 @@ async function playerAction(
   if (phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF') {
     // 投票轮把「目标席位」放在同一个 `text` 字段里；空 → 弃权。
     const parsed = input.kind === 'skip' ? Number.NaN : Number.parseInt(input.text, 10);
+
+    // RUL-2：重投不能弃权，只能投并列者。玩家跳过时替他选一个并列者，
+    // 否则会提交 abstain 被引擎拒绝（以前表现为整局中断）。
+    if (phase === 'DAY_VOTE_RUNOFF' && Number.isNaN(parsed)) {
+      const tied = ctx.legalTargets
+        .filter((candidate) => typeof candidate === 'number')
+        .map((candidate) => Number(candidate));
+      if (tied.length > 0) {
+        return {
+          action: { type: 'VOTE', ts: now(), seat: seat as never, target: tied[0] as never },
+        };
+      }
+    }
+
     return {
       action: {
         type: 'VOTE',

@@ -54,6 +54,27 @@ describe('AC-15 · 一局能从开局跑到 FINISHED', () => {
       const record = await registry.getGame(gameId);
       if (record === undefined) return;
       const state = registry.stateOf(record);
+
+      if (state.phase === 'DAY_VOTE' || state.phase === 'DAY_VOTE_RUNOFF') {
+        const voters = state.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+        const voted = new Set((state.votes ?? []).map((vote) => vote.seat));
+        const voter = voters.find((seat) => !voted.has(seat));
+        if (voter === undefined || !state.seats.find((s) => s.seat === voter)?.isPlayer) return;
+
+        const target =
+          state.phase === 'DAY_VOTE_RUNOFF' ? (state.runoff?.[0] ?? voter) : ('abstain' as const);
+        await app.inject({
+          method: 'POST',
+          url: `/api/games/${gameId}/actions`,
+          headers: { cookie },
+          payload: {
+            action: { type: 'VOTE', ts: Date.now(), seat: voter, target },
+            expectedVersion: record.events.length,
+          },
+        });
+        return;
+      }
+
       if (state.phase !== 'DAY_SPEECH') return;
       const speaker = state.speech;
       if (speaker === undefined) return;
