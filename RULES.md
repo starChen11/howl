@@ -94,7 +94,8 @@ Howl 是浏览器里与 AI 对战的狼人杀：单机、纯文字、9 人标准
 | `pnpm lint` | ESLint |
 | `pnpm format:check` | Prettier 检查 |
 | `pnpm test` | Vitest（单元 + 集成） |
-| `pnpm test:e2e` | Playwright |
+| `pnpm test:e2e` | Playwright（Chromium 全量 + Firefox/WebKit 的跨浏览器主路径） |
+| `pnpm test:perf` | 首屏预算与打包产物断言（RFC-016） |
 | `pnpm selfplay --games=N --seed=S` | 无 UI 批量对局（F39） |
 
 ---

@@ -18,18 +18,24 @@ async function boot(): Promise<
 > {
   const params = new URLSearchParams(window.location.search);
   const existing = params.get('game');
+  const forceHome = params.get('home') === '1';
+
+  // `?home=1` 优先于 `?game=`：e2e 要用固定种子从首页开局。
+  if (forceHome) {
+    const homeSeed = params.get('seed');
+    return { kind: 'home', seed: homeSeed === null ? null : Number(homeSeed) };
+  }
+
   if (existing !== null) return { kind: 'game', gameId: existing };
 
   const seedParam = params.get('seed');
   const seat = params.get('seat');
-  // `?home=1` 强制停在首页（e2e 用固定种子从首页开局，避免随机席位）。
-  const forceHome = params.get('home') === '1';
-
-  await fetch('/api/session', { credentials: 'same-origin' });
-
-  if (seedParam === null || forceHome) {
+  // 首页不碰后端（AC-8）：会话只在真正要开局时才建立。
+  if (seedParam === null) {
     return { kind: 'home', seed: seedParam === null ? null : Number(seedParam) };
   }
+
+  await fetch('/api/session', { credentials: 'same-origin' });
 
   const created = await fetch('/api/games', {
     method: 'POST',

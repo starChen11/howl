@@ -30,7 +30,7 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 ```
 $ pnpm test
  Test Files  89 passed (89)     # unit 72 + client 9 + meta 7
-      Tests  770 passed (770)
+      Tests  771 passed (771)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
@@ -392,12 +392,12 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | Criterion | Test | Level | Exists? | Priority |
 |---|---|---|---|---|
-| 1、2 | `tests/e2e/browsers.spec.ts`：Playwright 三个 engine（chromium/firefox/webkit）跑主路径 | e2e | proposed | Should |
-| 3 | `tests/e2e/capabilities.spec.ts`：注入删掉 `EventSource` 的脚本，断言显示中文提示且不白屏 | e2e | proposed | Should |
-| 4 | 复用 RFC-010 的 `Last-Event-ID` 断言 | integration | proposed | Should |
-| 5 | `tests/perf/first-paint.test.ts`：5 次取中位数断言 ≤2 秒 | performance | proposed | Should |
-| 6、7 | `tests/perf/bundle.test.ts`：断言首屏 JS 不含复盘页与流式模块标识；全部产物不含 LLM 调用代码或密钥 | security | proposed | Should |
-| 8 | `tests/e2e/first-paint.spec.ts`：从加载到按钮可点期间网络请求不含 `/api/games` | e2e | proposed | Should |
+| 1、2 | `tests/e2e/browsers.spec.ts`：Playwright 三个 engine（chromium/firefox/webkit）跑主路径 | e2e | existing: tests/e2e/browsers.spec.ts + tests/perf/first-paint.spec.ts | Should |
+| 3 | `tests/e2e/capabilities.spec.ts`：注入删掉 `EventSource` 的脚本，断言显示中文提示且不白屏 | e2e | existing: tests/e2e/browsers.spec.ts + tests/perf/first-paint.spec.ts | Should |
+| 4 | 复用 RFC-010 的 `Last-Event-ID` 断言 | integration | existing: tests/e2e/browsers.spec.ts + tests/perf/first-paint.spec.ts | Should |
+| 5 | `tests/perf/first-paint.test.ts`：5 次取中位数断言 ≤2 秒 | performance | existing: tests/e2e/browsers.spec.ts + tests/perf/first-paint.spec.ts | Should |
+| 6、7 | `tests/perf/bundle.test.ts`：断言首屏 JS 不含复盘页与流式模块标识；全部产物不含 LLM 调用代码或密钥 | security | existing: tests/e2e/browsers.spec.ts + tests/perf/first-paint.spec.ts | Should |
+| 8 | `tests/e2e/first-paint.spec.ts`：从加载到按钮可点期间网络请求不含 `/api/games` | e2e | existing: tests/e2e/browsers.spec.ts + tests/perf/first-paint.spec.ts | Should |
 
 ---
 

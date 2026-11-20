@@ -110,14 +110,16 @@
 |---|---|
 | 客户端新增 | `src/client/capabilities.ts`、`src/client/pages/Home.tsx` |
 | 客户端修改 | `main.tsx`（能力探测、首页路由、对局页懒加载）、`App.tsx`（复盘页懒加载） |
-| 配置 | `playwright.config.ts`（三引擎 projects）、`playwright.perf.config.ts`、`package.json`（`test:perf`） |
+| 配置 | `playwright.config.ts`（三引擎 projects）、`playwright.perf.config.ts`、`package.json`（`test:perf`）、`RULES.md` §3 命令表 |
+| 服务端脚本 | `scripts/e2e-server.ts`（支持 `--port=`，供 perf 用） |
+| 文档 | `RFCS.md`、`README.md`、`TEST-STRATEGY.md` |
 | 测试 | `tests/e2e/browsers.spec.ts`、`tests/perf/first-paint.spec.ts`、`tests/client/capabilities.test.ts` |
 
 ### 8.4 验收逐条
 
 | AC | 证据 | 结果 |
 |---|---|---|
-| 1 | `browsers.spec.ts` 在 Chromium / Firefox / WebKit 三引擎跑「开始一局 → 发言 → 投票」，共 14 条 e2e | PASS |
+| 1 | `browsers.spec.ts` 在 Chromium / Firefox / WebKit 三引擎各跑一遍（共 16 条 e2e） | PASS |
 | 2 | Edge 不单独跑（D-4，已记录） | PASS（取舍） |
 | 3 | e2e 用 `addInitScript` 摘掉 `EventSource`，断言中文提示与不白屏；关掉能力判断会红 | PASS |
 | 4 | SSE 重连由显式 `Last-Event-ID` 管理（RFC-010 已覆盖） | PASS |
@@ -142,3 +144,21 @@ $ pnpm test:perf → 2 passed
 | 真机 Safari / Firefox | Playwright 的 WebKit 是近似，不是真 Safari | 手工验收建议 |
 | 移动端真机 | RFC §6 明确不做 | — |
 | CI 机器基准 | Q-016-2 假设本机环境，不设 CI 基准 | — |
+
+### 8.7 Round 1 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-205** Chromium 没跑 `browsers.spec.ts` | `testIgnore` 把 Chromium 的跨浏览器用例排除了，所谓「三引擎」只有两台 | 去掉 `testIgnore`：Chromium 跑全部用例，Firefox/WebKit 只跑 `browsers.spec.ts`；现在 16 条 e2e |
+| **C-206** 首屏测的是 warm cache | 5 次样本共用一个 context；用 `visible` 代替可点击；测 `?home=1` | 每次**全新 context**（无 HTTP 缓存）、测默认 `/`、按钮 `toBeEnabled`；并断言**每次**样本都真的下载了入口 JS（> 50KB）。退回 warm context 会红 |
+| **C-207** 首页仍请求 `/api/session` | 违反用户批准的「首屏不碰后端」 | 会话请求移到真正开局时（首页与 `?seed=` 之前的建局前）；e2e 断言首页期间**没有任何 `/api/` 请求**，加回 session 会红 |
+| **C-209** `test:perf` 未登记 | OPS-2 的固定命令表没有它 | `RULES.md` §3 增加 `pnpm test:perf` 一行；RFC §8.3 补文件清单 |
+| **C-208** 模型地址只扫入口 chunk | 把 `api.deepseek` 放进复盘 chunk 仍绿 | `tests/meta/build.test.ts` 扫 `dist/client` 全部产物（`api.deepseek.com` / `DEEPSEEK_API_KEY` / `openai` / `/chat/completions`）；perf 也扫全部 chunk |
+| **C-210** 文档漂移 | TEST-STRATEGY 六行仍 `proposed`、README 仍 15 个 RFC、§8.3/§8.4 不实 | 全部同步 |
+| **C-211 / C-212** | `?home=1` 不优先；首页无样式 | `?home=1` 优先于 `?game=`；补 `.home` / `.fallback` 样式；`Home` 检查 `/play` 响应 |
+
+```
+$ pnpm test → 89 files / 771 tests
+$ pnpm test:e2e → 16 passed
+$ pnpm test:perf → 3 passed
+```

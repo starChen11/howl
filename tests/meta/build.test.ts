@@ -42,6 +42,21 @@ describe('AC-13 · 构建产物', () => {
     expect(existsSync(DIST_SERVER_ENTRY), '缺少 dist/server/index.js').toBe(true);
   });
 
+  it('dist/client 内不含模型调用代码（OPS-4）', () => {
+    const files = walk(DIST_CLIENT);
+    const markers = ['api.deepseek.com', 'DEEPSEEK_API_KEY', 'openai', '/chat/completions'];
+    const offenders: string[] = [];
+
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8');
+      for (const marker of markers) {
+        if (source.includes(marker)) offenders.push(`${file} ← ${marker}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
   it('dist/client 内不含 DEEPSEEK_API_KEY', () => {
     const offenders: string[] = [];
 

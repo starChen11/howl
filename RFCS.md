@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.150 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
+> 版本 v2.151 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -52,7 +52,7 @@
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Reviewed |
-| [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Changes requested |
+| [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Implemented |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
 
@@ -1182,6 +1182,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-20 | v2.151 | RFC-016 Round 1 修复（Status → Implemented）：Chromium 也跑跨浏览器用例、首屏改冷启动测量、首页不再请求 session、`test:perf` 入命令表、产物扫描扩到全部 chunk、文档同步 |
 | 2026-11-20 | v2.150 | RFC-016 Round 1 评审（Status → `Changes requested`）：门禁 **89 files / 770 tests**、14/14 e2e、2/2 perf。**C-205**（Chromium 被 `testIgnore` 跳过 `browsers.spec.ts`，AC-1 只完成 2/3）、**C-206**（AC-5 测的是 warm cache + visible，不是无缓存/可点击）、**C-207**（首页 `await /api/session` 违反 A 方案「首屏不碰后端」；AC-8 只过滤 `/api/games`）、**C-209**（OPS-2：`test:perf` 未登记到 RULES §3）为阻塞；C-208 / C-210 / C-211 / C-212 为非阻塞。探针从 `/tmp/howl-rfc016-r1/backup/` 文件备份恢复、`main.tsx` / `App.tsx` / `ReplayPage.tsx` 三个文件 MD5 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-016.md`](reviews/REVIEW-RFC-016.md) Round 1 |
 | 2026-11-20 | v2.149 | RFC-016 实现完成（Status → Implemented）：首页入口、能力探测提示、对局/复盘懒加载、三引擎 Playwright projects、首屏预算与打包产物断言 |
 | 2026-11-20 | v2.148 | RFC-015 Round 4 复核（Status → Reviewed）：门禁 88 files / 766 tests、10/10 e2e、单元覆盖率行 97.14% / 分支 93.11%；100 局 1.65s / 83.0MB。**C-184 闭合**——`runner.ts:152` 真正调用 `classifyFinished`，P-R4-1 用 `playerInput` 投已出局席位得到 45 事件、末条 `GAME_ENDED`、`REJECTED self:1 VOTE TARGET_NOT_ALIVE`；把调用改成 `null` 后 selfplay 用例 **1 failed / 17 passed**（M-R4-1）。**C-202 闭合（行为）**——未终局与被拒路径都挂 usage，P-R4-2a/b 实测 2 次 / 224 input 与 23 次 / 4669 input；但删掉两处后 18/18 仍绿（M-R4-2），新增 C-203（回归锁）。**C-195 仍 Open（非阻塞）**——TEST-STRATEGY `:38` 的「全部 existing」与 13 行 `proposed` 矛盾、`:133` 占位测试描述与现行用例相反。新增 C-204（C-184 用例加固 + JSDoc）。探针从 `/tmp/howl-rfc015-r4/backup/` 文件备份恢复、三个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-015.md`](reviews/REVIEW-RFC-015.md) Round 4 |

@@ -25,7 +25,6 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-      testIgnore: /browsers\.spec\.ts/,
     },
     { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testMatch: /browsers\.spec\.ts/ },
     { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: /browsers\.spec\.ts/ },

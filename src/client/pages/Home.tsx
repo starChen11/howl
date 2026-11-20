@@ -14,6 +14,8 @@ export function Home({ seed }: { seed: number | null }) {
     setBusy(true);
     setError(null);
     try {
+      await fetch('/api/session', { credentials: 'same-origin' });
+
       const created = await fetch('/api/games', {
         method: 'POST',
         credentials: 'same-origin',
@@ -28,10 +30,11 @@ export function Home({ seed }: { seed: number | null }) {
       const game = (await created.json()) as { gameId?: string };
       if (game.gameId === undefined) throw new Error('开局失败：没有对局 id');
 
-      await fetch(`/api/games/${game.gameId}/play`, {
+      const played = await fetch(`/api/games/${game.gameId}/play`, {
         method: 'POST',
         credentials: 'same-origin',
       });
+      if (!played.ok) throw new Error(`开局失败：${played.status}`);
       window.location.search = `?game=${game.gameId}`;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '开局失败');

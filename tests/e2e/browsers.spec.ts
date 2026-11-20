@@ -15,9 +15,9 @@ test('主路径：开始一局 → 发言 → 投票', async ({ page }) => {
   // 打开页面时看到的是首页，不是一局陌生的游戏（AC-8）
   await expect(page.getByRole('heading', { name: 'Howl' })).toBeVisible();
 
-  // 首屏到「开始一局」可点期间，不该有任何 /api/games 请求
-  const gamesBeforeStart = requests.filter((url) => url.includes('/api/games'));
-  expect(gamesBeforeStart).toEqual([]);
+  // 首屏到「开始一局」可点期间，不该有任何后端请求（A 方案：首屏不碰后端）
+  const apiBeforeStart = requests.filter((url) => url.includes('/api/'));
+  expect(apiBeforeStart).toEqual([]);
 
   await page.getByRole('button', { name: '开始一局' }).click();
   await expect(page.locator('.app')).toBeVisible({ timeout: 30_000 });
@@ -33,7 +33,8 @@ test('主路径：开始一局 → 发言 → 投票', async ({ page }) => {
   await expect(voteButton).toBeVisible({ timeout: 30_000 });
   await voteButton.click();
 
-  await expect(page.getByRole('button', { name: /投 \d+ 号/ }).first()).toBeHidden({
+  // 这一票真的进了票型（公开事件面板），而不是等按钮消失靠时序碰运气
+  await expect(page.getByText(/1 号投 \d+ 号|1 号弃权/).first()).toBeVisible({
     timeout: 30_000,
   });
 });
