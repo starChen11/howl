@@ -142,6 +142,9 @@ function applyPhaseChanged(state: GameState, payload: { from: Phase; to: Phase }
     delete next.night;
     delete next.pendingDeaths;
     delete next.wolfChat;
+    // RUL-13 的票型与重投候选：只属于这一夜，不能带到下一夜。
+    delete next.wolfVotes;
+    delete next.wolfRunoff;
     // 投票相关：自曝会让当日投票取消，旧票不能带到下一夜（否则下一天会拿已出局的
     // 席位当最高票，进而 PLAYER_DIED 重复）。
     delete next.votes;

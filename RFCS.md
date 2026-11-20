@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.153 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-20
+> 版本 v2.154 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-20
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -42,7 +42,7 @@
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Spec changed |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Reviewed |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Reviewed |
-| [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Reviewed |
+| [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Spec changed |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
@@ -53,7 +53,7 @@
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Reviewed |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Reviewed |
-| [RFC-017](RFCs/RFC-017-wolf-team-vote.md) | 狼队投票决定刀谁 | F9, F10 | Medium | Implemented |
+| [RFC-017](RFCs/RFC-017-wolf-team-vote.md) | 狼队投票决定刀谁 | F3, F9, F10 | Medium | Changes requested |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
 
@@ -1200,10 +1200,41 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 2 后的状态**：C-205 / C-206 / C-207 / C-208 / C-209 关闭；C-211 / C-212 的用户点名项关闭；C-210 / C-212 的剩余项与新增 C-213 / C-214 / C-215 为非阻塞。RFC-016 的 Status = **`Reviewed`**。
 
+### 8.60 RFC-017 Round 1 评审（2026-11-20）
+
+> 由 `/review-rfc 017` 执行；完整证据见 [`reviews/REVIEW-RFC-017.md`](reviews/REVIEW-RFC-017.md) Round 1。评审时 HEAD `73adac3`，工作树 clean；门禁 **92 files / 800 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0、`pnpm test:e2e` **18/18 passed**（全部 `HOWL_FAKE_AI=1`）、单元覆盖率 74 files / 669 tests（行 97.19% / 分支 92.98%）、`HOWL_FAKE_AI=1 pnpm selfplay --games=100` **100/100**。探针从 `/tmp/howl-rfc017-r1/backup/` 文件备份恢复（**未用 `git checkout` / `git restore`**），`night.ts` / `to-action.ts` / `orchestrator.ts` 三个文件 SHA-256 与探针前一致；临时探针已删除；工作树 clean；没有 `git commit`。结论：**`Changes requested`**（6 条阻塞）。
+
+| # | 复核 | 状态与痕迹 |
+|---|---|---|
+| **C-216** | 默认 LLM 路径仍把模型 `kill` 映射成 `WOLF_KILL`（`src/server/llm/to-action.ts:109-118`）；`DecisionSchema` 没有 `wolf-vote`，提示词可选动作列表只有 `kill`（`schema.ts:9-23`、`prompts/base.ts:138-141`）；生产实跑 `WOLF_VOTE_CAST=0`、`WOLF_KILL_CHOSEN=[1,3]`，玩家是狼时第一夜投的 1 票被 AI 的 `WOLF_KILL` 覆盖、第二夜不再被问 | **Open（阻塞，Round 1）** · `src/server/llm/{schema,to-action,prompts/*}.ts`、`src/server/ai/agent.ts:134-143`、`tests/server/llm/to-action.test.ts:107-112`、`tests/server/llm/prompts.test.ts:132-138`；Round 1 §2 AC-7/AC-9 / §3 C-216 |
+| **C-217** | `NIGHT_WOLVES` 仍接受 `WOLF_KILL`（`transitions.ts:25-26`），handler 不检查投票轮次；引擎层任意存活狼、当前单机下玩家自己的狼席，一次 API 调用即可单人下刀，违反 RUL-13；路由仍兑现（`routes/games.ts:337-343`），UI 保留 `pending='kill'` 分支（`App.tsx:335`），生产 AI 也产生它 | **Open（阻塞，Round 1）** · `src/engine/transitions.ts:25-26`、`src/engine/phases/night.ts:108-146`、`src/server/routes/games.ts:337-343`、`src/client/App.tsx:335`、`RFCs/RFC-017...:86`；Round 1 §2 AC-9 / §3 C-217 |
+| **C-218** | `applyPhaseChanged` 进入新一夜时没有清 `wolfVotes` / `wolfRunoff`（`src/engine/apply.ts:139-149`），实测先投后兼容 `WOLF_KILL` 跨到 `NIGHT_SEER` 仍保留旧票；下一夜会跳过该狼、可能把旧票算进唱票、再投会得到 `WOLF_VOTE_DUPLICATE` | **Open（阻塞，Round 1）** · `src/engine/apply.ts:139-149`、`src/shared/domain.ts:138-141`、`src/server/orchestrator.ts:66-74`；Round 1 §3 C-218 / P-STATE |
+| **C-219** | `TEST-STRATEGY.md:483-493` 的 AC-6 / AC-7 / AC-8 三行均写 `existing`，实际不存在：`tests/server/project/*` 无 WOLF_VOTE、`tests/server/orchestrator.test.ts` 无玩家狼投票、`tests/client/shoot.test.tsx` 只测旧 `pending='kill'`；`orchestrator-full` 仍用 `WOLF_KILL` | **Open（阻塞，Round 1）** · `TEST-STRATEGY.md:483-493`、`tests/server/orchestrator.test.ts:484-493`、`tests/client/shoot.test.tsx:100-170`、`tests/server/orchestrator-full.test.ts:73-74`；Round 1 §2 AC-6/7/8 / §3 C-219 |
+| **C-220** | AC-8 界面把整局 `WOLF_VOTE_CAST` 都当「当前票型」（`App.tsx:306-311`），且只在 `pending` 非空时挂 `NightAction`（`:298-304`）；第二夜显示上一夜票、投完看不到队友实时票。临时 jsdom 探针 2/2 复现 | **Open（阻塞，Round 1）** · `src/client/App.tsx:298-311`、`src/client/components/NightAction.tsx:120-128`；Round 1 §2 AC-8 / §3 C-220 / P-UI |
+| **C-229** | RFC-017 声明前置 RFC-003 / RFC-005（`RFCS.md:82`），但 RFC-003 当前 `Spec changed`（`:42`），硬规则 2 要求前置为 `Implemented` / `Reviewed`；状态机不能直接进入 `Reviewed` | **Open（阻塞-流程，Round 1）** · `RFCS.md:42,82`、`RFCs/RFC-003...:406-410`、`AGENTS.md` 硬规则 2；Round 1 §3 C-229 / §7 O-3 |
+| **C-221** | `project()` 对角色不匹配的 `pending` 无防御：好人观察者传 `wolf-vote` 时 `legalTargets` 会排除全部狼席（实测 `[1,4,5,6,7,9]`，狼为 2/3/8）；当前路由不可达，但属于 SEC-5 边界硬化 | **Open（非阻塞，Round 1 新登记）** · `src/server/project/targets.ts:35-43`、`src/shared/api.ts:44-46`；Round 1 §4 C-221 / P-PROJ |
+| **C-222** | `WOLF_VOTE_CAST` 的可见性无回归锁：M2b 只把它改成 `public`，`--project unit` 74 files / 669 tests 全绿；`wolf-vote.test.ts:37` 只断言 REVEALED 的属性 | **Open（非阻塞，Round 1 新登记）** · `tests/engine/wolf-vote.test.ts:37`、`TEST-STRATEGY.md:490`；Round 1 §5 M2b / §4 C-222 |
+| **C-223** | 文档漂移：PRD D46 在变更记录表而非 Decisions（`PRD.md:424`）、PRD/RULES 头部版本未更新（`PRD.md:3`、`RULES.md:3`）、`TEST-STRATEGY.md:495` 引用不存在的 `CHANGE-REQUEST-011` §8、README 计数与 Reviewed 数不一致（`README.md:11`）、FEATURES F3/F10 未同步投票语义（`FEATURES.md:64,71`）且 RFC-017 Features 漏 F3（`RFCS.md:56`）、RFC-006 未标 `Spec changed` | **Open（非阻塞，Round 1 新登记）** · 见 Round 1 §4 C-223 |
+| **C-224** | `TARGET_NOT_ALIVE` 分支无测试（`night.ts:209-218`，覆盖率未覆盖行 210）；死狼不投票只被整局用例间接保护（M3 会打红 13 条）；建议补定向用例 | **Open（非阻塞，Round 1 新登记）** · `src/engine/phases/night.ts:209-218`；Round 1 §5 M3 / §4 C-224 |
+| **C-225** | 复盘时间线丢弃 `WOLF_VOTE_*`（`src/server/replay/snapshot.ts:77-125` 的 default），真相视图把 `WOLF_KILL_CHOSEN` 记在每个狼头上、不展示实际票（`src/server/view/truth.ts:58-70`）；RFC-013/014 未标 `Spec changed` | **Open（非阻塞，Round 1 新登记）** · `src/server/replay/snapshot.ts:77-125`、`src/server/view/truth.ts:58-70`；Round 1 §4 C-225 |
+| **C-226** | selfplay / 旧脚本仍保留 `WOLF_KILL` 分支（`src/server/selfplay/scripted-player.ts:69-72,140-145`），`legalActionFor` 没有 `wolf-vote`，模型返回非法动作时的回退会给 `undefined` 并让对局停住 | **Open（非阻塞，Round 1 新登记）** · `src/server/selfplay/scripted-player.ts:69-72,140-145`、`src/server/selfplay/runner.ts:123-131`；Round 1 §4 C-226 |
+| **C-227** | 旧测试/相位清单漂移：`tests/server/orchestrator.test.ts:484-493` 的 `isPlayerPhase` 清单没有 `NIGHT_WOLF_RUNOFF`；`tests/client/shoot.test.tsx:100` 用例名仍是「刀人提交 `WOLF_KILL`」 | **Open（非阻塞，Round 1 新登记）** · `tests/server/orchestrator.test.ts:484-493`、`tests/client/shoot.test.tsx:100-170`；Round 1 §4 C-227 |
+| **C-228** | `tests/engine/wolf-vote.test.ts:67-76` 有构造后 `void current` 的死代码，容易误以为重投分支被覆盖 | **Open（非阻塞，Round 1 新登记）** · `tests/engine/wolf-vote.test.ts:67-76`；Round 1 §4 C-228 |
+
+> **本轮登记的权威冲突**（`PRD > FEATURES > RULES > RFC`）：
+>
+> - **O-1**：RUL-13「每名存活狼各一票」vs RFC-017 §2.2 / §5 / AC-9「旧 `WOLF_KILL` 仍被接受」与「界面与 AI 不产生它」。按 RULES 优先：生产 AI 必须投票，`WOLF_KILL` 只能作为旧回放/测试兼容且不得让单狼决定；RFC 与 `CHANGE-REQUEST-011` 需修正。
+> - **O-2**：RFC-006 的 `kill → WOLF_KILL` 决策契约 vs RFC-017 的 AI 投票。C-216 若改 `DecisionSchema`，RFC-006 必须标 `Spec changed`；若只改映射，RFC-017 §8 必须记录该语义变更。
+> - **O-3**：AGENTS.md 硬规则 2 vs RFC-003 当前 `Spec changed`。用户需裁决：补一次 RFC-003 窄范围复核，或在 `RFCS.md` 记录「RFC-017 同时承担 RFC-003 本次规格变更」的例外；解决前 RFC-017 不进入 `Reviewed`。
+> - **O-4**：PRD D46 在 `## 变更记录` vs `## Decisions`。以 D46 的文本为准；位置需由 `/manage-changes` 修正。
+
+> **Round 1 后的状态**：C-216 ~ C-220、C-229 为阻塞；C-221 ~ C-228 为非阻塞。RFC-017 的 Status = **`Changes requested`**。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-20 | v2.154 | RFC-017 Round 1 评审（Status → `Changes requested`）：门禁 **92 files / 800 tests**、18/18 e2e、74 files / 669 tests 覆盖、100/100 selfplay。**C-216**（默认 LLM 仍 `WOLF_KILL`，AI 不投票）、**C-217**（活 `WOLF_KILL` 单狼可绕过 RUL-13）、**C-218**（`wolfVotes` / `wolfRunoff` 跨夜残留）、**C-219**（AC-6/7/8 计划测试不存在）、**C-220**（AC-8 界面票型跨夜/非实时）为阻塞；C-229（RFC-003 前置 `Spec changed`）为流程阻塞。C-221 ~ C-228 为非阻塞。探针从 `/tmp/howl-rfc017-r1/backup/` 文件备份恢复、三个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-017.md`](reviews/REVIEW-RFC-017.md) Round 1 |
 | 2026-11-20 | v2.153 | CHANGE-REQUEST-011 / RFC-017：RUL-13「狼队投票决定刀谁」（每人一票、平票重投、僵持取最小席位）。RFC-001/003/010 → Spec changed；新增 RFC-017（Implemented） |
 | 2026-11-20 | v2.152 | RFC-016 Round 2 复核（Status → Reviewed）：门禁 **89 files / 771 tests**、16/16 e2e、3/3 perf；冷启动 5 次中位 141ms（每次 231,963 字节）。C-205 / C-206 / C-207 / C-208 / C-209 关闭，C-211 / C-212 的用户点名项关闭；C-210 部分关闭（文档残留 a–e）；新增 C-213 / C-214 / C-215 为非阻塞。探针从 `/tmp/howl-rfc016-r2/backup/` 文件备份恢复、七个文件 MD5 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-016.md`](reviews/REVIEW-RFC-016.md) Round 2 |
 | 2026-11-20 | v2.151 | RFC-016 Round 1 修复（Status → Implemented）：Chromium 也跑跨浏览器用例、首屏改冷启动测量、首页不再请求 session、`test:perf` 入命令表、产物扫描扩到全部 chunk、文档同步 |

@@ -89,6 +89,15 @@ export function project(input: ProjectInput): ProjectedContext {
     knowledge: knowledgeOf(state, observer, visible, pending),
     legalTargets: legalTargetsOf(state, pending, aliveSeats, observer),
     pending,
+    ...(self.role === 'wolf' && self.alive
+      ? {
+          wolfVoteOpen: state.phase === 'NIGHT_WOLVES' || state.phase === 'NIGHT_WOLF_RUNOFF',
+          wolfCandidates:
+            state.phase === 'NIGHT_WOLF_RUNOFF'
+              ? [...(state.wolfRunoff ?? [])]
+              : aliveSeats.filter((seat) => seatAt(state, seat).role !== 'wolf'),
+        }
+      : {}),
   };
 }
 

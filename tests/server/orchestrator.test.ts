@@ -697,3 +697,46 @@ describe('猎人出局后仍由玩家决定是否开枪（回归：对局卡死�
     expect(registry.stateOf(result.record).phase).toBe('FINISHED');
   });
 });
+
+describe('RUL-13 · 玩家是狼时亲自投票', () => {
+  it('逐票询问，且玩家的票真的落进事件流', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 3,
+      playerSeat: 1,
+    });
+    expect(registry.stateOf(record).seats.find((seat) => seat.seat === 1)?.role).toBe('wolf');
+
+    const reads: string[] = [];
+    const result = await runGame({
+      registry,
+      session,
+      gameId: record.gameId,
+      input: {
+        async read(prompt) {
+          reads.push(prompt.kind);
+          return { kind: 'skip' };
+        },
+        close() {},
+      },
+      output: { emit() {}, async flush() {} },
+      decide: scriptedAgent,
+      maxSteps: 40,
+    });
+
+    const votes = result.record.events.filter((event) => event.type === 'WOLF_VOTE_CAST') as {
+      payload: { seat: number };
+    }[];
+    expect(reads).toContain('action');
+    expect(votes.some((event) => event.payload.seat === 1)).toBe(true);
+    // 玩家投的是 WOLF_VOTE，不是旧的一刀定胜负
+    expect(
+      result.record.events.some(
+        (event) =>
+          event.type === 'WOLF_KILL_CHOSEN' && (event.payload as { target?: number }).target === 1,
+      ),
+    ).toBe(false);
+  });
+});

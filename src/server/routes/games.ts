@@ -293,6 +293,15 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       });
     }
 
+    // RUL-13 之后刀口只能由狼队投票产生：旧客户端/脚本如果直接提交 WOLF_KILL，
+    // 等于用一个请求替全队做决定，必须拒绝（引擎仍接受它只是为了旧回放能重放）。
+    if (parsed.data.action.type === 'WOLF_KILL') {
+      return reply.code(400).send({
+        error: 'LEGACY_ACTION_DISABLED',
+        message: '狼刀已改为狼队投票，请提交 WOLF_VOTE',
+      });
+    }
+
     const seatOfAction = 'seat' in parsed.data.action ? parsed.data.action.seat : undefined;
     if (seatOfAction !== undefined && seatOfAction !== record.playerSeat) {
       return reply.code(403).send({
@@ -336,9 +345,7 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
     }
     if (
       accepted &&
-      (parsed.data.action.type === 'WOLF_VOTE' ||
-        parsed.data.action.type === 'WOLF_KILL' ||
-        parsed.data.action.type === 'SEER_CHECK')
+      (parsed.data.action.type === 'WOLF_VOTE' || parsed.data.action.type === 'SEER_CHECK')
     ) {
       channels.submit(record.gameId, String(parsed.data.action.target));
     }

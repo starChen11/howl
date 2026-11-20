@@ -13,6 +13,7 @@ export function NightAction({
   killTarget,
   wolfChats,
   wolfVotes,
+  waiting = false,
   onChat,
   onTarget,
   onWitch,
@@ -26,6 +27,8 @@ export function NightAction({
   wolfChats: { seat: number; text: string }[];
   /** 狼队当前票型（只有狼看得到）。 */
   wolfVotes: { seat: number; target: number }[];
+  /** 自己已投票、等队友：面板保留但只读。 */
+  waiting?: boolean;
   onChat: (text: string) => void;
   onTarget: (target: number) => void;
   onWitch: (choice: 'none' | `heal:${number}` | `poison:${number}`) => void;
@@ -126,9 +129,16 @@ export function NightAction({
             ))}
           </ul>
         )}
+        {waiting ? <p className="night__hint">你已投票，等待队友…</p> : null}
         <div className="night__buttons">
           {targets.map((seat) => (
-            <button key={seat} type="button" className="button" onClick={() => onTarget(seat)}>
+            <button
+              key={seat}
+              type="button"
+              className="button"
+              disabled={waiting}
+              onClick={() => onTarget(seat)}
+            >
               投 {seat} 号
             </button>
           ))}

@@ -137,7 +137,7 @@ export function buildUserMessage(ctx: ProjectedContext): string {
   }
   lines.push(`当前需要你做出：${ctx.pending ?? '无'} 决策。`);
   lines.push(
-    '可选动作：kill、check、heal、poison、none、vote、abstain、speak、skip、shoot、expose、chat。',
+    '可选动作：kill（夜里=投票给某个刀口）、check、heal、poison、none、vote、abstain、speak、skip、shoot、expose、chat。',
   );
 
   if (ctx.publicEvents.length > 0) {

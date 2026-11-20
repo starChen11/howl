@@ -106,9 +106,10 @@ describe('AC-10 · 发言与开枪', () => {
 
 describe('其余动作', () => {
   it('kill / check / heal / poison 各自映射到对应 action', () => {
+    // RUL-13：夜间 `kill` 现在翻译成狼队投票，而不是直接下刀。
     const night = { ...BASE, phase: 'NIGHT_WOLVES' as const, legalTargets: [1] as SeatId[] };
     expect(toAction(decision({ action: 'kill', target: 1 }), night, 1)).toEqual({
-      action: { type: 'WOLF_KILL', ts: 1, seat: 3, target: 1 },
+      action: { type: 'WOLF_VOTE', ts: 1, seat: 3, target: 1 },
     });
 
     const seer = { ...BASE, phase: 'NIGHT_SEER' as const, legalTargets: [1] as SeatId[] };

@@ -138,3 +138,19 @@ describe('RUL-13 · 狼队投票', () => {
     expect(result.events.some((event) => event.type === 'WOLF_KILL_CHOSEN')).toBe(true);
   });
 });
+
+describe('RUL-13 · 唱票后清空票型（不能带到下一夜）', () => {
+  it('分出结果后 wolfVotes 清空、wolfRunoff 不残留', () => {
+    const state = nightStart();
+    const pack = wolves(state);
+    const target = goodTarget(state);
+
+    let current = vote(state, pack[0] as number, target).state;
+    current = vote(current, pack[1] as number, target).state;
+    current = vote(current, pack[2] as number, target).state;
+
+    expect(current.phase).not.toBe('NIGHT_WOLVES');
+    expect(current.wolfVotes ?? []).toEqual([]);
+    expect(current.wolfRunoff).toBeUndefined();
+  });
+});

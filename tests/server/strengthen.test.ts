@@ -366,3 +366,31 @@ describe('C-127 · 重投的合法目标只有并列者', () => {
     expect(targets).not.toContain('abstain');
   });
 });
+
+describe('RUL-13 · 旧 WOLF_KILL 走路由会被拒绝', () => {
+  it('任何存活狼直接下刀都返回 LEGACY_ACTION_DISABLED', async () => {
+    const store = new InMemoryMetaStore();
+    const app = buildApp({ store });
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { mode: 'slaughter-side', seed: 3, playerSeat: 1 },
+    });
+    const raw = created.headers['set-cookie'];
+    const cookie = String(Array.isArray(raw) ? raw[0] : raw).split(';')[0] ?? '';
+    const { gameId } = created.json<{ gameId: string }>();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/games/${gameId}/actions`,
+      headers: { cookie },
+      payload: {
+        action: { type: 'WOLF_KILL', ts: 0, seat: 1, target: 2 },
+        expectedVersion: 1,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(expect.objectContaining({ error: 'LEGACY_ACTION_DISABLED' }));
+  });
+});

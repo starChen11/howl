@@ -283,3 +283,8 @@ $ pnpm test → 55 files / 458 tests
 ```
 $ pnpm test → 55 files / 458 tests
 ```
+
+### 8.9 Spec changed（CHANGE-REQUEST-011 / RFC-017）
+
+RUL-13 之后，模型在 `NIGHT_WOLVES` 的 `kill` 决策翻译为 `WOLF_VOTE`（狼队投票），
+不再直接产生 `WOLF_KILL`；提示词说明同步更新。

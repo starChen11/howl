@@ -207,3 +207,61 @@ describe('狼队频道：队友说过的话要能看到', () => {
     await screen.findByText(/4 号：今晚刀 3 号/);
   });
 });
+
+describe('RUL-13 · 狼队投票界面', () => {
+  function wolfVoteView(partial: Record<string, unknown> = {}) {
+    return {
+      ...hunterView(),
+      self: { seat: 1, role: 'wolf', alive: true, personaId: null },
+      phase: 'NIGHT',
+      aliveSeats: [1, 2, 3, 4],
+      deadSeats: [],
+      pending: 'wolf-vote',
+      legalTargets: [2, 3],
+      wolfVoteOpen: true,
+      wolfCandidates: [2, 3],
+      privateEvents: [
+        {
+          gameId: 'g',
+          seq: 2,
+          ts: 0,
+          type: 'WOLF_VOTE_CAST',
+          visibleTo: 'wolves',
+          payload: { seat: 4, target: 2 },
+        },
+      ],
+      ...partial,
+    };
+  }
+
+  function clientFor(view: unknown) {
+    return {
+      game: async () => ({ version: 3, view }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async () => ({ ok: true as const }),
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+  }
+
+  it('显示实时票型与候选，没有弃权', async () => {
+    render(<App gameId="g" client={clientFor(wolfVoteView())} />);
+
+    await screen.findByText(/4 号投 2 号/);
+    expect(screen.getByRole('button', { name: '投 2 号' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '投 3 号' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '弃权' })).toBeNull();
+  });
+
+  it('自己投完后保留面板并显示「等待队友」，按钮不可点', async () => {
+    render(
+      <App gameId="g" client={clientFor(wolfVoteView({ pending: null, legalTargets: [] }))} />,
+    );
+
+    await screen.findByText(/等待队友/);
+    expect((screen.getByRole('button', { name: '投 2 号' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+});

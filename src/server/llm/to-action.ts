@@ -114,7 +114,11 @@ function buildWithTarget(
 ): Action {
   switch (action) {
     case 'kill':
-      return { type: 'WOLF_KILL', ts, seat: ctx.seat, target };
+      // RUL-13：夜间下刀已经改成狼队投票。模型仍然输出 `kill`（提示词的最小改动），
+      // 这里按相位翻译成「投给某席位」而不是直接下刀。
+      return ctx.phase === 'NIGHT_WOLVES' || ctx.phase === 'NIGHT_WOLF_RUNOFF'
+        ? { type: 'WOLF_VOTE', ts, seat: ctx.seat, target }
+        : { type: 'WOLF_KILL', ts, seat: ctx.seat, target };
     case 'check':
       return { type: 'SEER_CHECK', ts, seat: ctx.seat, target };
     case 'heal':

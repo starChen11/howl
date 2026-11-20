@@ -297,33 +297,41 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         ) : null}
         {ctx.pending === 'chat' ||
         ctx.pending === 'kill' ||
-        ctx.pending === 'wolf-vote' ||
-        ctx.pending === 'wolf-runoff' ||
         ctx.pending === 'check' ||
-        ctx.pending === 'witch' ? (
+        ctx.pending === 'witch' ||
+        ctx.wolfVoteOpen === true ? (
           <NightAction
-            pending={ctx.pending}
-            wolfVotes={ctx.privateEvents
-              .filter((event) => event.type === 'WOLF_VOTE_CAST')
-              .map((event) => ({
-                seat: (event.payload as { seat: number }).seat,
-                target: (event.payload as { target: number }).target,
-              }))}
+            pending={
+              ctx.pending === 'wolf-vote' || ctx.pending === 'wolf-runoff'
+                ? ctx.pending
+                : ctx.wolfVoteOpen === true
+                  ? 'wolf-vote'
+                  : (ctx.pending as 'chat' | 'kill' | 'check' | 'witch')
+            }
+            waiting={
+              ctx.wolfVoteOpen === true &&
+              ctx.pending !== 'wolf-vote' &&
+              ctx.pending !== 'wolf-runoff'
+            }
+            targets={
+              ctx.wolfCandidates ??
+              ctx.legalTargets
+                .filter(
+                  (target) =>
+                    typeof target === 'number' &&
+                    target !== ctx.self.seat &&
+                    // 刀人不能指向队友（旧 WOLF_KILL 路径仍保留这一过滤）
+                    !(ctx.pending === 'kill' && ctx.knowledge.teammates.includes(target)),
+                )
+                .map((target) => Number(target))
+            }
+            wolfVotes={currentWolfVotes(ctx.privateEvents)}
             wolfChats={ctx.privateEvents
               .filter((event) => event.type === 'WOLF_CHAT_POSTED')
               .map((event) => ({
                 seat: (event.payload as { seat: number }).seat,
                 text: (event.payload as { text: string }).text,
               }))}
-            targets={ctx.legalTargets
-              .filter(
-                (target) =>
-                  typeof target === 'number' &&
-                  target !== ctx.self.seat &&
-                  // 不能刀队友：引擎会拒绝，列出来只会让玩家点到必然失败的选项。
-                  !(ctx.pending === 'kill' && ctx.knowledge.teammates.includes(target)),
-              )
-              .map((target) => Number(target))}
             potions={ctx.knowledge.potions}
             killTarget={ctx.knowledge.knownKillTarget}
             onChat={(text) => void nightAction({ type: 'WOLF_CHAT', text })}
@@ -378,4 +386,27 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
       )}
     </div>
   );
+}
+
+/**
+ * 当前这一轮狼队票型（RUL-13）。
+ *
+ * 不能把整局的 `WOLF_VOTE_CAST` 都算进去：唱票（`WOLF_VOTE_REVEALED`）会开新一轮，
+ * 跨夜与跨轮都要重置，否则界面会显示上一轮甚至上一夜的票。
+ */
+function currentWolfVotes(
+  events: { type: string; payload: unknown }[],
+): { seat: number; target: number }[] {
+  let current: { seat: number; target: number }[] = [];
+  for (const event of events) {
+    if (event.type === 'WOLF_VOTE_REVEALED') {
+      current = [];
+      continue;
+    }
+    if (event.type === 'WOLF_VOTE_CAST') {
+      const payload = event.payload as { seat: number; target: number };
+      current = [...current, { seat: payload.seat, target: payload.target }];
+    }
+  }
+  return current;
 }

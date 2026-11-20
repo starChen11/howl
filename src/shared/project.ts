@@ -55,5 +55,14 @@ export interface ProjectedContext {
   privateEvents: EventEnvelope[];
   knowledge: RoleKnowledge;
   legalTargets: (SeatId | 'abstain')[];
+  /**
+   * 狼队投票是否正在进行（RUL-13）。
+   *
+   * 只给**存活的狼**为 `true`：这是狼队内部流程，好人连「现在在投狼票」都不该知道。
+   * 玩家投完自己那一票后还能靠它看到实时票型与「等待队友」。
+   */
+  wolfVoteOpen?: boolean;
+  /** 狼队投票的候选（重投时只有并列者）。 */
+  wolfCandidates?: SeatId[];
   pending: PendingDecision;
 }

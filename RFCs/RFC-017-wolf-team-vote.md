@@ -1,6 +1,6 @@
 # RFC-017 · 狼队投票决定刀谁
 
-**Features**: F9, F10
+**Features**: F3, F9, F10
 **Depends on**: RFC-003, RFC-005
 **Rules**: ARCH-3, ARCH-11, DATA-2, RUL-13
 **Complexity**: Medium
