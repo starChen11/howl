@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.141 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-19
+> 版本 v2.142 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -51,7 +51,7 @@
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Reviewed |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
-| [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Implemented |
+| [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Changes requested |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Not started |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
@@ -1083,10 +1083,33 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 3 后的状态**：C-157 / C-160 / C-163（核心）/ C-171 / C-176 关闭；C-181 / C-182 / C-183 为非阻塞；C-177 ~ C-180、C-167 ~ C-175 未重查。RFC-014 的 Status = **`Reviewed`**。
 
+### 8.54 RFC-015 Round 1 评审（2026-11-20）
+
+> 由 `/review-rfc 015` 评审；完整证据见 [`reviews/REVIEW-RFC-015.md`](reviews/REVIEW-RFC-015.md) Round 1。评审时 HEAD `acb0967`，工作树 clean；门禁 **88 files / 756 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0、`pnpm test:e2e` **10/10 passed**、引擎覆盖率行 96.96% / 分支 92.85%。用户点名 **AC-5 / AC-6 / AC-8 / AC-9 与 CLI 子进程**。结论：**`Changes requested`**（6 条阻塞）。探针从 `/tmp/howl-rfc015-r1/` 文件备份恢复（**未用 `git checkout` / `git restore`**），`scripts/selfplay.ts` 与 `src/server/selfplay/runner.ts` 的 SHA-256 探针前后一致；临时探针测试已删除；工作树 clean；没有 `git commit`。
+
+| # | 发现 | 状态与痕迹 |
+|---|---|---|
+| **C-184** | **AC-6 不成立：** 实现缺陷归类只在 `GAME_ENDED` 缺失时执行（`runner.ts:121-145`）；已结束局里的玩家拒绝被静默忽略。官方两条 AC-6 用例都不测 runner 归类（`tests/server/selfplay.test.ts:49-74` 手工拼 `summarize`，`:167-190` 只 `toHaveLength(1)`；P-1 实测 `events:1`、`kind:'model'`）。固定 `kind='model'` 后 **8/8 绿**（M-2）；§8.4 的 AC-6 PASS 与实测不符 | **Open（阻塞，Round 1 新登记）** · `src/server/selfplay/runner.ts:121-158`、`tests/server/selfplay.test.ts:49-74,167-190`；`reviews/REVIEW-RFC-015.md` §2.2 / M-2 |
+| **C-185** | **AC-9 的 replay 没有回归锁：** 官方用例只断言 seq（`selfplay.test.ts:119-137`），没有调用 `replay`；把传给 `onGame` 的事件截掉最后一条（replay 落到 `NIGHT_RESOLVE`）后 **8/8 仍绿**（M-4）。行为本身成立（100/100 replay 到 `FINISHED`，P-8），但 `TEST-STRATEGY.md:386` 计划的「replay 通过」没落地 | **Open（阻塞，Round 1 新登记）** · `tests/server/selfplay.test.ts:119-137`、`TEST-STRATEGY.md:386`；`reviews/REVIEW-RFC-015.md` §2.4 / M-4 / P-6 / P-8 |
+| **C-186** | **AC-7 的计划测试未落地：** `TEST-STRATEGY.md:385` 的 100 局内存采样用例不存在；RFC §8.4 只有手工记录，§8.6 未说明为何不可自动化。手工实测 100/100、real 1.67s、peak RSS 约 83 MB（10 局也 83 MB） | **Open（阻塞，Round 1 新登记）** · `RFCs/RFC-015-headless-selfplay.md:130,147`、`TEST-STRATEGY.md:385`；`reviews/REVIEW-RFC-015.md` §3 AC-7 / P-9 |
+| **C-187** | **AC-5 的写盘边界不成立：** `onGame` 抛错后 `catch` 再次调用 `onGame` 并逃逸（`runner.ts:163-174`），整批 reject；第一次成功 outcome 与第二次失败 outcome 还会重复。P-2 实测「磁盘写入失败」从 `runner.ts:174` 抛出 | **Open（阻塞，Round 1 新登记）** · `src/server/selfplay/runner.ts:143,158,159-175`；`reviews/REVIEW-RFC-015.md` §2.1 / P-2 |
+| **C-188** | **DATA-5 违规 / 批次不可复现：** `scripted-player.ts:30,99` 使用 `Math.random`，RFC 未说明为何不需要可复现；同 seed 三次 `--games=100` 狼人胜率 73.0% / 77.0% / 78.0%（P-9） | **Open（阻塞，Round 1 新登记）** · `src/server/selfplay/scripted-player.ts:13,30,99`、`RULES.md:166`（DATA-5）；`reviews/REVIEW-RFC-015.md` §4.1 / P-9 |
+| **C-189** | **CLI 测试跨平台不成立：** `tests/server/selfplay.test.ts:202-206` 直接 `execFile('pnpm', ...)`，没有 meta helper 的 Windows `.cmd` / `shell` 处理；Windows 上 `pnpm test` 会在这条用例失败 | **Open（阻塞，Round 1 新登记）** · `tests/server/selfplay.test.ts:192-225`、`tests/meta/helpers/run.ts:6-16`；`reviews/REVIEW-RFC-015.md` §2.5 |
+| **C-190** | AC-2 测试只断言 `outcome.seed` 与文件名（二者都由 `seed + index` 派生）；把 `createGame` 实际 seed 改成常数仍绿（M-5）。当前输出 `GAME_STARTED.seed` 确实是 1/2/3 | **Open（非阻塞，Round 1 新登记）** · `src/server/selfplay/runner.ts:53-60`、`tests/server/selfplay.test.ts:14-26`；M-5 |
+| **C-191** | 失败局的 usage 不计入 summary（`report.ts:77-80`）；P-7 实测失败局已记 15 token，summary 仍为 0 | **Open（非阻塞，Round 1 新登记）** · `src/server/selfplay/report.ts:56-82`、`src/server/selfplay/runner.ts:163-173`；P-7 |
+| **C-192** | 失败记录缺错误类型（只有 `kind` + `error`，丢弃 `LlmError.code` / `Error.name`）；summary 无 model/implementation 分项计数；CLI 只打印成/败 | **Open（非阻塞，Round 1 新登记）** · `src/server/selfplay/report.ts:10-14`、`src/server/selfplay/runner.ts:137-141,168-172`、`RFCs/RFC-015-headless-selfplay.md:45` |
+| **C-193** | DOC-1：`game-<seed>.jsonl` 命名（RFC 写 `events.jsonl`）与 `beforeGame` 测试缝未登记；§8.4 AC-6/7/9 的证据表述与实测不一致；失败局写空文件未说明 | **Open（非阻塞，Round 1 新登记）** · `RFCs/RFC-015-headless-selfplay.md:92-149`、`scripts/selfplay.ts:69-75`、`runner.ts:44-45,174` |
+| **C-194** | 提交了生成物：`reports/game-1.jsonl`（0 字节）与 `reports/summary.json`（缺 key 的失败运行）；`.gitignore` 未忽略 `reports/`，默认 `--out=./reports` 会修改已跟踪文件 | **Open（非阻塞，Round 1 新登记）** · `reports/summary.json`、`.gitignore`、`scripts/selfplay.ts:39` |
+| **C-195** | 文档漂移：README `:11,18,36-37` 仍写 720 用例 / 八个 RFC / 剩余 014-016；`TEST-STRATEGY.md:32-33` 写 88 files / 720 tests（实为 756）、`:38` 仍称 15 个 proposed、`:133` 引用已删除的 `selfplay-placeholder.test.ts`、RFC-015 小节仍 `proposed` | **Open（非阻塞，Round 1 新登记）** · `README.md:11,18,36-37`、`TEST-STRATEGY.md:32-33,38,133,377-386` |
+| **C-196** | `legalActionFor` 的 kill 兜底在无合法目标时返回「刀自己」（`scripted-player.ts:122-126`），不是合法动作；当前路径很窄 | **Open（非阻塞，Round 1 新登记）** · `src/server/selfplay/scripted-player.ts:122-126` |
+
+> **Round 1 后的状态**：C-5（RFC-001 的 `pnpm selfplay` 占位偏离）已由 AC-8 的实跑与 M-1 反向探针消除；C-184 ~ C-189 为阻塞，C-190 ~ C-196 为非阻塞。RFC-015 的 Status = **`Changes requested`**。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-20 | v2.142 | RFC-015 Round 1 评审（Status → `Changes requested`）：门禁 88 files / 756 tests、10/10 e2e、覆盖率 96.96% / 92.85% 全绿。用户点名 AC-5 / AC-6 / AC-8 / AC-9 与 CLI 子进程。**AC-6 不成立**——归类只在无 `GAME_ENDED` 时执行，已结束局里的玩家拒绝被静默忽略；两条官方 AC-6 用例都不测 runner 归类，固定 `kind='model'` 后 8/8 仍绿（M-2）。**AC-9** 行为成立（100/100 replay FINISHED）但官方用例只锁 seq，截掉最后一条事件仍 8/8 绿（M-4）。**AC-7** 计划的内存用例未落地，仅手工记录；**AC-5** 的 `onGame` 写盘失败会双记并中止整批（P-2）。新增阻塞 C-184 ~ C-189：AC-6、AC-9 测试、AC-7 测试、`onGame` 隔离、DATA-5 的 `Math.random`（同 seed 三次 73/77/78%）、Windows CLI 用例；非阻塞 C-190 ~ C-196（AC-2 测试、失败局 usage、错误类型、DOC-1、reports 生成物、文档漂移、kill 兜底）。C-5 偏离消除。探针从 `/tmp/howl-rfc015-r1/` 文件备份恢复、两个源码文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-015.md`](reviews/REVIEW-RFC-015.md) Round 1 |
 | 2026-11-20 | v2.141 | RFC-015 实现完成（Status → Implemented）：`pnpm selfplay` 串行批量、种子递增、失败隔离、实现缺陷单独归类、汇总与 JSONL 输出 |
 | 2026-11-19 | v2.140 | RFC-014 Round 3 复核（Status → Reviewed）：C-157 / C-160 / C-163（核心）/ C-171 / C-176 关闭；M3-A ~ M3-D 打红，P-R3-1 / P-R3-2 全链路通过；新增非阻塞 C-181（派生标签未比对）、C-182（`GAME_ENDED` 时间线条目未断言）、C-183（无快照失败时 App 永久 loading）。门禁 87 files / 748 tests、10/10 e2e；探针从 `/tmp/howl-rfc014-r3/backup/` 文件备份恢复、6 个源码文件 SHA-256 全 `OK`、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-014.md`](reviews/REVIEW-RFC-014.md) Round 3 |
 | 2026-11-19 | v2.139 | RFC-014 Round 2 修复（Status → Implemented）：`game()` 非 2xx 抛错并回落复盘、终局后追加事件重建快照、用量接线测试缝、时间线逐条相等、身份/人格/结果与状态比对 |
