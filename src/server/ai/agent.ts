@@ -28,6 +28,16 @@ export type Decider = (input: {
 
 export type AgentKind = 'llm' | 'scripted';
 
+/** 确定性哈希：把字符串混成一个 32 位数（FNV-1a）。 */
+function fnv(input: string): number {
+  let hash = 2166136261;
+  for (const char of input) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
 /**
  * 从投影里挑一个合法目标（跳过自己与狼队友）。
  *
@@ -47,12 +57,10 @@ function pickTarget(ctx: ProjectedContext, phase?: string): number | 'abstain' |
     return ctx.legalTargets.includes('abstain') ? 'abstain' : undefined;
   }
 
-  // 只在**投票**时分散目标：夜间行动保持原来的「第一个合法目标」，
-  // 这样固定种子的 e2e（例如某席位第一夜被刀）仍然稳定可复现。
-  if (phase !== 'DAY_VOTE' && phase !== 'DAY_VOTE_RUNOFF') return candidates[0];
-
-  const index = (ctx.day * 31 + ctx.self.seat * 17 + ctx.self.seat) % candidates.length;
-  return candidates[index];
+  // 所有需要目标的选择都分散开：狼刀、查验、开枪、投票。
+  // 用 FNV-1a 把「天 / 席位 / 相位」混成一个数再取模：比线性组合分散得均匀，
+  // 但仍然是确定性的，所以同一 seed 的批次可复现。
+  return candidates[fnv(`${ctx.day}|${ctx.self.seat}|${phase ?? ''}`) % candidates.length];
 }
 
 /** 脚本化替身：每个阶段都给出一个合法动作，足以把一局推完。 */
@@ -72,8 +80,45 @@ export const scriptedAgent: Decider = async ({ seat, ctx, phase }) => {
       return target === undefined
         ? { action: undefined }
         : { action: { type: 'SEER_CHECK', ts, seat: seat as never, target: target as never } };
-    case 'NIGHT_WITCH':
+    case 'NIGHT_WITCH': {
+      // 用药的角色不再永远「不用药」：按确定性哈希在**可用**的选项里挑。
+      // 必须检查药的剩余次数与自救限制（FR-17），否则引擎会拒绝。
+      const potions = ctx.knowledge.potions;
+      const killTarget = ctx.knowledge.knownKillTarget;
+      const canHeal = potions.heal === 'available' && killTarget !== null && killTarget !== seat;
+      const poisonTarget = pickTarget(ctx, 'NIGHT_WITCH');
+      const canPoison = potions.poison === 'available' && typeof poisonTarget === 'number';
+
+      const options: ('none' | 'heal' | 'poison')[] = ['none'];
+      if (canHeal) options.push('heal');
+      if (canPoison) options.push('poison');
+
+      const choice = options[fnv(`${ctx.day}|${seat}|witch`) % options.length] ?? 'none';
+      if (choice === 'heal' && killTarget !== null) {
+        return {
+          action: {
+            type: 'WITCH_ACT',
+            ts,
+            seat: seat as never,
+            potion: 'heal',
+            target: killTarget as never,
+          },
+        };
+      }
+      if (choice === 'poison' && typeof poisonTarget === 'number') {
+        return {
+          action: {
+            type: 'WITCH_ACT',
+            ts,
+            seat: seat as never,
+            potion: 'poison',
+            target: poisonTarget as never,
+          },
+        };
+      }
       return { action: { type: 'WITCH_ACT', ts, seat: seat as never, potion: 'none' } };
+    }
+
     case 'DAY_SPEECH':
       return { action: { type: 'SPEECH', ts, seat: seat as never, text: '我先过，听后面的。' } };
     case 'DAY_VOTE':
