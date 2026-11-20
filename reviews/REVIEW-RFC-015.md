@@ -856,3 +856,258 @@ C-195 原本包含的「TEST-STRATEGY 720 / 15 proposed / placeholder 引用」�
 **Improvement Suggestions（非阻塞）**：C-202（两类失败局 token 漏计）、C-195 的剩余文档漂移；C-184 修法见 §3.3；C-190 / C-192 / C-193 / C-196 ~ C-201 仍按 Round 1/2 记录。
 
 **状态**：`RFCS.md` 中 RFC-015 的 Status 置为 **`Changes requested`**；C-187 / C-189 / C-191 标记 Closed，C-184 保持 Open（阻塞），C-195 标记「部分修复、仍 Open（非阻塞）」，新增 C-202 为非阻塞；C-185 / C-186 / C-188 / C-194 与其余 Round 1/2 非阻塞项未重查。本轮探针从 `/tmp/howl-rfc015-r3/backup/` 文件备份恢复，三个文件 SHA-256 一致；临时探针已删除；没有 `git commit`；除本评审记录与 `RFCS.md` 外，工作树 clean。
+
+## Round 4 -- 2026-11-20
+
+> 评审时间：2026-11-20 · 被评审提交：`d0082e2 fix(rfc-015): runner 真正调用分类、端到端拒绝用例与 usage 补齐（Round 3）` · HEAD `d0082e2`
+> 评审方式：全新上下文的 subagent，只读仓库文件；本会话没有写过 RFC-015 的实现代码。
+> 结论：**Reviewed** · Overall Risk Level: **Low**
+
+本轮按用户指定只复核 **C-184**（Round 3 的唯一阻塞项）、**C-202** 与 **C-195**（Round 3 的非阻塞声明）；已关闭项 C-185 / C-186 / C-188 / C-194 与未点名的 C-187 / C-189 / C-191、C-190 / C-192 / C-193 / C-196 ~ C-201 不重查。先给结论表，再展开。
+
+### 4.0 结论表
+
+| Round 3 项 | 本轮结论 | 最短证据 |
+|---|---|---|
+| **C-184** 成局扫描回归锁 | **闭合** | `runner.ts:152` 已调用 `classifyFinished`；新 e2e 用例 `tests/server/selfplay.test.ts:408-434` 真的打到 `GAME_ENDED`（P-R4-1：45 事件、末条 `GAME_ENDED`、`REJECTED self:1 VOTE TARGET_NOT_ALIVE`）。把调用改成 `null` 后该文件 **1 failed / 17 passed**（M-R4-1）。 |
+| **C-202** 两类失败路径挂 `usage` | **闭合（行为）；回归锁缺失登记为 C-203** | `runner.ts:140`（未终局）与 `:159`（成局但玩家被拒）都已带 `usage: usageOf(...)`。P-R4-2a 得到 2 次调用 / 224 input，P-R4-2b 得到 23 次 / 4669 input，`summarize()` 与 outcome 相等。但删掉这两行后官方套件仍 **18/18 绿**（M-R4-2）。 |
+| **C-195** 文档同步 | **仍 Open（非阻塞，部分修复）** | 头部 766 与 README 766 已对；RFC-015 五行均 `existing`，`selfplay-placeholder` 已改成 `selfplay-entry`。但 `TEST-STRATEGY.md:38` 仍声称 RFC-001~015 全部 `existing`（实际 RFC-010 `:306-312` 与 RFC-014 `:366-371` 还有 13 行 `proposed`）；`:133` 的描述仍是旧的「退出码 1 + stderr 含未实现」，与 `tests/meta/selfplay-entry.test.ts:22-24` 的 exit 0 / 不含「未实现」相反。 |
+
+### 4.1 STEP 0 · 实跑门禁
+
+环境：macOS · Node `v22.22.2` · pnpm `10.33.0` · HEAD `d0082e2` · 评审开始时 `git status --porcelain` 为空。
+
+```text
+$ pnpm typecheck            → exit 0
+$ pnpm lint                 → exit 0
+$ pnpm format:check         → All matched files use Prettier code style! → exit 0
+$ pnpm build                → client 139 modules / server 65 modules → exit 0
+$ pnpm test                 → Test Files 88 passed (88) / Tests 766 passed (766) → exit 0（42.49s）
+$ pnpm test:e2e             → 10 passed (11.6s) → exit 0
+$ pnpm exec vitest run --project unit --coverage
+                            → 72 files / 651 tests；All files 行 97.14% / 分支 93.11% → exit 0
+$ pnpm exec vitest run --project unit tests/server/selfplay.test.ts
+                            → 18 passed（1.28s）→ exit 0
+```
+
+runtime 实证：
+
+```text
+$ HOWL_FAKE_AI=1 pnpm selfplay --games=3 --seed=1 --out=/tmp/howl-rfc015-r4/out3
+  跑完 3 局：成 3 / 败 0；狼人胜率 100.0%；平均 72.0 条事件、0.0 秒
+  exit 0；summary.json + game-1/2/3.jsonl
+
+$ /usr/bin/time -l env HOWL_FAKE_AI=1 pnpm selfplay --games=100 --seed=1000 --out=/tmp/howl-rfc015-r4/out100
+  跑完 100 局：成 100 / 败 0；狼人胜率 74.0%；平均 76.3 条事件、0.0 秒
+  exit 0；real 1.65s；peak memory footprint 82,957,856 bytes（约 83.0 MB）
+  summary.usage = 0（HOWL_FAKE_AI，无真实 API 调用）
+```
+
+探针恢复后用文件备份重算 SHA-256，三个文件与探针前一致：
+
+```text
+9305ba35911c83f417d72de10516fe214626c210401943992dc32d8f3b92b4ca  src/server/selfplay/runner.ts
+a4dbd5e3bf966260aa2edb4fec2a7fad6b2239337bfa1b26124417c3f9134bfc  src/server/selfplay/report.ts
+d3aeef3b7424c960a89cd8adf72919bac28cea5cec10a38bef3f4fc7ba26ddca  tests/server/selfplay.test.ts
+```
+
+临时探针 `tests/server/__probe-rfc015-r4.test.ts` 已删除；探针结束时 `git status --porcelain` 为空；没有 `git commit`。
+
+### 4.2 产品类型
+
+`PRD.md` 的 **Product Type** 为 **game（主）+ web app（交付形态）**（`PRD.md:20-22`）。RFC-015 是验证工具而不是玩家可见界面：适用检查是 CLI 可执行性、失败隔离、输出契约、可重放性与跨平台；不适用浏览器、响应式、键盘/读屏等 web app 检查。本 RFC 没有 UI 改动，`test:e2e` 10/10 是回归证据，不是本 RFC 的验收手段。
+
+### 4.3 C-184 · AC-6：runner 级回归锁已成立
+
+**代码接线正确。** `runner.ts:152` 现在是：
+
+```ts
+const playerRejection = classifyFinished(finished.events, record.playerSeat);
+```
+
+成局分支不再内联重复分类；`classifyFinished` 定义在 `runner.ts:248-259`，通过 `findPlayerRejection`（`:227-240`）按 `visibleTo === self:<playerSeat>` 与动作类型过滤。未终局分支仍保留自己的归类逻辑（`:128-146`），但那是另一条路径，不是 Round 3 所说的成局重复分类。
+
+**官方用例真的走 runner 的成局扫描（P-R4-1）。** 用与官方用例相同的 `playerInput` 场景（seed 3，第一次投票投 `deadSeats[0]` = 2，之后弃权），在 `onGame` 里抓事件流：
+
+```text
+P-R4-1
+  outcome { seed: 3, ok: false, events: 45,
+            failure: { seed: 3, kind: 'implementation',
+                       error: 'TARGET_NOT_ALIVE：座位 2 已出局，不能投' } }
+  eventCount 45
+  lastEvent 'GAME_ENDED'
+  gameEndedCount 1
+  rejected [{ visibleTo: 'self:1', actionType: 'VOTE', code: 'TARGET_NOT_ALIVE' }]
+```
+
+这说明对局真的打到了 `GAME_ENDED`，随后才被成局扫描归类；不是未终局分支的假象。
+
+**反向锁成立（M-R4-1）。** 把 `runner.ts:152` 的调用改成 `null`（保留其余代码）后：
+
+```text
+$ pnpm exec vitest run --project unit tests/server/selfplay.test.ts
+  Tests  1 failed | 17 passed (18)
+  FAIL ... C-184（Round 3）· 端到端：玩家投已出局席位 → 实现缺陷
+  AssertionError: expected true to be false
+  ❯ tests/server/selfplay.test.ts:430:29
+```
+
+这正是 Round 3 要求的「关掉判定会红」。它证明新用例经过 runner 的成局扫描，而不是只测纯函数。
+
+**C-184 判定：闭合。** 阻塞项清零。
+
+**非阻塞的加固建议（C-204）：**
+
+- 新用例只断言 `ok` / `failure.kind` / error 文本，没有断言事件流真的含 `GAME_ENDED`。本轮 P-R4-1 证明它现在确实含；若未来编排变化让该局不再终局，用例会退化成走未终局分支而仍然绿。建议在 `onGame` 里抓事件流并加 `expect(events.at(-1)?.type).toBe('GAME_ENDED')` 与 `expect(events.length).toBeGreaterThan(0)`。
+- `selfplay.test.ts:284-316` 的纯函数用例仍没有 `expect(finished.length).toBeGreaterThan(0)`；`finished` 为空时 `classifyFinished(finished, 1)` 返回 `null`，第一个 `toBeNull()` 仍会通过。
+- `classifyFinished` 的 JSDoc（`runner.ts:245-246`）仍写「真正的玩家输入通道在服务端会截断/归一化，很难从端到端制造一次拒绝」，与 P-R4-1 / 新官方用例直接矛盾；应改成「端到端用例用 `playerInput` 造拒绝」或删掉这句。
+
+### 4.4 C-202 · 两类失败路径的 usage：行为闭合，回归锁缺失
+
+`runner.ts:140`（未终局）与 `:159`（成局但玩家被拒）都已挂 `usage: usageOf(record.gameId)`。用临时探针注入 `recordUsage` 后实测：
+
+```text
+P-R4-2a · 未终局（maxSteps=2）
+  outcome { seed: 12, ok: false, events: 3,
+            usage: { calls: 2, inputTokens: 224, outputTokens: 112, cachedTokens: 0 },
+            failure: { seed: 12, kind: 'model', error: 'UNFINISHED：对局没有结束' } }
+  summarize(outcomes).usage = 同上
+
+P-R4-2b · 成局但玩家被拒（seed 3，投已出局席位）
+  outcome { seed: 3, ok: false, events: 45,
+            usage: { calls: 23, inputTokens: 4669, outputTokens: 2334.5, cachedTokens: 0 },
+            failure: { seed: 3, kind: 'implementation',
+                       error: 'TARGET_NOT_ALIVE：座位 2 已出局，不能投' } }
+  summarize(outcomes).usage = 同上
+```
+
+所以 C-202 的原始缺陷（两类失败局 token 在 outcome 与 summary 里都是 0）已修复，**判定闭合**。
+
+**但官方套件没有锁（M-R4-2，登记为 C-203，非阻塞）。** 把 `runner.ts` 里这两行 10 空格缩进的 `usage: usageOf(record.gameId),` 删掉后，`tests/server/selfplay.test.ts` **18/18 仍绿**：
+
+```text
+$ pnpm exec vitest run --project unit tests/server/selfplay.test.ts
+  Tests  18 passed (18)
+```
+
+C-191 的官方用例只测 `summarize` 对带 usage 的 outcome 求和，不测 runner 是否把 usage 挂到这两条路径。建议把 P-R4-2a / P-R4-2b 的场景落成正式用例（用 `decide` 包装 `recordUsage`，断言两条 outcome 的 `usage.calls > 0` 且 `summarize` 相等）。
+
+### 4.5 C-195 · 文档同步：头部数字已对，仍有三处实质漂移
+
+| 文件 / 行 | 本轮实测 | 结论 |
+|---|---|---|
+| `TEST-STRATEGY.md:33` | `Tests 766 passed (766)`；实跑 88 files / 766 tests | **正确** |
+| `README.md:11,18` | 766 个用例；实跑 766 | **正确** |
+| `TEST-STRATEGY.md:381-385` | RFC-015 五行均为 `existing: tests/server/selfplay.test.ts + tests/meta/selfplay-entry.test.ts` | **正确** |
+| `TEST-STRATEGY.md:133` | 文件名已改成 `tests/meta/selfplay-entry.test.ts`，但描述仍是「退出码 1，stderr 同时含『未实现』与 `RFC-015`（M10）」；实际用例 `selfplay-entry.test.ts:22-24` 断言 `code === 0`、stdout 含「跑完 1 局」、stderr **不含**「未实现」 | **仍漂移**：描述与现行断言相反 |
+| `TEST-STRATEGY.md:38` | 声称「RFC-001 ~ 015 的用例已落地（`existing`），RFC-016 待实现」；但 RFC-010 小节 `:306-312` 有 7 行、RFC-014 小节 `:366-371` 有 6 行仍是 `proposed` | **仍漂移**：按文件自己的 `Exists?` 列，13 行不是 `existing` |
+| `TEST-STRATEGY.md:32` | 注释 `unit 68 + client 4 + meta 7`；实测 unit 72 + client 9 + meta 7 = 88 files | **仍漂移（轻微）** |
+| `README.md:11` | 覆盖率「行 96.96% / 分支 92.85%」；本轮实跑 97.14% / 93.11% | **仍漂移（轻微）** |
+| `README.md:11,36` | 「15 个 `Reviewed`、0 个 `Changes requested`」在本轮置 `Reviewed` 后成立 | **本轮结论下正确** |
+
+**C-195 判定：仍 Open（非阻塞，部分修复）。** 用户在本轮说明里称「proposed 计数与占位测试引用已同步」，但 `:38` 的「全部 existing」与 13 行 `proposed` 自相矛盾，`:133` 的占位测试描述仍与现行用例相反；这两处不是格式问题，会误导下一次实现/评审。它们不阻塞 RFC-015 的 `Reviewed`，但应在本轮后单独收掉。
+
+### 4.6 逐条 AC
+
+| AC | 判定 | 会红 / 不会红 | 证据与说明 |
+|---|---|---|---|
+| 1 · 无浏览器跑 3 局、exit 0 | **PASS** | 会红（CLI 子进程） | `HOWL_FAKE_AI=1 pnpm selfplay --games=3 --seed=1` exit 0；CLI 用例仍在 766 用例内。 |
+| 2 · 第 N 局 seed + N | **PASS（测试偏弱，C-190 未重查）** | 不会红（C-190 沿旧） | 输出为 game-1/2/3；本轮未重查 C-190。 |
+| 3 · 输出 summary + 每局事件流 | **PASS** | 会红（文件断言） | 3 局目录含 `summary.json` + `game-1/2/3.jsonl`；CLI 用例断言 `game-3/4.jsonl`。 |
+| 4 · summary 字段齐全 | **PASS（C-202 已闭合）** | 会红（report 单测）；失败路径 usage 无锁（C-203） | 局数/成功/失败/原因/胜负/降级/token 均有；P-R4-2 两条失败路径 usage 非 0。 |
+| 5 · 单局失败不终止整批 | **PASS** | 会红（C-187 M-R3-2） | Round 3 已闭合，本轮未重查；完整套件绿。 |
+| 6 · 非法行动归为「实现缺陷」 | **PASS** | 会红（M-R4-1：1 failed / 17 passed） | P-R4-1 真实完成局 45 事件、`GAME_ENDED`、`REJECTED self:1 VOTE TARGET_NOT_ALIVE`、`kind:'implementation'`。 |
+| 7 · 100 局不崩溃、内存不线性增长 | **PASS（行为）/ 测试偏弱** | 不会红（C-197 未重查） | 100 局 1.65s、peak 83.0MB；30 局 96MB 阈值仍不能证明非线性（C-197 沿旧）。 |
+| 8 · 占位行为移除 | **PASS** | 会红（meta 用例） | `pnpm selfplay` exit 0；`tests/meta/selfplay-entry.test.ts` 断言 exit 0 且无「未实现」，完整套件通过。 |
+| 9 · seq 连续且 replay | **PASS** | 会红（C-185 用例） | C-185 已闭合，本轮未重查；P-R4-1 的事件流末条为 `GAME_ENDED`，完整套件绿。 |
+
+### 4.7 维度结论
+
+#### 4.7.1 RFC ADHERENCE — **PASS**
+
+- AC-1 / 3 / 4 / 5 / 8 / 9 的行为与主要断言成立；AC-5 的未终局写盘路径在 Round 3 已闭合。
+- **AC-6 的 runner 级验收测试现在成立**：M-R4-1 打红，P-R4-1 证明走到 `GAME_ENDED` 后再分类。Round 3 的阻塞项关闭。
+- AC-4 的 token 合计在两类失败路径上已补齐（C-202 闭合），但官方套件没有对应回归锁（C-203，非阻塞）。
+- C-195 的文档漂移仍在，属于 DOC-1 的非阻塞残余。
+
+#### 4.7.2 RULES COMPLIANCE — **PASS（有非阻塞残余）**
+
+| 规则 | 判定 | 证据 |
+|---|---|---|
+| **OPS-3** | **PASS** | 3 局与 100 局均无浏览器、无 Vite、无 DOM，exit 0；100 局 1.65s。 |
+| **TEST-1** | **PASS（AC-6 已补锁）/ 残余** | AC-6 有 runner 级用例（M-R4-1 红）；AC-4 的失败路径 usage 仍无官方用例（C-203）。 |
+| **TEST-4** | **PASS** | 全部 selfplay 用例用 `scriptedAgent`；CLI 用 `HOWL_FAKE_AI=1`；无网络。 |
+| **TEST-5** | **PASS** | `typecheck` / `lint` / `format:check` / `test` / `build` 全 0；`test:e2e` 10/10。 |
+| **DATA-4 / DATA-5** | **PASS（未重查）** | 沿用 Round 2 的 `mulberry32(seed)` 证据；本轮同 seed 100 局胜率 74.0%，与 Round 3 一致。 |
+| **DATA-6** | **PASS** | 100 局 peak 83.0MB，与 10 局同量级；每局新建 `InMemoryMetaStore` / `GameRegistry`。 |
+| **DOC-1** | **NEEDS WORK（非阻塞）** | `classifyFinished` 的 JSDoc 仍称端到端很难制造拒绝（C-204）；C-195 的 TEST-STRATEGY 三处漂移未修。 |
+| **ARCH-1** | **PASS** | `src/engine/` 未新增依赖；selfplay 在 `src/server/` 复用 `runGame`。 |
+| **跨平台（AGENTS.md）** | **PASS（静态）** | 新用例无平台相关代码；Round 3 的 CLI 跨平台写法未变，本机非 Windows 未实跑。 |
+
+#### 4.7.3 SECURITY — **PASS**
+
+- selfplay 只在本地写文件，不启动 Fastify / Vite，不发网络请求；`HOWL_FAKE_AI=1` 路径零 API 费用。
+- `summary.json` 不含 key；错误消息经既有 `client.ts` 脱敏；`reports/` 仍被 `.gitignore` 忽略。
+- 事件流 JSONL 含 `GAME_STARTED` 的全身份，但只写开发者指定的本地目录，不是 SEC-5 的客户端投影泄漏。
+- 本轮改动只把既有 `usage` 计数带到失败 outcome；没有新增注入 / XSS 面。
+
+#### 4.7.4 PERFORMANCE — **PASS**
+
+- 100 局 real 1.65s；`/usr/bin/time -l` peak 82,957,856 bytes（约 83.0 MB）；3 局 0.0 秒。串行执行符合 RFC §6。
+- 每局新建 `InMemoryMetaStore` / `GameRegistry`，旧局不保留引用；`usage.ts` 的模块级 Map 每局一条，量级可忽略。
+- C-197（30 局阈值不敏感）沿旧，本轮未重查。
+
+#### 4.7.5 MAINTAINABILITY — **PASS（有非阻塞残余）**
+
+- `runner.ts` 的成局分支已改为调用 `classifyFinished`，删掉了 Round 3 指出的重复分类；`report()` / `scripted-player.ts` 职责仍分开。
+- **未终局分支仍保留一套独立归类**（`runner.ts:128-146`）：按最后一条 `REJECTED` 的 `actionType` 判断，不按 `visibleTo` 归属。它与成局分支的语义不同，当前不是 C-184 的问题，但两套逻辑未来可能漂移；建议后续统一或至少补注释。
+- C-203 / C-204 是测试与注释层面的非阻塞加固项。
+- C-190 / C-192 / C-193 / C-196 ~ C-201 沿 Round 1/2 记录，本轮未重查。
+
+### 4.8 发现汇总
+
+#### 阻塞（必须修复后才能合并）
+
+**无。** C-184 已闭合。
+
+#### 非阻塞（建议合并前一起修）
+
+| # | AC / 规则 | 发现 | 建议 |
+|---|---|---|---|
+| **C-195（仍 Open）** | 文档 | `TEST-STRATEGY.md:38` 声称 RFC-001~015 全部 `existing`，但 RFC-010/014 小节仍有 13 行 `proposed`；`:133` 的描述仍是旧的「退出码 1 + 未实现」，与 `selfplay-entry.test.ts` 相反；`:32` 的分项目录数与 88 不符；README 覆盖率数字仍是 96.96 / 92.85（实为 97.14 / 93.11）。 | 按实际 `Exists?` 列改 `:38`；把 `:133` 改成「exit 0、stdout 含跑完、stderr 不含未实现」；同步 `:32` 与 README 覆盖率。 |
+| **C-203（新）** | AC-4 / TEST-1 | C-202 的两条失败路径没有官方回归用例；M-R4-2 删掉两处 `usage` 后 selfplay **18/18 仍绿**。 | 把 P-R4-2a / P-R4-2b 落成正式用例，断言 outcome 与 summary 的 usage 均非 0。 |
+| **C-204（新）** | AC-6 / DOC-1 | 新 e2e 用例没有断言 `GAME_ENDED`；纯函数用例仍可在空 `finished` 上通过；`classifyFinished` 的 JSDoc 仍说端到端很难制造拒绝。 | 在 `onGame` 抓事件流并断言末条 `GAME_ENDED`、事件数 > 0；给纯函数用例加非空前置断言；改写 JSDoc。 |
+
+#### 未重查
+
+| 项 | 说明 |
+|---|---|
+| **C-185 / C-186 / C-188 / C-194** | Round 2 已闭合；本轮按用户指示不重查。完整套件中仍绿，只作回归证据。 |
+| **C-187 / C-189 / C-191** | Round 3 已闭合；本轮不重查。C-187 的 `maxSteps=1` + `onGame` 恒抛用例、C-189 的跨平台 CLI 写法、C-191 的 `summarize` 用例仍在套件中。 |
+| **C-190 / C-192 / C-193 / C-196 ~ C-201** | Round 1/2 登记的非阻塞项；本轮未重查，状态沿用 Round 2。 |
+
+### 4.9 探针记录
+
+所有探针均使用 `/tmp/howl-rfc015-r4/backup/` 的文件备份恢复；没有使用 `git checkout` / `git restore`。临时探针文件 `tests/server/__probe-rfc015-r4.test.ts` 已删除。
+
+| 探针 | 变更 / 内容 | 结果 |
+|---|---|---|
+| **M-R4-1** | `runner.ts:152` 的 `classifyFinished(...)` 改成 `null`（关闭成局扫描） | `selfplay.test.ts` **1 failed / 17 passed**；`-t 端到端` **1 failed / 17 skipped**，断言 `expected true to be false`（`:430`）→ C-184 反向锁成立 |
+| **M-R4-2** | 删掉 `runner.ts` 未终局与「成局但玩家被拒」两条路径上的 `usage: usageOf(record.gameId),` | `selfplay.test.ts` **18/18 passed** → C-202 行为无官方回归锁（C-203） |
+| **P-R4-1** | 与官方用例相同的 `playerInput`：seed 3，第一次投票投 `deadSeats[0]`（2），之后弃权；`onGame` 抓事件流 | 45 事件；末条 `GAME_ENDED`；1 条 `REJECTED self:1 VOTE TARGET_NOT_ALIVE`；outcome `ok:false` / `kind:'implementation'` |
+| **P-R4-2a** | `maxSteps=2` + `decide` 里 `recordUsage`，制造未终局 | outcome usage `{calls:2,inputTokens:224,...}`；`summarize` 相等 |
+| **P-R4-2b** | P-R4-1 场景 + `decide` 里 `recordUsage`，制造「成局但玩家被拒」 | outcome usage `{calls:23,inputTokens:4669,...}`；`summarize` 相等 |
+
+恢复后三个源码/测试文件 SHA-256 与探针前一致（见 §4.1）；`git status --porcelain` 在探针结束时为空；没有 `git commit`。
+
+### 4.10 结论
+
+**Overall Risk Level: Low。**
+
+**Summary**：Round 3 的唯一阻塞项 **C-184 已真正闭合**：`runner.ts:152` 调用了 `classifyFinished`，新 e2e 用例在真实完成局（45 事件、末条 `GAME_ENDED`）里制造出 `REJECTED self:1 VOTE TARGET_NOT_ALIVE`，把调用改成 `null` 后 **1 failed / 17 passed**（M-R4-1），不再是只测纯函数的假锁。**C-202 的两条失败路径也确实挂上了 `usage`**（P-R4-2a/b），但官方套件没有回归锁（M-R4-2 18/18 绿），登记为 C-203。**C-195 仍是部分修复**：头部 766、README 766、RFC-015 五行 `existing` 都对了，但 `TEST-STRATEGY.md:38` 的「全部 existing」与 13 行 `proposed` 矛盾，`:133` 的占位测试描述仍与现行用例相反。完整门禁 **88 files / 766 tests**、`typecheck` / `lint` / `format:check` / `build` 全 0、`test:e2e` 10/10、单元覆盖率行 97.14% / 分支 93.11%；100 局 1.65s / 83.0MB。
+
+**Blocking Issues（必须修复后才能合并）**：无。
+
+**Improvement Suggestions（非阻塞）**：C-195 的剩余文档漂移；C-203（C-202 的回归锁）；C-204（C-184 用例的终局断言与 JSDoc）；C-190 / C-192 / C-193 / C-196 ~ C-201 仍按 Round 1/2 记录。
+
+**状态**：`RFCS.md` 中 RFC-015 的 Status 置为 **`Reviewed`**；C-184 / C-202 标记 Closed，C-195 保持 Open（非阻塞），新增 C-203 / C-204 为非阻塞；C-185 / C-186 / C-188 / C-194 与其余 Round 1/2 非阻塞项未重查。本轮探针从 `/tmp/howl-rfc015-r4/backup/` 文件备份恢复，三个文件 SHA-256 一致；临时探针已删除；没有 `git commit`；除本评审记录与 `RFCS.md` 外，工作树 clean。
