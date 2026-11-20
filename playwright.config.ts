@@ -1,12 +1,15 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 /**
- * 端到端配置（TEST-6 / RFC-012）。
+ * 端到端配置（TEST-6 / RFC-012 / RFC-016）。
  *
- * 两件事值得注意：
- * 1. 用 **`channel: 'chrome'`**：CI 与本地都已有 Chrome，不必再下载一份 Playwright 浏览器。
- * 2. 测试自己起服务（`webServer`），并且用 **`HOWL_FAKE_AI=1`**：脚本化 AI 让一局能稳定跑完，
- *    不依赖模型与网络——这是 TEST-4 的「引擎可离线推理」在端到端的延伸。
+ * 三件事值得注意：
+ * 1. 三个引擎各跑一个 project：Chromium（含 Edge，同引擎）、Firefox、WebKit（Safari 近似）。
+ *    `tests/e2e/browsers.spec.ts` 是唯一在三个引擎上跑的；其余用例只在 Chromium 上跑，
+ *    避免把总时长乘三。
+ * 2. 测试自己起服务（`webServer`），并且用 **`HOWL_FAKE_AI=1`**：脚本化 AI 让一局能稳定跑完。
+ * 3. 本机 Chrome 已经够用时，Chromium 走 `channel: 'chrome'`；Firefox / WebKit 用 Playwright
+ *    自带的浏览器（`pnpm exec playwright install firefox webkit`）。
  */
 
 const PORT = Number(process.env.E2E_PORT ?? 4180);
@@ -17,8 +20,16 @@ export default defineConfig({
   timeout: 60_000,
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
-    channel: 'chrome',
   },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
+      testIgnore: /browsers\.spec\.ts/,
+    },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testMatch: /browsers\.spec\.ts/ },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: /browsers\.spec\.ts/ },
+  ],
   webServer: {
     // 先构建：否则改了源码仍在跑旧 bundle（C-130）。
     command: 'pnpm build && pnpm exec tsx scripts/e2e-server.ts',

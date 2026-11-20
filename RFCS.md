@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.148 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
+> 版本 v2.149 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -52,7 +52,7 @@
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Reviewed |
-| [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Not started |
+| [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Implemented |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
 
@@ -1165,6 +1165,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-20 | v2.149 | RFC-016 实现完成（Status → Implemented）：首页入口、能力探测提示、对局/复盘懒加载、三引擎 Playwright projects、首屏预算与打包产物断言 |
 | 2026-11-20 | v2.148 | RFC-015 Round 4 复核（Status → Reviewed）：门禁 88 files / 766 tests、10/10 e2e、单元覆盖率行 97.14% / 分支 93.11%；100 局 1.65s / 83.0MB。**C-184 闭合**——`runner.ts:152` 真正调用 `classifyFinished`，P-R4-1 用 `playerInput` 投已出局席位得到 45 事件、末条 `GAME_ENDED`、`REJECTED self:1 VOTE TARGET_NOT_ALIVE`；把调用改成 `null` 后 selfplay 用例 **1 failed / 17 passed**（M-R4-1）。**C-202 闭合（行为）**——未终局与被拒路径都挂 usage，P-R4-2a/b 实测 2 次 / 224 input 与 23 次 / 4669 input；但删掉两处后 18/18 仍绿（M-R4-2），新增 C-203（回归锁）。**C-195 仍 Open（非阻塞）**——TEST-STRATEGY `:38` 的「全部 existing」与 13 行 `proposed` 矛盾、`:133` 占位测试描述与现行用例相反。新增 C-204（C-184 用例加固 + JSDoc）。探针从 `/tmp/howl-rfc015-r4/backup/` 文件备份恢复、三个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-015.md`](reviews/REVIEW-RFC-015.md) Round 4 |
 | 2026-11-20 | v2.147 | RFC-015 Round 3 修复（Status → Implemented）：runner 真正调用 `classifyFinished`、端到端「投已出局席位」用例、被拒/未终局路径挂 usage、文档同步 |
 | 2026-11-20 | v2.146 | RFC-015 Round 3 复核（Status → `Changes requested`）：门禁 88 files / 765 tests、10/10 e2e、覆盖率行 96.96% / 分支 92.85%。C-187 / C-189 / C-191 关闭；**C-184 仍未闭合**——`classifyFinished` 未被 runner 调用，关闭 runner 成局扫描后 selfplay 用例 17/17 仍绿（M-R3-1）；同一变异下真实非法投票局变 `ok:true`（M-R3-1b）；P-R3-1 证明 `playerInput` 端到端造得出拒绝。C-195 部分修复（README 数字已对，TEST-STRATEGY 仍 720 / 15 proposed / placeholder）；新增非阻塞 C-202（两类失败局不带 usage）。探针从 `/tmp/howl-rfc015-r3/backup/` 文件备份恢复、三个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-015.md`](reviews/REVIEW-RFC-015.md) Round 3 |

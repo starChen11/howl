@@ -12,7 +12,9 @@ import { GameRegistry } from '../src/server/store/game-registry';
 import { InMemoryMetaStore } from '../src/server/store/meta-store';
 import { StreamBus } from '../src/server/stream/bus';
 
-const PORT = Number(process.env.E2E_PORT ?? 4180);
+// CLI 参数优先（`pnpm test:perf` 传 `--port`），其次环境变量，最后默认 4180。
+const portArg = process.argv.find((arg) => arg.startsWith('--port='));
+const PORT = Number(portArg?.slice('--port='.length) ?? process.env.E2E_PORT ?? 4180);
 
 const store = new InMemoryMetaStore();
 const bus = new StreamBus();

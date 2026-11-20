@@ -29,8 +29,8 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 
 ```
 $ pnpm test
- Test Files  88 passed (88)     # unit 72 + client 9 + meta 7
-      Tests  767 passed (767)
+ Test Files  89 passed (89)     # unit 72 + client 9 + meta 7
+      Tests  770 passed (770)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```

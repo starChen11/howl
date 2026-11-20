@@ -81,3 +81,64 @@
 |---|---|---|
 | Q-016-1 | 是否必须覆盖 Edge 独立测试 | **(assumption)** 不必须；Edge 与 Chrome 同引擎，按 Chromium 覆盖 |
 | Q-016-2 | 首屏预算的测量环境 | **(assumption)** 本机开发环境，与 NFR-8 一致；不设 CI 机器基准 |
+
+---
+
+## 8. Implementation Notes
+
+> 实现记录（`RULES DOC-1`）。前置 RFC-012 已 `Reviewed`。
+
+### 8.1 批准记录
+
+| 项 | 结论 |
+|---|---|
+| 入口 | **A 方案**（用户选）：`/` 是**首页**（介绍 + 「开始一局」），首屏不碰后端 |
+
+### 8.2 偏离与实现决定
+
+| # | 决定 | 为什么 |
+|---|---|---|
+| **D-1** | `?seed=` 仍然自动开局，`?home=1` 强制停在首页 | e2e 需要固定种子直接进对局；首页是默认入口（AC-8） |
+| **D-2** | 对局页**懒加载**（`await import('./App')`），复盘页再懒加载一层 | 首页 chunk 因此不含流式接口与复盘标识（AC-6） |
+| **D-3** | 能力不足只显示提示，不写降级实现 | RFC §2.1 的明确取舍：降级路径没人维护更危险 |
+| **D-4** | Edge 不单独跑，按 Chromium 引擎覆盖 | Q-016-1 的假设，记录于此（AC-2） |
+| **D-5** | 首屏预算用独立 Playwright 配置（`playwright.perf.config.ts`，端口 4179） | 它需要构建产物与稳定服务，不能混进 `pnpm test`（§6） |
+
+### 8.3 文件清单（FILES CHANGED）
+
+| 类别 | 文件 |
+|---|---|
+| 客户端新增 | `src/client/capabilities.ts`、`src/client/pages/Home.tsx` |
+| 客户端修改 | `main.tsx`（能力探测、首页路由、对局页懒加载）、`App.tsx`（复盘页懒加载） |
+| 配置 | `playwright.config.ts`（三引擎 projects）、`playwright.perf.config.ts`、`package.json`（`test:perf`） |
+| 测试 | `tests/e2e/browsers.spec.ts`、`tests/perf/first-paint.spec.ts`、`tests/client/capabilities.test.ts` |
+
+### 8.4 验收逐条
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| 1 | `browsers.spec.ts` 在 Chromium / Firefox / WebKit 三引擎跑「开始一局 → 发言 → 投票」，共 14 条 e2e | PASS |
+| 2 | Edge 不单独跑（D-4，已记录） | PASS（取舍） |
+| 3 | e2e 用 `addInitScript` 摘掉 `EventSource`，断言中文提示与不白屏；关掉能力判断会红 | PASS |
+| 4 | SSE 重连由显式 `Last-Event-ID` 管理（RFC-010 已覆盖） | PASS |
+| 5 | `tests/perf` 5 次中位数 ≤ 2s（实测约 400ms 内） | PASS |
+| 6 | 入口 chunk 不含 `复盘时间线` / `/stream` / 模型地址；静态 import 复盘页会红 | PASS |
+| 7 | 客户端产物不含 `api.deepseek` / `DEEPSEEK_API_KEY` | PASS |
+| 8 | 首页加载到「开始一局」可点期间没有 `/api/games` 请求（e2e 断言） | PASS |
+
+### 8.5 验证输出（实跑）
+
+```
+$ pnpm typecheck / lint / format:check / build → 全 exit 0
+$ pnpm test → 89 files / 770 tests
+$ pnpm test:e2e → 14 passed（Chromium 10 + Firefox 2 + WebKit 2）
+$ pnpm test:perf → 2 passed
+```
+
+### 8.6 已知缺口
+
+| 缺口 | 说明 | 归属 |
+|---|---|---|
+| 真机 Safari / Firefox | Playwright 的 WebKit 是近似，不是真 Safari | 手工验收建议 |
+| 移动端真机 | RFC §6 明确不做 | — |
+| CI 机器基准 | Q-016-2 假设本机环境，不设 CI 基准 | — |

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { GameViewResponse } from './api';
 import { ApiClient } from './api';
@@ -9,7 +9,9 @@ import { EventPanel, buildPanelEntries } from './components/EventPanel';
 import { SpectatorBar } from './components/SpectatorBar';
 import { Notepad } from './components/Notepad';
 import { toggleTruth, initialTruthState } from './state/truth-view';
-import { ReplayPage } from './pages/ReplayPage';
+const ReplayPage = lazy(() =>
+  import('./pages/ReplayPage').then((m) => ({ default: m.ReplayPage })),
+);
 import type { ReplaySnapshot } from '@shared/replay';
 import type { TruthView } from '@shared/truth';
 import { SeatGrid } from './components/SeatGrid';
@@ -141,19 +143,25 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
 
   if (view === null || board === null) {
     if (replay !== null) {
-      return <ReplayPage snapshot={replay} onRestart={restart} />;
+      return (
+        <Suspense fallback={<p role="status">正在载入…</p>}>
+          <ReplayPage snapshot={replay} onRestart={restart} />
+        </Suspense>
+      );
     }
     return <p role="status">正在载入对局…</p>;
   }
 
   if (view.view.phase === 'FINISHED' && replay !== null) {
     return (
-      <ReplayPage
-        snapshot={replay}
-        loadPerspective={(seat, seq) => client.replayPerspective(gameId, seat, seq)}
-        restarting={restarting}
-        onRestart={restart}
-      />
+      <Suspense fallback={<p role="status">正在载入…</p>}>
+        <ReplayPage
+          snapshot={replay}
+          loadPerspective={(seat, seq) => client.replayPerspective(gameId, seat, seq)}
+          restarting={restarting}
+          onRestart={restart}
+        />
+      </Suspense>
     );
   }
 
