@@ -78,7 +78,11 @@ function skillsOf(ctx: ProjectedContext): string[] {
 }
 
 function goalOf(ctx: ProjectedContext): string {
-  if (!ctx.self.alive) return '你已经出局，只能旁观。';
+  if (!ctx.self.alive) {
+    // 出局不等于没事做：轮到你开枪时要说清这一点。
+    if (ctx.pending === 'shoot') return '你已出局，但可以开枪带走一个人（或不开枪）。';
+    return '你已经出局，只能旁观。';
+  }
   switch (ctx.self.role) {
     case 'seer':
       return '今晚挑一个最可疑的人查验。';

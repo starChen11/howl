@@ -496,10 +496,31 @@ describe('C-163 · 快照的身份 / 人格 / 结果与对局一致', () => {
     const ended = record.events.find((event) => event.type === 'GAME_ENDED');
     const payload = ended?.payload as { result: 'wolf' | 'good'; condition: string } | undefined;
     expect(snapshot.result).toBe(payload?.result);
-    expect(snapshot.winCondition).toBe(payload?.condition);
+    // 快照里的胜负条件是给人看的中文，事件里是机器枚举
+    expect(snapshot.winCondition).not.toBe('');
+    expect(snapshot.winCondition).not.toContain('-');
+    void payload;
 
     // 角色分布必须是 3 狼 / 4 民 / 3 神这类真实配置，而不是全同一角色
     const roles = new Set(snapshot.seats.map((seat) => seat.role));
     expect(roles.size).toBeGreaterThan(1);
+  });
+});
+
+describe('复盘时间线：天数与相位名要说人话', () => {
+  it('第一夜的记录是第 1 天、相位是中文、死因是中文', async () => {
+    const { registry, record } = await finishedGame();
+    const snapshot = record.snapshot as ReturnType<typeof buildReplaySnapshot>;
+
+    const nightEntries = snapshot.timeline.filter((entry) => entry.text.includes('夜聊'));
+    expect(nightEntries.length).toBeGreaterThan(0);
+    for (const entry of nightEntries) expect(`${entry.day}`).not.toBe('0');
+
+    // 不再出现原始枚举与英文死因
+    expect(snapshot.timeline.some((entry) => /NIGHT_|DAY_|FINISHED/.test(entry.text))).toBe(false);
+    expect(
+      snapshot.timeline.some((entry) => /（wolf）|（lynch）|（poison）/.test(entry.text)),
+    ).toBe(false);
+    void registry;
   });
 });

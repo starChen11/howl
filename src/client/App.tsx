@@ -301,8 +301,20 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         ctx.pending === 'witch' ? (
           <NightAction
             pending={ctx.pending}
+            wolfChats={ctx.privateEvents
+              .filter((event) => event.type === 'WOLF_CHAT_POSTED')
+              .map((event) => ({
+                seat: (event.payload as { seat: number }).seat,
+                text: (event.payload as { text: string }).text,
+              }))}
             targets={ctx.legalTargets
-              .filter((target) => typeof target === 'number' && target !== ctx.self.seat)
+              .filter(
+                (target) =>
+                  typeof target === 'number' &&
+                  target !== ctx.self.seat &&
+                  // 不能刀队友：引擎会拒绝，列出来只会让玩家点到必然失败的选项。
+                  !(ctx.pending === 'kill' && ctx.knowledge.teammates.includes(target)),
+              )
               .map((target) => Number(target))}
             potions={ctx.knowledge.potions}
             killTarget={ctx.knowledge.knownKillTarget}

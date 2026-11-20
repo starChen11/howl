@@ -125,7 +125,9 @@ export function ReplayPage({
 
       <section className="replay__thoughts" aria-label="推理">
         <h2>推理</h2>
-        {thoughts.length === 0 ? <p>这一局没有记录到推理。</p> : null}
+        {thoughts.length === 0 ? (
+          <p>这一局没有记录到推理。脚本替身 AI 不产出理由；接入真实模型后，每一轮都会有。</p>
+        ) : null}
         {thoughts.map((thought) => (
           <button
             key={`${thought.seq}-${thought.seat}`}

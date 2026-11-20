@@ -11,6 +11,7 @@ export function NightAction({
   targets,
   potions,
   killTarget,
+  wolfChats,
   onChat,
   onTarget,
   onWitch,
@@ -20,6 +21,8 @@ export function NightAction({
   potions: { heal: 'available' | 'used'; poison: 'available' | 'used' };
   /** 用药者看到的刀口（没有则为 null）。 */
   killTarget: number | null;
+  /** 狼队频道：自己和队友说过的话（只有狼看得到）。 */
+  wolfChats: { seat: number; text: string }[];
   onChat: (text: string) => void;
   onTarget: (target: number) => void;
   onWitch: (choice: 'none' | `heal:${number}` | `poison:${number}`) => void;
@@ -28,6 +31,15 @@ export function NightAction({
     return (
       <section className="night" aria-label={`${ROLE_LABELS.wolf}队讨论`}>
         <p className="night__hint">和队友说一句（不说也行）。</p>
+        {wolfChats.length === 0 ? null : (
+          <ul className="night__chat-log" aria-label="狼队消息">
+            {wolfChats.map((chat, index) => (
+              <li key={`${chat.seat}-${index}`}>
+                {chat.seat} 号：{chat.text === '' ? '（没说话）' : chat.text}
+              </li>
+            ))}
+          </ul>
+        )}
         <form
           className="night__chat"
           onSubmit={(event) => {

@@ -133,3 +133,77 @@ describe('夜间行动由玩家操作（回归：当狼却没参与刀人）', (
     rerender(<App gameId="g" client={client} />);
   });
 });
+
+describe('夜间刀人：不列队友（实际对局中点到过「刀 4 号」）', () => {
+  it('队友席位不出现在刀人按钮里', async () => {
+    const client = {
+      game: async () => ({
+        version: 3,
+        view: {
+          ...hunterView(),
+          self: { seat: 1, role: 'wolf', alive: true, personaId: null },
+          phase: 'NIGHT',
+          aliveSeats: [1, 2, 3, 4],
+          deadSeats: [],
+          pending: 'kill',
+          legalTargets: [2, 3, 4],
+          knowledge: {
+            teammates: [4],
+            checks: [],
+            potions: { heal: 'used', poison: 'used' },
+            canShoot: false,
+            knownKillTarget: null,
+          },
+        },
+      }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async () => ({ ok: true as const }),
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByRole('button', { name: '刀 2 号' });
+    expect(screen.queryByRole('button', { name: '刀 4 号' })).toBeNull();
+  });
+});
+
+describe('狼队频道：队友说过的话要能看到', () => {
+  it('讨论阶段显示狼队消息', async () => {
+    const client = {
+      game: async () => ({
+        version: 3,
+        view: {
+          ...hunterView(),
+          self: { seat: 1, role: 'wolf', alive: true, personaId: null },
+          phase: 'NIGHT',
+          aliveSeats: [1, 2, 3, 4],
+          deadSeats: [],
+          pending: 'chat',
+          legalTargets: [],
+          privateEvents: [
+            {
+              gameId: 'g',
+              seq: 2,
+              ts: 0,
+              type: 'WOLF_CHAT_POSTED',
+              visibleTo: 'wolves',
+              payload: { seat: 4, text: '今晚刀 3 号' },
+            },
+          ],
+        },
+      }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async () => ({ ok: true as const }),
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByText(/4 号：今晚刀 3 号/);
+  });
+});

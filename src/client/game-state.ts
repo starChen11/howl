@@ -1,4 +1,5 @@
 import type { ProjectedContext } from '@shared/project';
+import { phaseLabel } from '@shared/phase-labels';
 
 /**
  * 从投影推导界面要显示的东西（RFC-012 §2.3）。
@@ -92,23 +93,6 @@ export function countdownText(remaining: number): string {
 }
 
 /** 屏幕阅读器用的整局描述（AC-15）。 */
-/** 阶段的中文名（RUNOFF 之类不能把原始枚举念给用户听）。 */
-export function phaseLabel(phase: string): string {
-  switch (phase) {
-    case 'DAY_SPEECH':
-      return '轮流发言';
-    case 'DAY_VOTE':
-      return '投票';
-    case 'DAY_VOTE_RUNOFF':
-      return '平票重投';
-    case 'DAY_ANNOUNCE':
-      return '公布昨夜结果';
-    case 'NIGHT':
-      return '夜晚';
-    default:
-      return phase;
-  }
-}
 
 /** 屏幕阅读器的整局描述（不含倒计时，避免每秒播报）。 */
 export function boardAnnouncement(ctx: ProjectedContext): string {

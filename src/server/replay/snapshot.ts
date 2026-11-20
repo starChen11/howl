@@ -1,6 +1,7 @@
 import type { GameState } from '@shared/domain';
 import type { EventEnvelope } from '@shared/events';
 import type { Claim } from '@shared/events';
+import { causeLabel, conditionLabel, phaseLabel } from '@shared/phase-labels';
 import { ROLE_LABELS } from '@shared/terms';
 import { personaOf } from '@engine/personas';
 import type { ReplaySnapshot, TimelineEntry, ThoughtEntry } from '@shared/replay';
@@ -29,7 +30,7 @@ export function buildReplaySnapshot(
     seed: input.seed,
     finishedAt: input.finishedAt,
     result: endedPayload?.result ?? 'good',
-    winCondition: endedPayload?.condition ?? '',
+    winCondition: conditionLabel(endedPayload?.condition ?? ''),
     timeline,
     seats: state.seats.map((seat) => ({
       seat: seat.seat,
@@ -61,8 +62,10 @@ export function buildTimeline(state: GameState, events: readonly EventEnvelope[]
       case 'PHASE_CHANGED': {
         phase = String(payload['to']);
         const to = phase as string;
-        if (to === 'NIGHT_WOLF_CHAT') day += 1;
-        entries.push({ seq: event.seq, day, phase, text: `进入 ${to}` });
+        if (to === 'NIGHT_WOLF_CHAT') day = Math.max(day + 1, 1);
+        // 第一夜在第一个 DAY_STARTED 之前：夜 N 属于第 N 天（与真相视图一致）。
+        if (day === 0 && to.startsWith('NIGHT')) day = 1;
+        entries.push({ seq: event.seq, day, phase, text: `进入${phaseLabel(to)}` });
         break;
       }
       case 'DAY_STARTED': {
@@ -78,6 +81,8 @@ export function buildTimeline(state: GameState, events: readonly EventEnvelope[]
         break;
       }
       case 'WOLF_CHAT_POSTED':
+        // 夜聊发生在第一个 PHASE_CHANGED 之前时也要记成第 1 天
+        if (day === 0) day = 1;
         entries.push({ seq: event.seq, day, phase, text: `${String(payload['seat'])} 号夜聊` });
         break;
       case 'WOLF_KILL_CHOSEN':
@@ -89,6 +94,7 @@ export function buildTimeline(state: GameState, events: readonly EventEnvelope[]
         });
         break;
       case 'SEER_CHECKED':
+        if (day === 0) day = 1;
         entries.push({
           seq: event.seq,
           day,
@@ -97,6 +103,7 @@ export function buildTimeline(state: GameState, events: readonly EventEnvelope[]
         });
         break;
       case 'WITCH_POTION_USED':
+        if (day === 0) day = 1;
         entries.push({
           seq: event.seq,
           day,
@@ -109,7 +116,7 @@ export function buildTimeline(state: GameState, events: readonly EventEnvelope[]
           seq: event.seq,
           day,
           phase,
-          text: `${String(payload['seat'])} 号出局（${String(payload['cause'])}）`,
+          text: `${String(payload['seat'])} 号出局（${causeLabel(String(payload['cause']))}）`,
         });
         break;
       case 'HUNTER_SHOOT':
@@ -153,7 +160,7 @@ export function buildTimeline(state: GameState, events: readonly EventEnvelope[]
           seq: event.seq,
           day,
           phase,
-          text: `对局结束：${String(payload['condition'])}`,
+          text: `对局结束：${conditionLabel(String(payload['condition']))}`,
         });
         break;
       default:

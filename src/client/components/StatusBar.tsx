@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 
-import { countdownText, phaseLabel } from '../game-state';
+import { phaseLabel } from '@shared/phase-labels';
+
+import { countdownText } from '../game-state';
 
 /**
  * 顶部状态条（RFC-012 §2.1 / AC-1 / AC-14）。

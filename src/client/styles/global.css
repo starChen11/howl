@@ -628,3 +628,9 @@ body {
   gap: 8px;
   align-items: center;
 }
+
+.night__chat-log {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  color: var(--muted);
+}
