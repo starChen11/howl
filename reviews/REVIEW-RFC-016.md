@@ -1,11 +1,11 @@
 # RFC-016 评审 · 浏览器兼容与首屏性能
 
-> **评审会话**：独立 subagent（`agent-65`），全新上下文；本会话没有参与 RFC-016 的代码 / RFC / 测试写作。
-> **日期**：2026-11-20（Round 1）
-> **分支 / HEAD**：`main` / `5e06e49`
+> **评审会话**：Round 1 独立 subagent（`agent-65`）、Round 2 独立 subagent（`agent-66`），都是全新上下文；两个会话都没有参与 RFC-016 的代码 / RFC / 测试写作。
+> **日期**：2026-11-20（Round 1 / Round 2）
+> **分支 / HEAD**：Round 1 `5e06e49`；Round 2 `aa882d5`（`fix(rfc-016): 三引擎全跑、冷启动预算与首页零请求（Round 1）`），评审开始时工作树 clean。
 > **RFC 前置**：RFC-012 已 `Reviewed`（`RFCS.md:54`），前置满足。
-> **结论**：**Changes requested**
-> **整体风险**：**Medium**
+> **结论**：Round 1 **`Changes requested`** → Round 2 **`Reviewed`**
+> **整体风险**：Round 1 **Medium** → Round 2 **Low**
 
 ## Round 1 -- 2026-11-20
 
@@ -257,8 +257,232 @@ $ pnpm test:perf
 
 ---
 
+## Round 2 -- 2026-11-20
+
+> **复核会话**：独立 subagent（`agent-66`），全新上下文；没有参与 RFC-016 的代码 / RFC / 测试写作。
+> **HEAD**：`aa882d5`（Round 1 修复提交）；评审开始与结束时 `git status --porcelain` 均为空。
+> **本轮范围**：按用户指定只复核 **C-205 / C-206 / C-207 / C-208 / C-209 / C-210 / C-211 / C-212**。Round 1 已关闭的 AC-2 / AC-3 / AC-4 / AC-6 不在本轮重新裁决；门禁实跑会覆盖它们的既有用例，但只作为回归证据，不重新判定。
+> **结论：Reviewed（0 条阻塞） · Overall Risk Level: Low**
+
+### 0. STEP 0 · 门禁实跑（aa882d5，干净工作树）
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。
+
+```
+$ pnpm typecheck
+EXIT(typecheck)=0
+
+$ pnpm lint
+EXIT(lint)=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+EXIT(format)=0
+
+$ pnpm test
+ Test Files  89 passed (89)
+      Tests  771 passed (771)
+   Duration  46.07s
+EXIT(test)=0
+
+$ pnpm test:e2e
+Running 16 tests using 4 workers
+16 passed (12.7s)
+EXIT(e2e)=0
+# [chromium] browsers.spec.ts × 2 + game.spec.ts × 10
+# [firefox]  browsers.spec.ts × 2
+# [webkit]   browsers.spec.ts × 2
+
+$ pnpm build
+dist/client/assets/ReplayPage-*.js     4.65 kB │ gzip:  1.74 kB
+dist/client/assets/App-*.js          112.03 kB │ gzip: 33.39 kB
+dist/client/assets/index-*.js        224.83 kB │ gzip: 70.86 kB
+EXIT(build)=0
+
+$ pnpm test:perf
+Running 3 tests using 1 worker
+  3 passed (3.0s)
+EXIT(perf)=0
+```
+
+修复后重新跑了一遍 `pnpm build && pnpm test:perf && pnpm test:e2e`（探针恢复之后）：perf **3 passed**、e2e **16 passed (17.6s)**，工作树 clean。
+
+---
+
+### 1. 逐项复核
+
+#### C-205 · Chromium 主路径 —— **Closed**
+
+- `playwright.config.ts:24-31` 的 Chromium project 已没有 `testIgnore`；Firefox / WebKit 仍用 `testMatch: /browsers\.spec\.ts/`。Chromium 现在跑 `tests/e2e/` 全部 12 条（`game.spec.ts` 10 + `browsers.spec.ts` 2）。
+- 实跑输出逐条可见 `[chromium] › tests/e2e/browsers.spec.ts:10:1` 与 `:43:3`；三引擎的「开始一局 → 发言 → 投票」都通过，共 16 条。
+- AC-1 要求的 3/3 引擎主路径成立；`RFC §8.4:122` 的「共 16 条 e2e」与实测一致。
+
+#### C-206 · AC-5 冷启动测量 —— **Closed**
+
+- `tests/perf/first-paint.spec.ts:44-82` 已改为**每个样本新建 `browser.newContext()`**、测默认 `/`（`:62`）、`visible` 之后再 `expect(button).toBeEnabled()`（`:64-66`），并对每个样本断言下载量 > 50,000 字节（`:74-77`）。
+- **P-R2-1**（不改源码，打印每次样本）：耗时 `[141, 145, 147, 109, 107]ms`（中位 **141ms**），每次传输 **231,963** 字节，其中入口 JS **225,139** 字节。5 个新 context 都是完整冷启动，不再有 warm 复用。
+- **M-R2-1**：在 `main.tsx` 首页分支前注入 2100ms 延迟后，官方 AC-5 用例 **1 failed**，样本 `2385 / 2392 / 2398 / 2420 / 2446ms`。r1 的 1600ms 延迟在 warm 口径下还能绿，现在冷启动口径会把超预算的回归打红。
+- 残余口径问题（`Date.now()` 而非 RFC §4 的 `performance.now()`）不影响 AC-5 判定，登记为 **C-214（非阻塞）**。
+
+#### C-207 · 首页不碰后端 —— **Closed**
+
+- `src/client/main.tsx:23-36`：`?home=1` 分支直接返回首页；无 `seed` 的默认 `/` 也直接返回首页；`/api/session` 只在 `?seed=` 真正要建局时（`:38`）才请求。`src/client/pages/Home.tsx:17` 的 session 请求在点击「开始一局」之后。e2e 的过滤条件已从 `/api/games` 扩到**所有 `/api/`**（`tests/e2e/browsers.spec.ts:18-20`）。
+- **M-R2-2**：在 `forceHome` 分支前加回 `await fetch('/api/session')` 后，`[chromium] › browsers.spec.ts:10` **1 failed**，接收到的正是 `["http://127.0.0.1:4180/api/session"]`；恢复后绿。
+- **P-R2-2**：`/?home=1&game=deadbeef` 停留在首页，`.app` 数量 0，`PRIORITY_API_UNTIL_HOME=[]`；默认 `/` 的 `API_BEFORE_CLICK=[]`，点击后才有 `/api/session` / `/api/games` / `/play` / `/stream`。
+- AC-8 与用户批准的 A 方案一致；`?home=1` 现在确实优先于 `?game=`。
+
+#### C-208 · AC-7 全产物扫描 —— **Closed**
+
+- `tests/meta/build.test.ts:45-58` 用 `walk(DIST_CLIENT)` 扫全部文件，markers 为 `api.deepseek.com` / `DEEPSEEK_API_KEY` / `openai` / `/chat/completions`；`tests/perf/first-paint.spec.ts:34-42` 也扫 `dist/client/assets` 的全部 JS。两者都在常规门禁里（前者 `pnpm test`，后者 `pnpm test:perf`）。
+- **M-R2-3**：在 `ReplayPage` 根 `<div>` 加 `data-probe-model="https://api.deepseek.com/chat/completions"` 后：
+  - `pnpm exec vitest run --project meta tests/meta/build.test.ts` → **1 failed / 4 passed**，offender 为 `dist/client/assets/ReplayPage-*.js ← api.deepseek.com` 与 `← /chat/completions`；
+  - `pnpm exec playwright test -c playwright.perf.config.ts -g "AC-7 · 全部"` → **1 failed**，报 `ReplayPage-*.js 含 api.deepseek.com`。
+- 恢复 `ReplayPage.tsx` 后 MD5 `7e9785a2f2a19e622ba00f0c2e74225a` 与备份一致。Round 1 的「放进复盘 chunk 仍绿」不再成立。
+- 小残留：RFC §8.3 的测试文件清单仍没列 `tests/meta/build.test.ts`（本轮实际改了它）→ 归入 C-210 的文档残留。
+
+#### C-209 · `test:perf` 登记 —— **Closed**
+
+- `RULES.md:98` 已有 `pnpm test:perf | 首屏预算与打包产物断言（RFC-016）`；`package.json` 的脚本与 `RFC §8.3:113` 的 FILES CHANGED 都包含它。OPS-2 满足。
+
+#### C-210 · 文档同步 —— **部分关闭（非阻塞，保留）**
+
+已修：
+
+- `TEST-STRATEGY.md:395-400` 六行 `Exists?` 已从 `proposed` 改为 `existing`；
+- `README.md:11` 已改为 16 个 RFC / 16 个 `Reviewed` / 771 个用例，和本轮实跑一致；
+- RFC §8.3 补了 `RULES.md` §3、`scripts/e2e-server.ts`、文档三类；§8.4 AC-1 改为 16 条 e2e；§8.7 记录了 771 / 16 / 3。
+
+仍残留（不阻塞 `Reviewed`，下轮 docs 提交一并收）：
+
+| # | 残留 | 位置 |
+|---|---|---|
+| **C-210-a** | 覆盖统计仍写「RFC-016 待实现」 | `TEST-STRATEGY.md:38` |
+| **C-210-b** | 六行的 `Test` 列仍指向不存在的 `tests/e2e/capabilities.spec.ts` / `tests/perf/first-paint.test.ts` / `tests/perf/bundle.test.ts` / `tests/e2e/first-paint.spec.ts`；`Exists?` 已写实际文件，两列自相矛盾 | `TEST-STRATEGY.md:395-400` |
+| **C-210-c** | §8.5 的「验证输出」仍是旧数字：`770 tests` / `14 passed (Chromium 10 + Firefox 2 + WebKit 2)` / `2 passed`，与 §8.7 的 771 / 16 / 3 以及本轮实跑矛盾 | `RFCs/RFC-016...:131-138` |
+| **C-210-d** | §8.3 测试清单漏了本轮被 C-208 修改的 `tests/meta/build.test.ts`；§8.4 AC-8 仍写只断言 `/api/games`，实际已扩到 `/api/` | `RFCs/RFC-016...:116,129` |
+| **C-210-e** | README `:13` 仍写 `src/client/`（占位页）；这是更早的漂移，顺手可改 | `README.md:13` |
+
+#### C-211 · `?home=1` 优先与默认 `/` —— **Closed（用户点名项）**
+
+- 优先级：`main.tsx:23-27` 的 `forceHome` 在 `?game=` 之前；P-R2-2 证明 `/?home=1&game=deadbeef` 停在首页。
+- 默认 `/` 无 seed 也能真正开局：P-R2-2 点击后 URL 变成 `?game=902b7728-...`，`.app` 可见，后续 `/api/games` / `/play` / `/stream` 正常。
+- 官方套件仍没有这两条回归锁（`browsers.spec.ts:14` 用 `/?home=1&seed=13`；perf 只用 `/` 渲染首页、不点开局）→ 新登记 **C-213（非阻塞）**。
+
+#### C-212 · 首页样式、`/play` 检查与错误文案 —— **部分关闭（非阻塞，保留）**
+
+- 首页 / fallback 样式已补：`src/client/styles/global.css:538-591` 有 `.home` / `.home__title` / `.home__lead` / `.home__points` / `.home__start` / `.home__error` / `.fallback`。
+- `Home.tsx:33-37` 已检查 `/play` 的 `ok`，失败会抛中文「开局失败：<status>」。
+- 仍残留：**P-R2-3** 用 `page.route('**/api/session', route => route.abort())` 后点「开始一局」，`role=alert` 的文本是英文 `"Failed to fetch"`（`Home.tsx:40` 直接显示 `cause.message`）；`/play` 失败分支也没有测试。→ 新登记 **C-215（非阻塞）**。
+
+#### C-213（新登记，非阻塞）· 默认 `/` 与 `?home=1` 优先级没有官方回归锁
+
+- 行为已经正确（P-R2-2），但官方 `pnpm test:e2e` 里没有任何用例点默认 `/` 的「开始一局」，也没有用例覆盖 `?home=1&game=`。下一次有人改 `main.tsx` 的分支顺序，现有门禁不会红。
+- 建议：在 `browsers.spec.ts` 加一条「默认 `/` → 开始一局 → `.app` 出现」，再在一条轻量用例里锁 `/?home=1&game=deadbeef` 必须看到首页；不需要三个引擎都跑，Chromium 即可。
+
+#### C-214（新登记，非阻塞）· AC-5 的计时口径偏离 RFC §4 且未记录
+
+- RFC §4 写的是「`performance.now()` 到『开始一局』按钮可点击，用 `page.evaluate` 取」；实现是 `Date.now()` 包住 `page.goto`（`first-paint.spec.ts:61,68`），并用 `visible + toBeEnabled`（`:65-66`）而不是 click trial。
+- 实际效果是**更严格**（包含导航与 Playwright IPC，142ms 的中位数远低于 2s），不会造成假绿；但它是未写进 §8.2 的偏离，属 DOC-1。建议要么改成页内 `performance.now()`，要么在 §8.2 记一行「用墙钟含 IPC，比 RFC 更严格」。
+
+#### C-215（新登记，非阻塞）· 开局失败仍显示英文网络错误
+
+- `Home.tsx:40` 与 `main.tsx:96` 都把原始 `Error.message` 直接给用户；P-R2-3 实测 `Failed to fetch`。F43 / UI-2 要求除技术名词外不出现英文，Round 1 的 C-212 已点过，本轮只修了样式与 `/play` 检查。
+- 建议：把网络类失败映射成「开局失败，请检查网络后重试」，技术细节只进 `console.error`；同时给 `/play` 非 2xx 补一条组件测试或 e2e。
+
+---
+
+### 2. 其他检查
+
+#### 2.1 五个审查维度
+
+| 维度 | 判定 | 说明 |
+|---|---|---|
+| **1. RFC Adherence** | **PASS** | AC-1 / AC-5 / AC-7 / AC-8 本轮实测通过；AC-2 / AC-3 / AC-4 / AC-6 沿用 Round 1，不重新裁决。Implementation Notes 的 §8.7 与实测一致，§8.5 是旧数字（C-210-c，非阻塞） |
+| **2. RULES Compliance** | **PASS（附非阻塞 DOC-1 残留）** | OPS-2 已满足（RULES `:98`）；TEST-1 / TEST-5 的自动化与命令门禁通过；OPS-4 / SEC-2 由全产物扫描兜住；DOC-1 剩余 C-210 / C-214 |
+| **3. Security** | **PASS** | 客户端产物无 `api.deepseek.com` / `DEEPSEEK_API_KEY` / `openai` / `/chat/completions`；首页无后端请求；错误信息不含服务端响应体；无新增输入面 |
+| **4. Performance** | **PASS** | 冷启动 5 次中位 141ms（预算 2s），每次下载 231,963 字节；入口 224.83kB / gzip 70.86kB，App 与 ReplayPage 已拆出；首屏不建 session |
+| **5. Maintainability** | **NEEDS WORK（非阻塞）** | 测试与文档残留 C-210 / C-213 / C-214 / C-215；`main.tsx` 与 `Home.tsx` 各写一遍 `POST /api/games` + `/play`；`boot()` 返回的 `seed` 字段没人用、`main.tsx:80` 又重新读了一遍 `seedParam`（Round 1 已提，未处理） |
+
+#### 2.2 Product Type 与跳过项
+
+`PRD.md` 的 Product Type 是 **game（主）+ web app（交付形态）**。本轮按用户指定只复核 RFC-016 的浏览器 / 首屏 / 构建产物 / 首页请求；显式跳过账号认证、数据库迁移、帧预算与目标硬件、真机移动端、SEO / 离线、商店支付（PRD 的 Product Type 已列明不适用）。a11y 不重新跑套件：RFC-016 本轮改的是首页、启动分支与 Playwright 配置，对局 UI 的键盘 / 焦点 / 对比度仍由 RFC-012 的 `game.spec.ts:120-177` 覆盖；首页自身用 `main` / `h1` / `ul` / `button` / `role=alert`，语义已核对。
+
+#### 2.3 门禁里的覆盖分布
+
+`pnpm test:e2e` 的 16 条 = Chromium 12（`game.spec.ts` 10 + `browsers.spec.ts` 2）+ Firefox 2 + WebKit 2。`browsers.spec.ts` 的主路径（`:10`）在三个引擎各跑一次，覆盖「开始一局 → 发言 → 投票」，并断言投票真的进了公开事件面板；能力兜底（`:43`）也在三引擎各跑一次。`game.spec.ts` 的 10 条仍只在 Chromium 上跑，这是 `playwright.config.ts:8-11` 的既定取舍（避免总时长乘三），不违反 AC-1。
+
+#### 2.4 测试是否真会在回归时变红
+
+| 探针 | 变异 | 结果 |
+|---|---|---|
+| **M-R2-1** | `main.tsx` 首页分支前加 2100ms 延迟 | 官方 AC-5 **1 failed**，样本 2385–2446ms；恢复后绿 |
+| **M-R2-2** | `main.tsx` 的 `forceHome` 之前加回 `await fetch('/api/session')` | `[chromium] browsers.spec.ts:10` **1 failed**，请求列表含 `/api/session`；能力用例 1 passed |
+| **M-R2-3** | `ReplayPage` 根 `<div>` 加模型地址标记 | meta build **1 failed / 4 passed**；perf 全 chunk 扫描 **1 failed** |
+
+三个变异都精确落在对应断言上，不是靠其他错误连带失败。
+
+---
+
+### 3. 变异探针与恢复
+
+所有探针都用文件备份，**没有** `git checkout` / `git restore`；没有 `git commit`。
+
+| 探针 | 改动 | 结果 |
+|---|---|---|
+| **P-R2-1** | 不改源码；临时 `tests/perf/_probe.spec.ts` 打印 5 个新 context 的样本 | 141 / 145 / 147 / 109 / 107ms；每次传输 231,963 字节（入口 JS 225,139） |
+| **P-R2-2** | 不改源码；临时 `tests/e2e/_probe.spec.ts` 验证优先级 / 默认 `/` 开局 | `?home=1&game=` → 首页、API `[]`；默认 `/` 点击前 API `[]`，点击后 `?game=902b7728-...` |
+| **P-R2-3** | 不改源码；同一临时探针 abort `/api/session` 后点开局 | `START_FAILURE_ALERT="Failed to fetch"`（英文，C-215） |
+| **M-R2-1** | `main.tsx` 首页分支加 2100ms 延迟 | AC-5 **1 failed**（2385–2446ms） |
+| **M-R2-2** | `main.tsx` 加回首页 `/api/session` | `[chromium] browsers.spec.ts:10` **1 failed**（收到 `/api/session`） |
+| **M-R2-3** | `ReplayPage.tsx` 根 div 加 `https://api.deepseek.com/chat/completions` | meta build **1 failed / 4 passed**；perf AC-7 **1 failed** |
+
+恢复证明：
+
+- `src/client/main.tsx` `479c392887d5d57ecbe0a01fb8bc600d`
+- `src/client/pages/Home.tsx` `c99639eb9ba3d2ca710fe83b822b7683`
+- `src/client/pages/ReplayPage.tsx` `7e9785a2f2a19e622ba00f0c2e74225a`
+- `src/client/App.tsx` `f04f9d4a985eb9422ae124650d8be967`
+- `tests/e2e/browsers.spec.ts` `0f38a7f1a4850c2e1c6ea1c71d8e140a`
+- `tests/perf/first-paint.spec.ts` `8573976487983c231558891af8d2854c`
+- `playwright.config.ts` `b5de1110c5c5714845ff9c3bc876021b`
+
+七个文件与 `/tmp/howl-rfc016-r2/backup/` 的 MD5 全部一致；临时探针 `tests/e2e/_probe.spec.ts`、`tests/perf/_probe.spec.ts` 已删除；`git status --porcelain` 为空；恢复后重新 `pnpm build`，`pnpm test:perf` **3 passed**、`pnpm test:e2e` **16 passed**。
+
+---
+
+### 4. 结论
+
+- **Overall Risk Level: Low**。Round 1 的四个阻塞（C-205 / C-206 / C-207 / C-209）全部关闭，且都用变异探针验证过不是空转；C-208 也关闭。剩余问题集中在文档回填与两条入口回归锁，不影响运行时正确性。
+- **Summary**：三引擎现在真的都跑 `browsers.spec.ts`（16 条 e2e）；首屏用全新 context 测默认 `/`，5 次冷启动中位 141ms，且每次都能证明下载了入口 JS；首页到按钮可点之前没有任何 `/api/` 请求，加回 session 会红；模型地址扫描扩到全部客户端产物，往复盘 chunk 放标记会被 `pnpm test` 与 `pnpm test:perf` 同时打红。文档仍有几处旧数字与旧文件名，首页入口的默认 `/` 开局和 `?home=1` 优先级还缺官方回归锁，均登记为非阻塞。
+- **Blocking Issues**：无。
+- **Non-blocking Issues**：C-210（文档残留 a–e）、C-213（默认 `/` / 优先级回归锁）、C-214（AC-5 计时口径）、C-215（英文网络错误 / `/play` 失败无测试）。
+- **Improvement Suggestions**：
+  1. 补 `browsers.spec.ts` 的默认 `/` 开局用例与 `?home=1&game=` 优先级用例（C-213）。
+  2. 把 `Home.tsx` / `main.tsx` 的 `POST /api/games` + `/play` 抽成共享函数，顺带删掉 `boot()` 未使用的 `seed` 字段与重复的 `seedParam`（可维护性）。
+  3. 错误文案映射成中文、技术细节进日志（C-215）。
+  4. 把 `TEST-STRATEGY.md:38,395-400`、`RFC §8.3:116`、`§8.4:129`、`§8.5:131-138` 与 README `:13` 一次收干净（C-210）。
+- **Suggested status**：**`Reviewed`**。
+
+---
+
+### 5. Open conflicts
+
+Round 1 的四条冲突在本轮的处理：
+
+| # | Round 1 冲突 | 本轮状态 |
+|---|---|---|
+| **O-1** | A 方案「首屏不碰后端」 vs AC-8 只写 `/api/games` | **已解决**：首页零 `/api/` 请求；e2e 已扩到 `/api/`；代码与用户批准的 A 方案一致 |
+| **O-2** | OPS-2 vs 未登记的 `test:perf` | **已解决**：`RULES.md:98` 已登记 |
+| **O-3** | TEST-STRATEGY 的 `proposed` / 旧文件名 vs 实际测试 | **部分解决**：`Exists?` 已回填 `existing`，但 `Test` 列仍是旧文件名、`:38` 仍写「待实现」→ 保留在 C-210 |
+| **O-4** | README 的 RFC 状态 / 用例数 vs `RFCS.md` | **已解决**：README `:11` 为 16 个 `Reviewed` / 771 用例，与本轮 `Reviewed` 后的状态一致 |
+
+本轮没有发现新的权威顺序冲突。`performance.now()` vs `Date.now()` 是实现偏离，不是两份 artifact 的矛盾，按 DOC-1 登记为 C-214，不静默裁决。
+
+---
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-20 | v1.0 | Round 1 评审：门禁 89 files / 770 tests、14/14 e2e、2/2 perf；四条阻塞（AC-1 Chromium 跳过、AC-5 warm-cache 测量、AC-8/A 方案的 `/api/session`、OPS-2 未登记 `test:perf`）与四条非阻塞（AC-7 扫描范围、文档漂移、默认 `/` / 无 seed 测试缺口、首页样式/英文错误）。探针从文件备份恢复，工作树 clean，无 commit。 |
+| 2026-11-20 | v1.1 | Round 2 复核（Status → `Reviewed`）：门禁 89 files / 771 tests、16/16 e2e、3/3 perf；冷启动中位 141ms。C-205 / C-206 / C-207 / C-208 / C-209 关闭，C-211 / C-212 的用户点名项关闭；C-210 部分关闭（文档残留 a–e）；新登记 C-213 / C-214 / C-215 为非阻塞。变异探针 M-R2-1 / M-R2-2 / M-R2-3 分别打红 AC-5、AC-8、AC-7；七个文件从备份恢复、MD5 一致、临时探针删除、工作树 clean、无 commit。 |
