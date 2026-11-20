@@ -100,7 +100,7 @@ export function NightAction({
           onSubmit={(event) => {
             event.preventDefault();
             const text = new FormData(event.currentTarget).get('wolf-chat');
-            onChat(typeof text === 'string' ? text : '');
+            if (typeof text === 'string' && text.trim() !== '') onChat(text);
             event.currentTarget.reset();
           }}
         >
@@ -110,9 +110,6 @@ export function NightAction({
           <input id="wolf-chat" name="wolf-chat" className="input" autoComplete="off" />
           <button type="submit" className="button">
             说
-          </button>
-          <button type="button" className="button" onClick={() => onChat('')}>
-            跳过
           </button>
         </form>
       </section>

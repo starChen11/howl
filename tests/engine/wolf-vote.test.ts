@@ -91,6 +91,20 @@ describe('RUL-13 · 狼队投票', () => {
     expect(rejected.state.phase).toBe('NIGHT_WOLF_RUNOFF');
   });
 
+  it('重投阶段弃权被拒（RUL-13 / RFC-018）', () => {
+    const s = nightStart();
+    const w = wolves(s);
+    const g = s.seats.filter((seat) => seat.alive && seat.role !== 'wolf').map((seat) => seat.seat);
+    let state = vote(s, w[0] as number, g[0] as number).state;
+    state = vote(state, w[1] as number, g[1] as number).state;
+    state = vote(state, w[2] as number, g[2] as number).state;
+    expect(state.phase).toBe('NIGHT_WOLF_RUNOFF');
+
+    const rejected = vote(state, w[0] as number, 'abstain' as never);
+    expect((rejected.events[0]?.payload as { code: string }).code).toBe('INVALID_RUNOFF_TARGET');
+    expect(rejected.state.phase).toBe('NIGHT_WOLF_RUNOFF');
+  });
+
   it('重投僵持（每人各投一票）→ 取席位最小的并列者下刀', () => {
     const s = nightStart();
     const w = wolves(s);

@@ -212,6 +212,16 @@ const wolfVote: ActionHandlerFor<'WOLF_VOTE'> = (state, action) => {
   }
 
   if (action.target === 'abstain') {
+    if (state.phase === 'NIGHT_WOLF_RUNOFF') {
+      return [
+        rejectionDraft({
+          action,
+          code: 'INVALID_RUNOFF_TARGET',
+          message: '重投不能弃权，只能投并列者',
+          seat: action.seat,
+        }),
+      ];
+    }
     const castAbstain = { seat: action.seat, target: 'abstain' as const };
     const outcome = tallyWolfVotes(state, castAbstain);
     const drafts: EventDraft[] = [

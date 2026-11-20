@@ -334,13 +334,18 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
             )}
             chatSeconds={50}
             readyAfterSeconds={
-              new URLSearchParams(window.location.search).get('fast') === '1' ? 5 : 30
+              __HOWL_FAKE_AI__ || new URLSearchParams(window.location.search).get('fast') === '1'
+                ? 5
+                : 30
             }
-            readySeats={ctx.privateEvents
+            readySeats={currentNightWolfEvents(ctx.privateEvents)
               .filter((event) => event.type === 'WOLF_READY_MARKED')
               .map((event) => (event.payload as { seat: number }).seat)}
-            wolfCount={ctx.knowledge.teammates.length + 1}
-            selfReady={ctx.privateEvents.some(
+            wolfCount={
+              ctx.knowledge.teammates.filter((teammate) => ctx.aliveSeats.includes(teammate))
+                .length + 1
+            }
+            selfReady={currentNightWolfEvents(ctx.privateEvents).some(
               (event) =>
                 event.type === 'WOLF_READY_MARKED' &&
                 (event.payload as { seat: number }).seat === ctx.self.seat,
@@ -364,7 +369,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
                 .map((target) => Number(target))
             }
             wolfVotes={currentWolfVotes(ctx.privateEvents)}
-            wolfChats={ctx.privateEvents
+            wolfChats={currentNightWolfEvents(ctx.privateEvents)
               .filter((event) => event.type === 'WOLF_CHAT_POSTED')
               .map((event) => ({
                 seat: (event.payload as { seat: number }).seat,
@@ -437,19 +442,24 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
  * 不能把整局的 `WOLF_VOTE_CAST` 都算进去：唱票（`WOLF_VOTE_REVEALED`）会开新一轮，
  * 跨夜与跨轮都要重置，否则界面会显示上一轮甚至上一夜的票。
  */
+function currentNightWolfEvents(events: { type: string; payload: unknown }[]) {
+  // 新一夜从「上一次唱票/刀口」之后开始：聊天、准备、票型都只取这一段。
+  let start = 0;
+  events.forEach((event, index) => {
+    if (event.type === 'WOLF_VOTE_REVEALED' || event.type === 'WOLF_KILL_CHOSEN') {
+      start = index + 1;
+    }
+  });
+  return events.slice(start);
+}
+
 function currentWolfVotes(
   events: { type: string; payload: unknown }[],
 ): { seat: number; target: number }[] {
-  let current: { seat: number; target: number }[] = [];
-  for (const event of events) {
-    if (event.type === 'WOLF_VOTE_REVEALED') {
-      current = [];
-      continue;
-    }
-    if (event.type === 'WOLF_VOTE_CAST') {
+  return currentNightWolfEvents(events)
+    .filter((event) => event.type === 'WOLF_VOTE_CAST')
+    .map((event) => {
       const payload = event.payload as { seat: number; target: number };
-      current = [...current, { seat: payload.seat, target: payload.target }];
-    }
-  }
-  return current;
+      return { seat: payload.seat, target: payload.target };
+    });
 }

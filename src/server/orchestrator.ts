@@ -220,7 +220,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     // 狼队讨论是**限时聊天室**（RUL-14）：不走「一人一句」的行动者循环，
     // 而是让 AI 队友发言/准备、等玩家自由聊天或时间到，再把相位推进到投票。
     if (state.phase === 'NIGHT_WOLF_CHAT') {
-      record = await driveWolfChat(deps, record, ctxFor);
+      record = await driveWolfChat(deps, record);
       steps += 1;
       continue;
     }
@@ -469,11 +469,7 @@ async function playerAction(
  *
  * 计时只在这里发生，引擎保持纯函数（ARCH-4）。
  */
-async function driveWolfChat(
-  deps: OrchestratorDeps,
-  initial: GameRecord,
-  ctxFor: (seat: number) => ProjectedContext,
-): Promise<GameRecord> {
+async function driveWolfChat(deps: OrchestratorDeps, initial: GameRecord): Promise<GameRecord> {
   const { registry, session } = deps;
   const chatMs = deps.wolfChatMs ?? 50_000;
   const readyMs = deps.wolfReadyMs ?? 0;
@@ -502,9 +498,16 @@ async function driveWolfChat(
   };
 
   const chatFromAi = async (seat: number): Promise<void> => {
+    // 每次都用**最新**聊天室记录重新投影：否则模型看到的是讨论开始前的快照。
+    const current = registry.stateOf(record);
     const decision = await deps.decide({
       seat,
-      ctx: ctxFor(seat),
+      ctx: project({
+        state: current,
+        events: record.events ?? [],
+        observer: seat as never,
+        pending: 'chat',
+      }),
       phase: 'NIGHT_WOLF_CHAT',
     });
     if (decision.action?.type === 'WOLF_CHAT') await submit(seat, decision.action);

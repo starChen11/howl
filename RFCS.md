@@ -54,7 +54,7 @@
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Reviewed |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Reviewed |
 | [RFC-017](RFCs/RFC-017-wolf-team-vote.md) | 狼队投票决定刀谁 | F3, F9, F10 | Medium | Reviewed |
-| [RFC-018](RFCs/RFC-018-wolf-night-chat-room.md) | 狼队夜间讨论改为限时聊天室 | F9, F10, F26 | Large | Implemented |
+| [RFC-018](RFCs/RFC-018-wolf-night-chat-room.md) | 狼队夜间讨论改为限时聊天室 | F9, F10, F26 | Large | Changes requested |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
 
@@ -1296,10 +1296,23 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 **Round 2 的结论**：Round 1 的 6 条阻塞与 B-N1 的行为修复全部成立，0 条新阻塞；N-R2-1 ~ N-R2-6 是回归锁强度问题，N-R2-15 是一处非阻塞的用户可见状态文案错误，N-R2-7 ~ N-R2-14 是维护性/文档残留。**RFC-017 Status = `Reviewed`**。
 
+### 8.63 RFC-018 Round 1 评审登记的开放冲突（2026-11-20）
+
+> 由 `/review-rfc 018` 登记；完整证据见 [`reviews/REVIEW-RFC-018.md`](reviews/REVIEW-RFC-018.md) Round 1。
+> **RFC-018 本轮有 4 条阻塞（B1-B4），Status = `Changes requested`。**
+
+| # | 冲突 | 处理 / 待裁决 | 状态与痕迹 |
+|---|---|---|---|
+| **C-235** | `RULES.md` §6 的 **RUL-13** 写「只能投存活非狼席位」「平票只对并列者重投且不能弃权」，而 **RUL-14** 允许投票超时按弃权处理；CHANGE-REQUEST-012 的裁定明确要求「为此 RUL-13 需要补一条：超时/弃权的狼票不计入最高票；全员弃权则当夜不刀」，但 RULES v1.5 **没有修改 RUL-13**，只新增了 RUL-14。两份规则当前对「狼票能否弃权」口径不同；实现（`src/engine/phases/night.ts`）对 `WOLF_VOTE target='abstain'` 一律接受，既包括首轮也包括 `NIGHT_WOLF_RUNOFF` | **阻塞 RFC-018（B1 / AC-7）**。需要 `/manage-changes` 补 RUL-13 的例外条款（或明确 RUL-14 覆盖 RUL-13 的哪些相位），并让引擎在重投相位拒绝显式弃权；「超时」与「显式弃权」若必须区分，需要单独的来源标记，不能靠同一个 `target: 'abstain'` | `RULES.md:245-247`、`RFCs/RFC-018...:35,72`、`CHANGE-REQUEST-012.md:101`、`src/engine/phases/night.ts:149-223`、`src/server/orchestrator.ts:369-379`、`reviews/REVIEW-RFC-018.md` B1 |
+| **C-236** | RFC-018 把 `WOLF_VOTE.target` 扩成 `SeatId \| 'abstain'`、`wolfVotes` 同步扩宽，并新增 `WOLF_READY` / `WOLF_READY_MARKED` / `wolfReady`；但 **RFC-017**（`Reviewed`）正文仍写「重投不能弃权、不能投并列者以外的人」，也仍以 `SeatId` 描述票型。RFC-018 的 Implementation Notes 只把 RFC-005/010/011/012 标了 `Spec changed`，**没有标 RFC-017** | **非阻塞行为（B1 另计）**，但属于跨 RFC 契约漂移。RFC-017 应标 `Spec changed` 或补一段 `Spec changed` 说明；RFC-001 的共享契约（已 `Spec changed`）也要在将来的重组里接住这个类型扩展 | `RFCs/RFC-017-wolf-team-vote.md:24,39-40`、`src/shared/actions.ts:46`、`src/shared/domain.ts:141`、`RFCS.md:51`、`reviews/REVIEW-RFC-018.md` N-6 |
+| **C-237** | `TEST-STRATEGY.md` RFC-018 第 7/8 行把「重投阶段弃权被拒」和「AI 在讨论阶段能推进/回应」标为 `existing`，但 `tests/engine/wolf-vote.test.ts` 全文没有 `abstain`，`tests/server/wolf-chat-room.test.ts` 只有两条超时用例。计划的测试不存在，导致 B1 / B2 都没有回归锁 | **阻塞 RFC-018（测试计划失信）**。补测试后回填 `Exists?`；同时修正 `TEST-STRATEGY.md` 的版本头（v1.21 / 2026-11-19）与 `§0.2` 基线（89 files / 794 tests，实际 87 / 789） | `TEST-STRATEGY.md:504-515`、`tests/engine/wolf-vote.test.ts:1-189`、`tests/server/wolf-chat-room.test.ts:1-65`、`reviews/REVIEW-RFC-018.md` B1/B2/N-7 |
+| **C-238** | RUL-14 / RFC-018 AC-5 规定「仅玩家+脚本替身的对局 5 秒可准备」，实现只认 URL 参数 `?fast=1`；反向地，`?fast=1` 在真实模型局也生效。30 秒门槛只由客户端按钮 `disabled` 表达，`跳过`（空 `WOLF_CHAT`）会在服务端被 `normalizeInput` 翻成 `skip` 并直接 `markReady`，绕过门槛 | **阻塞 RFC-018（B3 / AC-4、AC-5）**。由实现会话把门槛搬到服务端可判定处（decider 种类 / 投影字段），并把「跳过空消息」与「准备」拆开；`?fast=1` 只能作为 e2e 专用旁路且不得在真实模型局生效 | `src/client/App.tsx:336-338`、`src/client/components/NightAction.tsx:89-107`、`src/server/routes/games.ts:353-355`、`src/shared/speech.ts:24-28`、`src/server/orchestrator.ts:590-592`、`reviews/REVIEW-RFC-018.md` B3 |
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-20 | v2.158 | RFC-018 Round 1 评审（Status → `Changes requested`）：单元 87 files / 789 tests、typecheck / lint / format / build 全 0；meta 子进程门禁本机两次挂起（非行为回归，N-8）。阻塞 **B1** 重投接受弃权（实测进入 `NIGHT_SEER` 且无刀）、**B2** AI 投影冻结看不到玩家消息（实测 `chats: []`）、**B3** 30 秒门槛被「跳过」绕过 + 5 秒例外只认 `?fast=1`、**B4** 第二夜复用整局 `WOLF_READY_MARKED` / `WOLF_CHAT_POSTED` 且 `wolfCount` 含死狼；新增冲突 **C-235 ~ C-238**。探针临时文件已删除、工作树无 `src/` 改动、无 commit。详见 [`reviews/REVIEW-RFC-018.md`](reviews/REVIEW-RFC-018.md) |
 | 2026-11-20 | v2.157 | CHANGE-REQUEST-012 / RFC-018：RUL-14 狼队夜聊限时聊天室（50 秒讨论 / 30 秒可准备 / 全员准备提前 / 10 秒投票 / 超时弃权）。RFC-005/010/011/012 → Spec changed；新增 RFC-018（Implemented） |
 | 2026-11-20 | v2.156 | RFC-017 Round 2 复核（Status → `Reviewed`）：点名项 **C-216 / C-217 / C-218 / C-219 / C-220 / B-N1** 行为全部通过，**C-229** 前置 RFC-003 已 `Reviewed`。门禁 **93 files / 811 tests**、18/18 e2e、75 files / 678 tests 覆盖（行 96.74% / 分支 93.21%）、100/100 selfplay。变异探针 M-A ~ M-I 双向验证：删路由 guard / 删跨夜清理 / CAST 改 `public` / 回退映射 / 回退相位门都会红；但 **M-E**（投票路径 `WOLF_KILL_CHOSEN` 改 `public`）19/19 绿、**M-F**（删界面跨轮重置）官方 98/98 绿、**M-G**（删 `wolfVoteOpen`）16+8 绿——登记 N-R2-1 ~ N-R2-6 回归锁缺口，N-R2-7 ~ N-R2-14 维护性/文档残留；**P-WAIT** 另发现后置狼未投票时显示“你已投票”（N-R2-15，非阻塞）。探针从 `/tmp/howl-rfc017-r2/backup/` 文件备份恢复、8 个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-017.md`](reviews/REVIEW-RFC-017.md) Round 2 |
 | 2026-11-20 | v2.155 | RFC-003 窄范围复核 Round 2（Status → `Reviewed`）：只复核 B-N1 与 RUL-13 契约变更。B-N1 双向验证通过——`phaseAllows('kill')` 放行 `NIGHT_WOLF_RUNOFF`；改回旧门禁后 to-action **1/12 红**、编排用例停在重投 **1 failed**。动作表 / 相位转移 / 事件可见性 / 重投僵持 / 拒绝码五项契约 + §8.9 文档说明复核通过；HTTP `LEGACY_ACTION_DISABLED` 反向探针 **200 vs 400** 红、`WOLF_VOTE_CAST` 改 `public` **1/11 红**、跨夜清理删除后 **1/9 红**。门禁 **93 files / 811 tests**、18/18 e2e、覆盖率 96.74 / 93.21、30/30 selfplay。非阻塞新登记 C-230 ~ C-234（编排用例只到 `NIGHT_SEER`、投票路径 `WOLF_KILL_CHOSEN` 无可见性锁、`legalActionFor` 返回旧 `WOLF_KILL`、`TARGET_NOT_ALIVE` 未覆盖、文档版本头）。探针从 `/tmp/howl-rfc003-r7/backup/` 文件备份恢复、七个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-003.md`](reviews/REVIEW-RFC-003.md) Round 7 |

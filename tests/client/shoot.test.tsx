@@ -124,14 +124,15 @@ describe('夜间行动由玩家操作（回归：当狼却没参与刀人）', (
       replay: async () => null,
     } as unknown as ApiClient;
 
-    const { rerender } = render(<App gameId="g" client={client} />);
+    render(<App gameId="g" client={client} />);
 
-    // 讨论阶段：可以直接跳过
-    await screen.findByRole('button', { name: '跳过' });
-    await user.click(screen.getByRole('button', { name: '跳过' }));
+    // 讨论阶段：发一条真实消息（空消息不再等于「跳过 = 准备」）
+    await user.type(await screen.findByLabelText('狼队讨论'), '今晚刀 2 号');
+    await user.click(screen.getByRole('button', { name: '说' }));
     await waitFor(() => expect(submitted).toHaveLength(1));
-    expect(submitted[0]).toMatchObject({ action: { type: 'WOLF_CHAT', seat: 1 } });
-    rerender(<App gameId="g" client={client} />);
+    expect(submitted[0]).toMatchObject({
+      action: { type: 'WOLF_CHAT', seat: 1, text: '今晚刀 2 号' },
+    });
   });
 });
 
@@ -457,6 +458,7 @@ describe('RUL-14 · 狼队讨论聊天室', () => {
       true,
     );
     expect(screen.getByText(/已准备 1\/3 人/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '跳过' })).toBeNull();
     unmount();
 
     render(
@@ -509,5 +511,98 @@ describe('RUL-14 · 狼队讨论聊天室', () => {
     await user.click(screen.getByRole('button', { name: '说' }));
 
     expect(sent).toEqual(['先刀 2 号', '再刀 5 号']);
+  });
+});
+
+describe('RUL-14 · 聊天室不把空消息当准备', () => {
+  it('空提交不会触发 onChat（服务端不再把空串当 skip）', async () => {
+    const user = userEvent.setup();
+    const sent: string[] = [];
+    render(
+      <NightAction
+        pending="chat"
+        targets={[]}
+        potions={{ heal: 'available', poison: 'available' }}
+        killTarget={null}
+        wolfChats={[]}
+        wolfVotes={[]}
+        readyAfterSeconds={0}
+        readySeats={[]}
+        wolfCount={2}
+        onChat={(text) => sent.push(text)}
+        onTarget={() => undefined}
+        onWitch={() => undefined}
+        onReady={() => undefined}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: '说' }));
+    expect(sent).toEqual([]);
+  });
+});
+
+describe('RUL-14 · 聊天室只显示本夜数据', () => {
+  it('上一夜的聊天与准备状态不会带到下一夜', async () => {
+    const view = {
+      ...hunterView(),
+      self: { seat: 1, role: 'wolf', alive: true, personaId: null },
+      phase: 'NIGHT',
+      pending: 'chat',
+      legalTargets: [],
+      knowledge: {
+        teammates: [4],
+        checks: [],
+        potions: { heal: 'used', poison: 'used' },
+        canShoot: false,
+        knownKillTarget: null,
+      },
+      privateEvents: [
+        {
+          gameId: 'g',
+          seq: 1,
+          ts: 0,
+          type: 'WOLF_CHAT_POSTED',
+          visibleTo: 'wolves',
+          payload: { seat: 4, text: '上一夜的旧消息', round: 'night-chat' },
+        },
+        {
+          gameId: 'g',
+          seq: 2,
+          ts: 0,
+          type: 'WOLF_READY_MARKED',
+          visibleTo: 'wolves',
+          payload: { seat: 1 },
+        },
+        {
+          gameId: 'g',
+          seq: 3,
+          ts: 0,
+          type: 'WOLF_KILL_CHOSEN',
+          visibleTo: 'wolves',
+          payload: { target: 2 },
+        },
+        {
+          gameId: 'g',
+          seq: 4,
+          ts: 0,
+          type: 'WOLF_CHAT_POSTED',
+          visibleTo: 'wolves',
+          payload: { seat: 4, text: '这一夜的新消息', round: 'night-chat' },
+        },
+      ],
+    };
+    const client = {
+      game: async () => ({ version: 5, view }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async () => ({ ok: true as const }),
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByText(/这一夜的新消息/);
+    expect(screen.queryByText(/上一夜的旧消息/)).toBeNull();
+    expect(document.body.textContent).toContain('已准备 0/');
   });
 });

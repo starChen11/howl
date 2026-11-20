@@ -7,6 +7,8 @@ const API_PORT = process.env.PORT ?? '3000';
 const WEB_PORT = Number(process.env.VITE_PORT ?? 5173);
 
 export default defineConfig({
+  // 纯玩家 + 脚本替身的对局：狼队准备门槛从 30 秒降到 5 秒（RUL-14）。
+  define: { __HOWL_FAKE_AI__: JSON.stringify(process.env.HOWL_FAKE_AI === '1') },
   plugins: [react()],
   resolve: { alias: ALIAS },
   server: {

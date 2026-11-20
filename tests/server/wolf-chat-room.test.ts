@@ -63,3 +63,58 @@ describe('RUL-14 · 讨论与投票的时限', () => {
     ).toBe(true);
   }, 20_000);
 });
+
+describe('RFC-018 AC-8 · AI 能看到玩家刚发的消息', () => {
+  it('玩家发言后，AI 的投影里包含这条 WOLF_CHAT_POSTED', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 3,
+      playerSeat: 1,
+    });
+    const seen: unknown[][] = [];
+    let reads = 0;
+
+    await runGame({
+      registry,
+      session,
+      gameId: record.gameId,
+      input: {
+        async read() {
+          reads += 1;
+          return reads === 1 ? { kind: 'speak', text: '队友们，今晚刀 5 号' } : { kind: 'skip' };
+        },
+        close() {},
+      },
+      output: { emit() {}, async flush() {} },
+      decide: async (input) => {
+        if (input.phase === 'NIGHT_WOLF_CHAT') {
+          seen.push(input.ctx.privateEvents as never[]);
+          return {
+            action: {
+              type: 'WOLF_CHAT',
+              ts: 0,
+              seat: input.seat as never,
+              text: '收到',
+            },
+          };
+        }
+        return scriptedAgent(input);
+      },
+      wolfChatMs: 2_000,
+      wolfReadyMs: 0,
+      wolfVoteMs: 50,
+      maxSteps: 6,
+    });
+
+    const sawPlayerMessage = seen.some((events) =>
+      events.some(
+        (event) =>
+          (event as { type: string }).type === 'WOLF_CHAT_POSTED' &&
+          (event as { payload: { seat: number; text: string } }).payload.seat === 1,
+      ),
+    );
+    expect(sawPlayerMessage).toBe(true);
+  }, 20_000);
+});

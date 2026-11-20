@@ -13,6 +13,7 @@ import { ALIAS } from './configs/alias.ts';
  * 内层一律用 `pnpm exec vitest run --project unit`。
  */
 export default defineConfig({
+  define: { __HOWL_FAKE_AI__: 'false' },
   resolve: { alias: ALIAS },
   test: {
     /**

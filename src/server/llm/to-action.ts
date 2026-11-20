@@ -55,8 +55,6 @@ function phaseAllows(action: Decision['action'], ctx: DecisionContext): boolean 
       return ctx.phase === 'DAY_SPEECH';
     case 'shoot':
       return ctx.phase === 'NIGHT_HUNTER_SHOOT' || ctx.phase === 'DAY_HUNTER_SHOOT';
-    case 'ready':
-      return ctx.phase === 'NIGHT_WOLF_CHAT';
     case 'expose':
       return ctx.phase === 'DAY_SPEECH' || ctx.phase === 'DAY_VOTE';
     case 'chat':

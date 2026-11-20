@@ -106,3 +106,13 @@ pnpm test:e2e:all → 18 passed
 pnpm test:perf → 3 passed
 typecheck / lint / format:check / build → 0
 ```
+
+### 8.1 Round 1 回应（Review：Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **B1** | 重投阶段接受弃权；全员弃权路径绕开刀口 | 重投阶段提交弃权 → `INVALID_RUNOFF_TARGET`；重投超时改为投第一个并列者。普通轮超时仍按弃权（RUL-14） |
+| **B2** | AI 的投影是讨论开始前的冻结快照，看不到玩家新消息 | `driveWolfChat` 每次发言/回应都用**最新**记录重新 `project()`；补「玩家发言后 AI 上下文包含该消息」的用例 |
+| **B3** | 「跳过」= `WOLF_CHAT('')` = 准备，30 秒门槛可绕过；5 秒只认 `?fast=1` | 聊天室移除「跳过」，空消息不提交；`__HOWL_FAKE_AI__` 由 Vite 注入，纯脚本局 5 秒、真实模型 30 秒 |
+| **B4** | 第二夜显示上一夜聊天/准备；`wolfCount` 含死狼 | 客户端按「上一次唱票/刀口」截断，只取本夜事件；`wolfCount` 只数存活队友；补第二夜用例 |
+| N-4 | `to-action` 重复 `case 'ready'` | 已删 |
