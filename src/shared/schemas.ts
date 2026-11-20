@@ -63,10 +63,15 @@ export const ActionSchema = z.discriminatedUnion('type', [
     target: seatIdSchema,
   }),
   z.object({
+    type: z.literal('WOLF_READY'),
+    ts: timestampSchema,
+    seat: seatIdSchema,
+  }),
+  z.object({
     type: z.literal('WOLF_VOTE'),
     ts: timestampSchema,
     seat: seatIdSchema,
-    target: seatIdSchema,
+    target: z.union([seatIdSchema, z.literal('abstain')]),
   }),
   z.object({
     type: z.literal('SEER_CHECK'),
@@ -247,6 +252,10 @@ export const DegradedPayloadSchema = z.object({
 });
 
 /** 狼队投票（RUL-13）。 */
+export const WolfReadyMarkedPayloadSchema = z.object({
+  seat: z.number().int().min(1).max(9),
+});
+
 export const WolfVoteCastPayloadSchema = z.object({
   seat: z.number().int().min(1).max(9),
   target: z.number().int().min(1).max(9),
@@ -279,6 +288,7 @@ export const PAYLOAD_SCHEMAS = {
   GAME_ENDED: GameEndedPayloadSchema,
   AI_THOUGHT: AiThoughtPayloadSchema,
   DEGRADED: DegradedPayloadSchema,
+  WOLF_READY_MARKED: WolfReadyMarkedPayloadSchema,
   WOLF_VOTE_CAST: WolfVoteCastPayloadSchema,
   WOLF_VOTE_REVEALED: WolfVoteRevealedPayloadSchema,
 } as const;

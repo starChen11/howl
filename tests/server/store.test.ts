@@ -165,6 +165,16 @@ describe('B1 · 事件过滤：server 事件永远不出现在可见集合里', 
       if (!result.ok) throw new Error('提交失败');
       record.events = result.record.events;
       record.applied = result.record.applied;
+
+      const ready = await registry.submit(
+        session,
+        record,
+        { type: 'WOLF_READY', ts: 1, seat: speaker } as never,
+        registry.stateOf(record).seq,
+      );
+      if (!ready.ok) throw new Error('准备失败');
+      record.events = ready.record.events;
+      record.applied = ready.record.applied;
     }
 
     const afterChat = registry.stateOf(record);

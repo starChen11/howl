@@ -288,5 +288,7 @@ describe('RUL-13 · 提示词包含狼队票型', () => {
     expect(message).toContain('4 号投了 2 号（狼队投票）');
     expect(message).toContain('狼队票型：4→2、8→2');
     expect(message).toContain('平票（2、3）');
+    expect(message).toContain('action=ready');
+    expect(message).toContain('讨论限时 50 秒');
   });
 });

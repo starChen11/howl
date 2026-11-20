@@ -108,9 +108,12 @@ export interface GameEventMap {
   REJECTED: { actionType: Action['type']; code: string; message: string };
   WOLF_KILL_CHOSEN: { target: SeatId };
   /** 狼队内部投票（RUL-13）：每人一票，票型只有狼看得到。 */
-  WOLF_VOTE_CAST: { seat: SeatId; target: SeatId };
+  WOLF_VOTE_CAST: { seat: SeatId; target: SeatId | 'abstain' };
   /** 唱票结果：`tied` 非空表示进入重投。 */
-  WOLF_VOTE_REVEALED: { votes: { seat: SeatId; target: SeatId }[]; tied?: SeatId[] };
+  WOLF_VOTE_REVEALED: {
+    votes: { seat: SeatId; target: SeatId | 'abstain' }[];
+    tied?: SeatId[];
+  };
   SEER_CHECKED: { target: SeatId; result: 'wolf' | 'not-wolf' };
   WITCH_POTION_USED: { potion: 'heal' | 'poison'; target: SeatId };
   PLAYER_DIED: { seat: SeatId; cause: 'wolf' | 'poison' | 'lynch' | 'shoot' };
@@ -120,6 +123,7 @@ export interface GameEventMap {
   SPEECH_SKIPPED: { seat: SeatId };
   VOTE_CAST: { seat: SeatId; target: SeatId | 'abstain' };
   VOTE_REVEALED: { votes: { seat: SeatId; target: SeatId | 'abstain' }[] };
+  WOLF_READY_MARKED: { seat: SeatId };
   WOLF_CHAT_POSTED: { seat: SeatId; text: string; round: 'night-chat' };
   SELF_EXPOSE: { seat: SeatId };
   /** `claim` 是结构化载荷而非 `unknown`：复盘与判定都要在编译期知道该读什么（AI-5 / CR-003 C3）。 */
@@ -164,6 +168,7 @@ export const GAME_EVENT_TYPES = [
   'VOTE_CAST',
   'VOTE_REVEALED',
   'WOLF_CHAT_POSTED',
+  'WOLF_READY_MARKED',
   'SELF_EXPOSE',
   'PHASE_CHANGED',
   'AI_THOUGHT',

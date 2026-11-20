@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.156 · 来源 `PRD.md` v0.5 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-20
+> 版本 v2.157 · 来源 `PRD.md` v0.5 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-20
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -41,19 +41,20 @@
 | [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Reviewed |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Reviewed |
-| [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Reviewed |
+| [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Spec changed |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Spec changed |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Spec changed |
-| [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
-| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Reviewed |
+| [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Spec changed |
+| [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Spec changed |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Reviewed |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Reviewed |
 | [RFC-017](RFCs/RFC-017-wolf-team-vote.md) | 狼队投票决定刀谁 | F3, F9, F10 | Medium | Reviewed |
+| [RFC-018](RFCs/RFC-018-wolf-night-chat-room.md) | 狼队夜间讨论改为限时聊天室 | F9, F10, F26 | Large | Implemented |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
 
@@ -80,6 +81,7 @@
 | RFC-015 | 006, 007, 008, 009, 011 | — |
 | RFC-016 | 012 | — |
 | RFC-017 | 003, 005 | — |
+| RFC-018 | 005, 011 | — |
 
 **可并行分支**（顺序实现时无意义，多人协作有用）：
 
@@ -1298,6 +1300,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-20 | v2.157 | CHANGE-REQUEST-012 / RFC-018：RUL-14 狼队夜聊限时聊天室（50 秒讨论 / 30 秒可准备 / 全员准备提前 / 10 秒投票 / 超时弃权）。RFC-005/010/011/012 → Spec changed；新增 RFC-018（Implemented） |
 | 2026-11-20 | v2.156 | RFC-017 Round 2 复核（Status → `Reviewed`）：点名项 **C-216 / C-217 / C-218 / C-219 / C-220 / B-N1** 行为全部通过，**C-229** 前置 RFC-003 已 `Reviewed`。门禁 **93 files / 811 tests**、18/18 e2e、75 files / 678 tests 覆盖（行 96.74% / 分支 93.21%）、100/100 selfplay。变异探针 M-A ~ M-I 双向验证：删路由 guard / 删跨夜清理 / CAST 改 `public` / 回退映射 / 回退相位门都会红；但 **M-E**（投票路径 `WOLF_KILL_CHOSEN` 改 `public`）19/19 绿、**M-F**（删界面跨轮重置）官方 98/98 绿、**M-G**（删 `wolfVoteOpen`）16+8 绿——登记 N-R2-1 ~ N-R2-6 回归锁缺口，N-R2-7 ~ N-R2-14 维护性/文档残留；**P-WAIT** 另发现后置狼未投票时显示“你已投票”（N-R2-15，非阻塞）。探针从 `/tmp/howl-rfc017-r2/backup/` 文件备份恢复、8 个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-017.md`](reviews/REVIEW-RFC-017.md) Round 2 |
 | 2026-11-20 | v2.155 | RFC-003 窄范围复核 Round 2（Status → `Reviewed`）：只复核 B-N1 与 RUL-13 契约变更。B-N1 双向验证通过——`phaseAllows('kill')` 放行 `NIGHT_WOLF_RUNOFF`；改回旧门禁后 to-action **1/12 红**、编排用例停在重投 **1 failed**。动作表 / 相位转移 / 事件可见性 / 重投僵持 / 拒绝码五项契约 + §8.9 文档说明复核通过；HTTP `LEGACY_ACTION_DISABLED` 反向探针 **200 vs 400** 红、`WOLF_VOTE_CAST` 改 `public` **1/11 红**、跨夜清理删除后 **1/9 红**。门禁 **93 files / 811 tests**、18/18 e2e、覆盖率 96.74 / 93.21、30/30 selfplay。非阻塞新登记 C-230 ~ C-234（编排用例只到 `NIGHT_SEER`、投票路径 `WOLF_KILL_CHOSEN` 无可见性锁、`legalActionFor` 返回旧 `WOLF_KILL`、`TARGET_NOT_ALIVE` 未覆盖、文档版本头）。探针从 `/tmp/howl-rfc003-r7/backup/` 文件备份恢复、七个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-003.md`](reviews/REVIEW-RFC-003.md) Round 7 |
 | 2026-11-20 | v2.154 | RFC-017 Round 1 评审（Status → `Changes requested`）：门禁 **92 files / 800 tests**、18/18 e2e、74 files / 669 tests 覆盖、100/100 selfplay。**C-216**（默认 LLM 仍 `WOLF_KILL`，AI 不投票）、**C-217**（活 `WOLF_KILL` 单狼可绕过 RUL-13）、**C-218**（`wolfVotes` / `wolfRunoff` 跨夜残留）、**C-219**（AC-6/7/8 计划测试不存在）、**C-220**（AC-8 界面票型跨夜/非实时）为阻塞；C-229（RFC-003 前置 `Spec changed`）为流程阻塞。C-221 ~ C-228 为非阻塞。探针从 `/tmp/howl-rfc017-r1/backup/` 文件备份恢复、三个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-017.md`](reviews/REVIEW-RFC-017.md) Round 1 |

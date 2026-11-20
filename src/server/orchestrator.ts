@@ -36,6 +36,14 @@ export interface OrchestratorDeps {
   decide: (input: { seat: number; ctx: ProjectedContext; phase: string }) => Promise<AgentDecision>;
   /** 提前结束（测试用）。 */
   maxSteps?: number;
+  /** 狼队讨论时长（毫秒，RUL-14）。默认 50 秒。 */
+  wolfChatMs?: number;
+  /** AI 脚本队友多久后自动准备（毫秒）。生产 5 秒；测试默认 0。 */
+  wolfReadyMs?: number;
+  /** 狼队投票时长（毫秒）。超时按弃权处理。默认 10 秒。 */
+  wolfVoteMs?: number;
+  /** AI 狼如何准备：脚本固定延迟自动准备；真实模型自己输出 ready。 */
+  wolfAiReady?: 'auto' | 'model';
   now?: () => number;
 }
 
@@ -209,6 +217,14 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
         pending: pendingForPhase(state.phase),
       });
 
+    // 狼队讨论是**限时聊天室**（RUL-14）：不走「一人一句」的行动者循环，
+    // 而是让 AI 队友发言/准备、等玩家自由聊天或时间到，再把相位推进到投票。
+    if (state.phase === 'NIGHT_WOLF_CHAT') {
+      record = await driveWolfChat(deps, record, ctxFor);
+      steps += 1;
+      continue;
+    }
+
     const seat = seatToSpeak(state) ?? nextActor(state);
     if (seat === undefined) break;
 
@@ -312,9 +328,10 @@ async function playerAction(
   ctx: ProjectedContext,
 ): Promise<AgentDecision> {
   const now = deps.now ?? Date.now;
+  const isWolfVote = phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF';
   const input = await deps.input.read({
     seat: seat as never,
-    timeoutMs: 60_000,
+    timeoutMs: isWolfVote ? (deps.wolfVoteMs ?? 10_000) : 60_000,
     kind:
       phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF'
         ? 'vote'
@@ -350,6 +367,17 @@ async function playerAction(
   }
 
   if (phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF' || phase === 'NIGHT_SEER') {
+    // 狼队投票 10 秒超时 → 按弃权处理（用户裁定）；引擎拒绝在重投里弃权时保持原地。
+    if ((phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF') && input.kind === 'timeout') {
+      return {
+        action: {
+          type: 'WOLF_VOTE',
+          ts: now(),
+          seat: seat as never,
+          target: 'abstain' as never,
+        },
+      };
+    }
     const target = nightTarget();
     if (target === undefined) return { action: undefined };
 
@@ -430,4 +458,171 @@ async function playerAction(
     action: { type: 'SPEECH', ts: now(), seat: seat as never, text: input.text },
     speech: input.text,
   };
+}
+
+/**
+ * 狼队讨论（RUL-14）：限时聊天室。
+ *
+ * - AI 队友开局各说一句；`wolfReadyMs` 之后自动准备（生产 5 秒，测试可为 0）。
+ * - 玩家通过路由自由发言；每收到一条新消息，AI 队友会基于更新后的上下文回一句。
+ * - 讨论到时（默认 50 秒）或玩家说「准备完成」后，未准备者由服务端代为准备。
+ *
+ * 计时只在这里发生，引擎保持纯函数（ARCH-4）。
+ */
+async function driveWolfChat(
+  deps: OrchestratorDeps,
+  initial: GameRecord,
+  ctxFor: (seat: number) => ProjectedContext,
+): Promise<GameRecord> {
+  const { registry, session } = deps;
+  const chatMs = deps.wolfChatMs ?? 50_000;
+  const readyMs = deps.wolfReadyMs ?? 0;
+  const aiReady = deps.wolfAiReady ?? 'auto';
+  const startedAt = (deps.now ?? Date.now)();
+  let record = initial;
+
+  const playerSeat = registry.stateOf(record).seats.find((seat) => seat.isPlayer)?.seat;
+  const playerIsWolf =
+    playerSeat !== undefined &&
+    registry
+      .stateOf(record)
+      .seats.some((seat) => seat.seat === playerSeat && seat.alive && seat.role === 'wolf');
+  const aiWolves = () =>
+    registry
+      .stateOf(record)
+      .seats.filter((seat) => seat.alive && seat.role === 'wolf' && seat.seat !== playerSeat)
+      .map((seat) => seat.seat);
+
+  const submit = async (seat: number, action: Action): Promise<void> => {
+    record = (await registry.getGame(record.gameId)) ?? record;
+    const state = registry.stateOf(record);
+    if (state.phase !== 'NIGHT_WOLF_CHAT') return;
+    const result = await registry.submit(session, record, action as never, state.seq);
+    if (result.ok) record = result.record;
+  };
+
+  const chatFromAi = async (seat: number): Promise<void> => {
+    const decision = await deps.decide({
+      seat,
+      ctx: ctxFor(seat),
+      phase: 'NIGHT_WOLF_CHAT',
+    });
+    if (decision.action?.type === 'WOLF_CHAT') await submit(seat, decision.action);
+    if (decision.action?.type === 'WOLF_READY') await submit(seat, decision.action);
+  };
+
+  const markReady = async (seat: number): Promise<void> => {
+    const state = registry.stateOf(record);
+    if ((state.wolfReady ?? []).includes(seat as never)) return;
+    await submit(seat, { type: 'WOLF_READY', ts: (deps.now ?? Date.now)(), seat: seat as never });
+  };
+
+  // 开场：每名 AI 狼说一句
+  for (const seat of aiWolves()) await chatFromAi(seat);
+
+  // AI 准备计时（生产 5 秒；测试 0 立即）
+  const readyTimer =
+    aiReady === 'model' || readyMs <= 0
+      ? null
+      : setTimeout(() => {
+          void (async () => {
+            for (const seat of aiWolves()) await markReady(seat);
+          })();
+        }, readyMs);
+
+  if (aiReady === 'auto' && readyMs <= 0) {
+    for (const seat of aiWolves()) await markReady(seat);
+  }
+
+  let repliedTo = 0;
+  try {
+    for (;;) {
+      record = (await registry.getGame(record.gameId)) ?? record;
+      const state = registry.stateOf(record);
+      if (state.phase !== 'NIGHT_WOLF_CHAT') break;
+
+      const elapsed = (deps.now ?? Date.now)() - startedAt;
+      if (!playerIsWolf) {
+        // 玩家不是狼：狼队讨论是 AI 之间的事，不能让玩家干等 50 秒。
+        // 脚本队友会自动准备；真实模型若还没准备，每 5 秒再问一次。
+        if (Math.floor(elapsed / 5_000) !== Math.floor((elapsed - 1) / 5_000)) {
+          for (const seat of aiWolves()) await chatFromAi(seat);
+        }
+        if (elapsed >= chatMs) {
+          for (const seat of registry
+            .stateOf(record)
+            .seats.filter((entry) => entry.alive && entry.role === 'wolf')
+            .map((entry) => entry.seat)) {
+            await markReady(seat);
+          }
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+
+      if (elapsed >= chatMs) {
+        // 讨论超时：未准备者视为准备完成（用户裁定）。
+        for (const seat of registry
+          .stateOf(record)
+          .seats.filter((entry) => entry.alive && entry.role === 'wolf')
+          .map((entry) => entry.seat)) {
+          await markReady(seat);
+        }
+        break;
+      }
+
+      const chatsBefore = (record.events ?? []).filter(
+        (event) =>
+          event.type === 'WOLF_CHAT_POSTED' &&
+          (event.payload as { seat: number }).seat === playerSeat,
+      ).length;
+
+      const input = await deps.input.read({
+        seat: playerSeat as never,
+        timeoutMs: Math.max(1, chatMs - elapsed),
+        kind: 'action',
+      });
+
+      record = (await registry.getGame(record.gameId)) ?? record;
+      if (registry.stateOf(record).phase !== 'NIGHT_WOLF_CHAT') break;
+
+      if (input.kind === 'timeout' || input.kind === 'skip') {
+        if (playerSeat !== undefined) await markReady(playerSeat);
+        continue;
+      }
+
+      // 玩家发了一条消息：如果路由还没写进事件流（测试通道），这里补写；
+      // 路由已写的话不能重复写第二条。
+      const alreadyWritten =
+        (record.events ?? []).filter(
+          (event) =>
+            event.type === 'WOLF_CHAT_POSTED' &&
+            (event.payload as { seat: number }).seat === playerSeat,
+        ).length > chatsBefore;
+
+      if (playerSeat !== undefined && !alreadyWritten) {
+        await submit(playerSeat, {
+          type: 'WOLF_CHAT',
+          ts: (deps.now ?? Date.now)(),
+          seat: playerSeat as never,
+          text: input.text,
+        });
+      }
+
+      const chats = (record.events ?? []).filter(
+        (event) =>
+          event.type === 'WOLF_CHAT_POSTED' &&
+          (event.payload as { seat: number }).seat === playerSeat,
+      ).length;
+      if (chats > repliedTo) {
+        repliedTo = chats;
+        for (const seat of aiWolves()) await chatFromAi(seat);
+      }
+    }
+  } finally {
+    if (readyTimer !== null) clearTimeout(readyTimer);
+  }
+
+  return record;
 }

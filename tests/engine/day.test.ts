@@ -27,6 +27,20 @@ function passWolfChat(state: GameState): { state: GameState; events: GameEvent[]
     current = result.state;
     events.push(...result.events);
   }
+  for (
+    let readyGuard = 0;
+    readyGuard < 12 && current.phase === 'NIGHT_WOLF_CHAT';
+    readyGuard += 1
+  ) {
+    const readyWolf = current.seats.find(
+      (seat) =>
+        seat.alive && seat.role === 'wolf' && !(current.wolfReady ?? []).includes(seat.seat),
+    )?.seat;
+    if (readyWolf === undefined) break;
+    const ready = step(current, { type: 'WOLF_READY', ts: 0, seat: readyWolf });
+    current = ready.state;
+    events.push(...ready.events);
+  }
   return { state: current, events };
 }
 

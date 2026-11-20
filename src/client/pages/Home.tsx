@@ -35,7 +35,8 @@ export function Home({ seed }: { seed: number | null }) {
         credentials: 'same-origin',
       });
       if (!played.ok) throw new Error(`开局失败：${played.status}`);
-      window.location.search = `?game=${game.gameId}`;
+      const fast = new URLSearchParams(window.location.search).get('fast');
+      window.location.search = `?game=${game.gameId}${fast === '1' ? '&fast=1' : ''}`;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '开局失败');
       setBusy(false);

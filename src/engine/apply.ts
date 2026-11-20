@@ -98,6 +98,8 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       // AI 的内心独白：只以事件存在（`visibleTo: 'self:<seat>'`），不写进状态。
       // 复盘直接读事件流，因此不需要在状态里留副本（RFC-007 §2.5）。
       return base;
+    case 'WOLF_READY_MARKED':
+      return { ...base, wolfReady: [...(base.wolfReady ?? []), event.payload.seat] };
     case 'WOLF_CHAT_POSTED':
       return { ...base, wolfChat: [...(base.wolfChat ?? []), event.payload] };
     case 'DEGRADED':
@@ -142,6 +144,7 @@ function applyPhaseChanged(state: GameState, payload: { from: Phase; to: Phase }
     delete next.night;
     delete next.pendingDeaths;
     delete next.wolfChat;
+    delete next.wolfReady;
     // RUL-13 的票型与重投候选：只属于这一夜，不能带到下一夜。
     delete next.wolfVotes;
     delete next.wolfRunoff;

@@ -57,15 +57,17 @@ describe('AC-6 · 每个存活狼各产出一条 WOLF_CHAT_POSTED', () => {
     expect(posted.payload).toEqual({ seat: wolf, text: '今晚刀 4', round: 'night-chat' });
   });
 
-  it('同一只 wolf 提交两次 → ALREADY_SPOKEN', () => {
+  it('同一只 wolf 可以连发（RUL-14 聊天室）', () => {
     const state = opened();
     const wolf = state.seats.find((seat) => seat.role === 'wolf')?.seat;
     if (wolf === undefined) throw new Error('没有 wolf');
 
     const first = step(state, { type: 'WOLF_CHAT', ts: 2, seat: wolf, text: 'a' }).state;
-    const { events } = step(first, { type: 'WOLF_CHAT', ts: 3, seat: wolf, text: 'b' });
+    const second = step(first, { type: 'WOLF_CHAT', ts: 3, seat: wolf, text: 'b' });
 
-    expect(events[0]?.payload).toEqual(expect.objectContaining({ code: 'ALREADY_SPOKEN' }));
+    expect(second.events[0]?.type).toBe('WOLF_CHAT_POSTED');
+    expect(second.state.phase).toBe('NIGHT_WOLF_CHAT');
+    expect(second.state.wolfChat).toHaveLength(2);
   });
 
   it('好人提交 → NOT_YOUR_TURN', () => {
@@ -79,20 +81,42 @@ describe('AC-6 · 每个存活狼各产出一条 WOLF_CHAT_POSTED', () => {
   });
 });
 
-describe('AC-7 / AC-8 · 全部提交后推进，空串也算提交', () => {
-  it('每只存活 wolf 各报一句（空串）后进入 NIGHT_WOLVES', () => {
+describe('RUL-14 · 全员准备才推进', () => {
+  it('只有部分狼准备时仍在讨论，全员准备后进入 NIGHT_WOLVES', () => {
     let state = opened();
-    let guard = 0;
+    const wolves = state.seats.filter((seat) => seat.alive && seat.role === 'wolf');
+    const firstWolf = wolves[0]?.seat;
+    if (firstWolf === undefined) throw new Error('没有 wolf');
 
-    while (state.phase === 'NIGHT_WOLF_CHAT' && guard < 10) {
-      const speaker = pendingChatters(state)[0];
-      if (speaker === undefined) break;
-      state = step(state, { type: 'WOLF_CHAT', ts: guard, seat: speaker, text: '' }).state;
-      guard += 1;
+    // 即便每只狼都说过一句，也不自动推进
+    for (const [index, wolf] of wolves.entries()) {
+      state = step(state, {
+        type: 'WOLF_CHAT',
+        ts: index,
+        seat: wolf.seat,
+        text: '',
+      }).state;
     }
+    expect(state.phase).toBe('NIGHT_WOLF_CHAT');
 
+    const firstReady = step(state, { type: 'WOLF_READY', ts: 10, seat: firstWolf });
+    state = firstReady.state;
+    if (wolves.length > 1) expect(state.phase).toBe('NIGHT_WOLF_CHAT');
+
+    for (const wolf of wolves.filter((seat) => seat.seat !== firstWolf)) {
+      state = step(state, { type: 'WOLF_READY', ts: 11, seat: wolf.seat }).state;
+    }
     expect(state.phase).toBe('NIGHT_WOLVES');
     expect(state.wolfChat).toHaveLength(3);
+  });
+
+  it('重复准备 → ALREADY_READY', () => {
+    const state = opened();
+    const wolf = state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat;
+    if (wolf === undefined) throw new Error('没有 wolf');
+    const first = step(state, { type: 'WOLF_READY', ts: 1, seat: wolf }).state;
+    const again = step(first, { type: 'WOLF_READY', ts: 2, seat: wolf });
+    expect(again.events[0]?.payload).toEqual(expect.objectContaining({ code: 'ALREADY_READY' }));
   });
 });
 

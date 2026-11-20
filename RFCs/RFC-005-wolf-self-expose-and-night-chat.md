@@ -205,3 +205,8 @@ $ coverage → 行 96.95% / 分支 93.31%；新文件 wolf-chat.ts / self-expose
 $ pnpm test → 44 files / 369 tests 全绿
 $ coverage → 行 96.96% / 分支 93.31%
 ```
+
+### 8.10 Spec changed（CHANGE-REQUEST-012 / RFC-018）
+
+狼队夜聊由「每人一句后推进」改成**限时聊天室**：`WOLF_CHAT` 可多条，新增 `WOLF_READY`，
+全员准备或 50 秒到才进入 `NIGHT_WOLVES`。见 RFC-018。

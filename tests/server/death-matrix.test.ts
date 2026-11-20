@@ -70,15 +70,22 @@ function killPlayerPlan(): Parameters<typeof submitNight>[1] {
   return (state) => {
     switch (state.phase) {
       case 'NIGHT_WOLF_CHAT': {
-        const wolf = state.seats.find(
+        const notChatted = state.seats.find(
           (seat) =>
             seat.alive &&
             seat.role === 'wolf' &&
             !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
         )?.seat;
-        return wolf === undefined
+        if (notChatted !== undefined) {
+          return { type: 'WOLF_CHAT', ts: 0, seat: notChatted, text: '' } as never;
+        }
+        const notReady = state.seats.find(
+          (seat) =>
+            seat.alive && seat.role === 'wolf' && !(state.wolfReady ?? []).includes(seat.seat),
+        )?.seat;
+        return notReady === undefined
           ? undefined
-          : ({ type: 'WOLF_CHAT', ts: 0, seat: wolf, text: '' } as never);
+          : ({ type: 'WOLF_READY', ts: 0, seat: notReady } as never);
       }
       case 'NIGHT_WOLVES': {
         const wolf = state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat;
@@ -109,15 +116,22 @@ function poisonPlayerPlan(): Parameters<typeof submitNight>[1] {
   return (state) => {
     switch (state.phase) {
       case 'NIGHT_WOLF_CHAT': {
-        const wolf = state.seats.find(
+        const notChatted = state.seats.find(
           (seat) =>
             seat.alive &&
             seat.role === 'wolf' &&
             !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
         )?.seat;
-        return wolf === undefined
+        if (notChatted !== undefined) {
+          return { type: 'WOLF_CHAT', ts: 0, seat: notChatted, text: '' } as never;
+        }
+        const notReady = state.seats.find(
+          (seat) =>
+            seat.alive && seat.role === 'wolf' && !(state.wolfReady ?? []).includes(seat.seat),
+        )?.seat;
+        return notReady === undefined
           ? undefined
-          : ({ type: 'WOLF_CHAT', ts: 0, seat: wolf, text: '' } as never);
+          : ({ type: 'WOLF_READY', ts: 0, seat: notReady } as never);
       }
       case 'NIGHT_WOLVES': {
         const wolf = state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat;
@@ -263,9 +277,16 @@ describe('矩阵：猎人被放逐 → 白天开枪（此时不能看真相）',
                 seat.role === 'wolf' &&
                 !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
             )?.seat;
-            return wolf === undefined
+            if (wolf !== undefined) {
+              return { type: 'WOLF_CHAT', ts: 0, seat: wolf, text: '' };
+            }
+            const notReady = state.seats.find(
+              (seat) =>
+                seat.alive && seat.role === 'wolf' && !(state.wolfReady ?? []).includes(seat.seat),
+            )?.seat;
+            return notReady === undefined
               ? undefined
-              : { type: 'WOLF_CHAT', ts: 0, seat: wolf, text: '' };
+              : { type: 'WOLF_READY', ts: 0, seat: notReady };
           }
           case 'NIGHT_WOLVES': {
             const wolf = state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat;

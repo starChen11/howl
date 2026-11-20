@@ -37,11 +37,16 @@ export default defineConfig({
     // 先构建：否则改了源码仍在跑旧 bundle（C-130）。
     command: 'pnpm build && pnpm exec tsx scripts/e2e-server.ts',
     url: `http://127.0.0.1:${PORT}/api/health`,
-    reuseExistingServer: !process.env.CI,
+    // 不复用旧进程：它的环境变量（尤其是 RUL-14 的时限）可能与本次配置不同。
+    reuseExistingServer: false,
     timeout: 30_000,
     env: {
       E2E_PORT: String(PORT),
       HOWL_FAKE_AI: '1',
+      // RUL-14：e2e 不等真实的 50/30/10 秒。聊天 0.8 秒后自动进投票，投票 0.8 秒超时弃权。
+      HOWL_WOLF_CHAT_MS: '3000',
+      HOWL_WOLF_VOTE_MS: '3000',
+      HOWL_WOLF_READY_MS: '0',
     },
   },
 });

@@ -296,3 +296,8 @@ $ pnpm test → 75 files / 642 tests
 ```
 $ pnpm test → 75 files / 643 tests
 ```
+
+### 8.9 Spec changed（CHANGE-REQUEST-012 / RFC-018）
+
+输入通道新增「狼队讨论自由发言 + 准备完成」的用法：讨论阶段可多次 `submit`，
+`WOLF_READY` 会唤醒编排层的等待。见 RFC-018。

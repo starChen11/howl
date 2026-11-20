@@ -148,14 +148,19 @@ const wolfKill: ActionHandlerFor<'WOLF_KILL'> = (state, action) => {
 /** 狼队投票的唱票结果（RUL-13）。 */
 function tallyWolfVotes(
   state: GameState,
-  cast: { seat: SeatId; target: SeatId },
-): { winner?: SeatId; tied?: SeatId[] } {
+  cast: { seat: SeatId; target: SeatId | 'abstain' },
+): { winner?: SeatId; tied?: SeatId[]; allAbstain?: boolean } {
   const wolves = aliveSeats(state).filter((seat) => seat.role === 'wolf');
   const votes = [...(state.wolfVotes ?? []), cast];
   if (votes.length < wolves.length) return {};
 
   const counts = new Map<SeatId, number>();
-  for (const vote of votes) counts.set(vote.target, (counts.get(vote.target) ?? 0) + 1);
+  for (const vote of votes) {
+    if (vote.target === 'abstain') continue;
+    counts.set(vote.target, (counts.get(vote.target) ?? 0) + 1);
+  }
+
+  if (counts.size === 0) return { allAbstain: true };
 
   const max = Math.max(...counts.values());
   const tied = [...counts.entries()]
@@ -206,6 +211,52 @@ const wolfVote: ActionHandlerFor<'WOLF_VOTE'> = (state, action) => {
     ];
   }
 
+  if (action.target === 'abstain') {
+    const castAbstain = { seat: action.seat, target: 'abstain' as const };
+    const outcome = tallyWolfVotes(state, castAbstain);
+    const drafts: EventDraft[] = [
+      { type: 'WOLF_VOTE_CAST', visibleTo: 'wolves', payload: castAbstain },
+    ];
+    if (outcome.winner !== undefined) {
+      drafts.push(
+        {
+          type: 'WOLF_VOTE_REVEALED',
+          visibleTo: 'wolves',
+          payload: { votes: [...(state.wolfVotes ?? []), castAbstain] },
+        },
+        { type: 'WOLF_KILL_CHOSEN', visibleTo: 'wolves', payload: { target: outcome.winner } },
+        phaseChangedDraft(state.phase, nextAfterWolves(state)),
+      );
+      return drafts;
+    }
+    if (outcome.tied === undefined && outcome.winner === undefined && outcome.allAbstain === true) {
+      // 全员弃权：这一夜没有刀口，直接进入下一相位。
+      drafts.push(
+        {
+          type: 'WOLF_VOTE_REVEALED',
+          visibleTo: 'wolves',
+          payload: { votes: [...(state.wolfVotes ?? []), castAbstain] },
+        },
+        phaseChangedDraft(state.phase, nextAfterWolves(state)),
+      );
+      return drafts;
+    }
+    if (outcome.tied !== undefined) {
+      drafts.push(
+        {
+          type: 'WOLF_VOTE_REVEALED',
+          visibleTo: 'wolves',
+          payload: {
+            votes: [...(state.wolfVotes ?? []), castAbstain],
+            tied: outcome.tied,
+          },
+        },
+        phaseChangedDraft(state.phase, 'NIGHT_WOLF_RUNOFF'),
+      );
+    }
+    return drafts;
+  }
+
   if (!isAlive(state, action.target)) {
     return [
       rejectionDraft({
@@ -242,7 +293,7 @@ const wolfVote: ActionHandlerFor<'WOLF_VOTE'> = (state, action) => {
     ];
   }
 
-  const cast = { seat: action.seat, target: action.target };
+  const cast = { seat: action.seat, target: action.target as SeatId | 'abstain' };
   const outcome = tallyWolfVotes(state, cast);
   const drafts: EventDraft[] = [{ type: 'WOLF_VOTE_CAST', visibleTo: 'wolves', payload: cast }];
 

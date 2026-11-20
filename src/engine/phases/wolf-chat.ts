@@ -39,17 +39,6 @@ const wolfChat: ActionHandlerFor<'WOLF_CHAT'> = (state, action) => {
     ];
   }
 
-  if ((state.wolfChat ?? []).some((entry) => entry.seat === action.seat)) {
-    return [
-      rejectionDraft({
-        action,
-        code: 'ALREADY_SPOKEN',
-        message: `座位 ${action.seat} 本夜已经发过言`,
-        seat: action.seat,
-      }),
-    ];
-  }
-
   const drafts: EventDraft[] = [
     {
       type: 'WOLF_CHAT_POSTED',
@@ -63,12 +52,45 @@ const wolfChat: ActionHandlerFor<'WOLF_CHAT'> = (state, action) => {
     },
   ];
 
-  const remaining = pendingChatters(state).filter((seat) => seat !== action.seat);
-  if (remaining.length === 0) {
+  return drafts;
+};
+
+/** `WOLF_READY`（`NIGHT_WOLF_CHAT`）：狼队讨论结束的表态（RUL-14）。 */
+const wolfReady: ActionHandlerFor<'WOLF_READY'> = (state, action) => {
+  const actor = seatAt(state, action.seat);
+  if (!actor.alive || actor.role !== 'wolf') {
+    return [
+      rejectionDraft({
+        action,
+        code: 'NOT_YOUR_TURN',
+        message: `座位 ${action.seat} 不是存活的 wolf，不能表态`,
+        seat: action.seat,
+      }),
+    ];
+  }
+
+  if ((state.wolfReady ?? []).includes(action.seat)) {
+    return [
+      rejectionDraft({
+        action,
+        code: 'ALREADY_READY',
+        message: `座位 ${action.seat} 已经准备完成`,
+        seat: action.seat,
+      }),
+    ];
+  }
+
+  const ready = [...(state.wolfReady ?? []), action.seat];
+  const wolves = aliveSeats(state).filter((seat) => seat.role === 'wolf');
+  const drafts: EventDraft[] = [
+    { type: 'WOLF_READY_MARKED', visibleTo: 'wolves', payload: { seat: action.seat } },
+  ];
+
+  if (wolves.every((seat) => ready.includes(seat.seat))) {
     drafts.push(phaseChangedDraft('NIGHT_WOLF_CHAT', 'NIGHT_WOLVES'));
   }
 
   return drafts;
 };
 
-export const WOLF_CHAT_HANDLERS = { WOLF_CHAT: wolfChat } as const;
+export const WOLF_CHAT_HANDLERS = { WOLF_CHAT: wolfChat, WOLF_READY: wolfReady } as const;

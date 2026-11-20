@@ -36,6 +36,8 @@ const REQUIRED_TARGET: ReadonlySet<Decision['action']> = new Set([
 /** 决策需要的阶段。用它把「动作与阶段不匹配」挡在引擎之外。 */
 function phaseAllows(action: Decision['action'], ctx: DecisionContext): boolean {
   switch (action) {
+    case 'ready':
+      return ctx.phase === 'NIGHT_WOLF_CHAT';
     case 'kill':
       // 狼队投票有普通轮与重投两个相位（RUL-13）
       return ctx.phase === 'NIGHT_WOLVES' || ctx.phase === 'NIGHT_WOLF_RUNOFF';
@@ -53,6 +55,8 @@ function phaseAllows(action: Decision['action'], ctx: DecisionContext): boolean 
       return ctx.phase === 'DAY_SPEECH';
     case 'shoot':
       return ctx.phase === 'NIGHT_HUNTER_SHOOT' || ctx.phase === 'DAY_HUNTER_SHOOT';
+    case 'ready':
+      return ctx.phase === 'NIGHT_WOLF_CHAT';
     case 'expose':
       return ctx.phase === 'DAY_SPEECH' || ctx.phase === 'DAY_VOTE';
     case 'chat':
@@ -98,6 +102,8 @@ export function toAction(decision: Decision, ctx: DecisionContext, ts: number): 
     }
     case 'skip':
       return { action: { type: 'SPEECH_SKIP', ts, seat: ctx.seat } };
+    case 'ready':
+      return { action: { type: 'WOLF_READY', ts, seat: ctx.seat } };
     case 'expose':
       return { action: { type: 'SELF_EXPOSE', ts, seat: ctx.seat } };
     case 'chat':

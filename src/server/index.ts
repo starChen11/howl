@@ -61,6 +61,10 @@ const loop = new GameLoop({
     }),
 });
 
+process.env['HOWL_WOLF_READY_MS'] ??= '5000';
+// 真实模型自己决定「准备完成」；脚本替身固定 5 秒后自动准备。
+process.env['HOWL_WOLF_AI_READY'] ??= process.env['HOWL_FAKE_AI'] === '1' ? 'auto' : 'model';
+
 const app = buildApp({
   logger: true,
   production: process.env.NODE_ENV === 'production',

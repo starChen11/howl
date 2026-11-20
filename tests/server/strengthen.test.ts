@@ -112,6 +112,23 @@ describe('C-65 · AC-8：B1 的 HTTP 回归测试要有 server 事件可筛', ()
       if (!result.ok) throw new Error('夜聊失败');
       current = result.record;
     }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
+    }
 
     {
       const state = stateOf();
@@ -327,6 +344,23 @@ describe('C-133 · 夜间默认 pending 只给当前行动者', () => {
       );
       if (!r.ok) break;
       current = r.record;
+    }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
     }
 
     const app = buildApp({ store, bus: new StreamBus() });

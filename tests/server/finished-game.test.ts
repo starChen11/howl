@@ -40,7 +40,15 @@ async function playToFinish(
             seat.role === 'wolf' &&
             !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
         )?.seat;
-        if (speaker === undefined) return record;
+        if (speaker === undefined) {
+          const notReady = state.seats.find(
+            (seat) =>
+              seat.alive && seat.role === 'wolf' && !(state.wolfReady ?? []).includes(seat.seat),
+          )?.seat;
+          if (notReady === undefined) return record;
+          action = { type: 'WOLF_READY', ts: 1, seat: notReady };
+          break;
+        }
         action = { type: 'WOLF_CHAT', ts: 1, seat: speaker, text: '' };
         break;
       }

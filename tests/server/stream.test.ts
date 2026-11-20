@@ -40,6 +40,15 @@ async function advanceToDay(
     );
     if (!result.ok) throw new Error('夜聊失败');
     current = result.record;
+
+    const ready = await registry.submit(
+      session,
+      current,
+      { type: 'WOLF_READY', ts: 1, seat: speaker } as never,
+      registry.stateOf(current).seq,
+    );
+    if (!ready.ok) throw new Error('准备失败');
+    current = ready.record;
   }
 
   for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT', 'HUNTER_SHOOT'] as const) {

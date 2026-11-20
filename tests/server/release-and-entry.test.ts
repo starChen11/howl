@@ -93,6 +93,23 @@ describe('C-72 · AC-8：动作必须真的被引擎接受', () => {
       if (!result.ok) throw new Error('夜聊失败');
       current = result.record;
     }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
+    }
     for (const [type, seatOf] of [
       [
         'WOLF_KILL',

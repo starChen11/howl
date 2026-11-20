@@ -151,7 +151,10 @@ export function buildUserMessage(ctx: ProjectedContext): string {
   }
   lines.push(`当前需要你做出：${ctx.pending ?? '无'} 决策。`);
   lines.push(
-    '可选动作：kill（夜里=投票给某个刀口）、check、heal、poison、none、vote、abstain、speak、skip、shoot、expose、chat。',
+    '狼队讨论限时 50 秒、投票限时 10 秒。讨论中可以继续 chat，或输出 action=ready 表示准备完成（全员准备会提前进入投票）。',
+  );
+  lines.push(
+    '可选动作：kill（夜里=投票给某个刀口）、check、heal、poison、none、vote、abstain、speak、skip、shoot、expose、chat、ready。',
   );
 
   if (ctx.publicEvents.length > 0) {

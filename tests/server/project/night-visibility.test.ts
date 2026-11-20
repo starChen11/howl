@@ -41,6 +41,15 @@ function runTo(target: 'NIGHT_SEER' | 'NIGHT_WITCH' | 'NIGHT_HUNTER_SHOOT') {
     if (speaker === undefined) break;
     current = push(current, { type: 'WOLF_CHAT', ts: 2, seat: speaker, text: '' });
   }
+  for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+    if (current.phase !== 'NIGHT_WOLF_CHAT') break;
+    const readyWolf = current.seats.find(
+      (seat) =>
+        seat.alive && seat.role === 'wolf' && !(current.wolfReady ?? []).includes(seat.seat),
+    )?.seat;
+    if (readyWolf === undefined) break;
+    current = push(current, { type: 'WOLF_READY', ts: 2, seat: readyWolf });
+  }
   if (current.phase === target) return { state: current, events };
 
   const hunter = seatOfRole(current, 'hunter');

@@ -332,6 +332,20 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
             hasVoted={currentWolfVotes(ctx.privateEvents).some(
               (vote) => vote.seat === ctx.self.seat,
             )}
+            chatSeconds={50}
+            readyAfterSeconds={
+              new URLSearchParams(window.location.search).get('fast') === '1' ? 5 : 30
+            }
+            readySeats={ctx.privateEvents
+              .filter((event) => event.type === 'WOLF_READY_MARKED')
+              .map((event) => (event.payload as { seat: number }).seat)}
+            wolfCount={ctx.knowledge.teammates.length + 1}
+            selfReady={ctx.privateEvents.some(
+              (event) =>
+                event.type === 'WOLF_READY_MARKED' &&
+                (event.payload as { seat: number }).seat === ctx.self.seat,
+            )}
+            onReady={() => void nightAction({ type: 'WOLF_READY' })}
             waiting={
               ctx.wolfVoteOpen === true &&
               ctx.pending !== 'wolf-vote' &&

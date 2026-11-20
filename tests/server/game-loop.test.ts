@@ -95,7 +95,7 @@ describe('AC-15 · 一局能从开局跑到 FINISHED', () => {
       });
     };
 
-    for (let tick = 0; tick < 200; tick += 1) {
+    for (let tick = 0; tick < 800; tick += 1) {
       const record = await registry.getGame(gameId);
       if (record?.status === 'finished') break;
       await answer();

@@ -135,8 +135,10 @@ export interface GameState {
   runoff?: SeatId[];
   /** 本夜狼队已提交的发言（`WOLF_CHAT_POSTED` 折叠而来，可重建）。 */
   wolfChat?: { seat: SeatId; text: string }[];
+  /** 已表态「准备完成」的狼（RUL-14）。 */
+  wolfReady?: SeatId[];
   /** 狼队这一轮的票（RUL-13）。 */
-  wolfVotes?: { seat: SeatId; target: SeatId }[];
+  wolfVotes?: { seat: SeatId; target: SeatId | 'abstain' }[];
   /** 重投时的候选（并存席位）；空/未定义表示不在重投。 */
   wolfRunoff?: SeatId[];
   /** 已被放逐的席位（`VOTE_REVEALED` 唯一最高票时写入，`DAY_LYNCH` 的自动推进读它）。 */

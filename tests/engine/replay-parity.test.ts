@@ -47,6 +47,17 @@ function playSequence(): { events: GameEvent[]; liveStates: ReturnType<typeof st
     chatEvents.push(...result.events);
   }
 
+  for (let guard = 0; guard < 10 && afterChat.phase === 'NIGHT_WOLF_CHAT'; guard += 1) {
+    const readyWolf = afterChat.seats.find(
+      (seat) =>
+        seat.alive && seat.role === 'wolf' && !(afterChat.wolfReady ?? []).includes(seat.seat),
+    )?.seat;
+    if (readyWolf === undefined) break;
+    const result = step(afterChat, { type: 'WOLF_READY', ts: 900, seat: readyWolf });
+    afterChat = result.state;
+    chatEvents.push(...result.events);
+  }
+
   const wolf = state.seats.find((seat) => seat.role === 'wolf' && seat.alive)?.seat;
   const killTarget = state.seats.find((seat) => seat.alive && seat.role === 'villager')?.seat;
   if (wolf === undefined || killTarget === undefined) throw new Error('夹具缺少狼或村民');

@@ -46,6 +46,14 @@ async function gameWithDeadPlayer(store: InMemoryMetaStore) {
     );
     if (!r.ok) break;
     current = r.record;
+    const ready = await registry.submit(
+      session,
+      current,
+      { type: 'WOLF_READY', ts: 1, seat: wolf } as never,
+      registry.stateOf(current).seq,
+    );
+    if (!ready.ok) break;
+    current = ready.record;
   }
 
   // 狼刀玩家自己 → 玩家出局
@@ -296,9 +304,16 @@ describe('出局后仍待决定时不能看真相（防作弊）', () => {
                 seat.role === 'wolf' &&
                 !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
             )?.seat;
-            return wolf === undefined
+            if (wolf !== undefined) {
+              return { type: 'WOLF_CHAT', ts: 0, seat: wolf, text: '' };
+            }
+            const notReady = state.seats.find(
+              (seat) =>
+                seat.alive && seat.role === 'wolf' && !(state.wolfReady ?? []).includes(seat.seat),
+            )?.seat;
+            return notReady === undefined
               ? undefined
-              : { type: 'WOLF_CHAT', ts: 0, seat: wolf, text: '' };
+              : { type: 'WOLF_READY', ts: 0, seat: notReady };
           }
           case 'NIGHT_WOLVES': {
             const wolf = state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat;

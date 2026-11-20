@@ -130,6 +130,23 @@ describe('C-101 · 玩家轮真的会问输入通道', () => {
       if (!result.ok) break;
       current = result.record;
     }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
+    }
     for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
       const state = registry.stateOf(current);
       if (state.phase === 'DAY_SPEECH') break;
@@ -238,10 +255,11 @@ describe('C-113 · 编排层不能覆盖路由写入的发言', () => {
     });
 
     const after = await registry.getGame(gameId);
-    expect(after?.events.length).toBeGreaterThanOrEqual(before.events.length);
-    expect(after?.events.map((event) => event.seq)).toEqual(
-      before.events.map((event) => event.seq),
-    );
+    // RUL-14：编排层现在会推进狼队聊天，可能新增事件；关键是**已有事件不被覆盖**。
+    const afterSeqs = new Set(after?.events.map((event) => event.seq));
+    for (const seq of before.events.map((event) => event.seq)) {
+      expect(afterSeqs.has(seq)).toBe(true);
+    }
   });
 });
 
@@ -288,6 +306,23 @@ describe('C-110 · 玩家 skip 与超时在事件流上可见', () => {
       );
       if (!result.ok) break;
       current = result.record;
+    }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
     }
     for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
       const state = stateOf();
@@ -386,6 +421,23 @@ describe('C-110 · 超时提交的文本进入事件流', () => {
       );
       if (!result.ok) break;
       current = result.record;
+    }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
     }
     for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
       const state = stateOf();
@@ -540,6 +592,23 @@ describe('C-127 · 平票重投时玩家亲自投票', () => {
       );
       if (!r.ok) break;
       current = r.record;
+    }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
     }
     for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
       const state = stateOf();
@@ -761,9 +830,9 @@ describe('RUL-13 · 重投不会让对局停住（默认模型路径的翻译层
       gameId: record.gameId,
       input: {
         async read(prompt) {
-          return prompt.kind === 'vote'
-            ? { kind: 'speak', text: String(playerVoteTarget) }
-            : { kind: 'speak', text: String(playerVoteTarget) };
+          // 狼聊阶段直接准备；投票阶段再给目标
+          if (prompt.kind === 'action') return { kind: 'skip' };
+          return { kind: 'speak', text: String(playerVoteTarget) };
         },
         close() {},
       },

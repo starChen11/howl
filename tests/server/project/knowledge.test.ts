@@ -47,6 +47,15 @@ function runNight(options: {
     if (speaker === undefined) break;
     current = push(current, { type: 'WOLF_CHAT', ts: 2, seat: speaker, text: '' });
   }
+  for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+    if (current.phase !== 'NIGHT_WOLF_CHAT') break;
+    const readyWolf = current.seats.find(
+      (seat) =>
+        seat.alive && seat.role === 'wolf' && !(current.wolfReady ?? []).includes(seat.seat),
+    )?.seat;
+    if (readyWolf === undefined) break;
+    current = push(current, { type: 'WOLF_READY', ts: 2, seat: readyWolf });
+  }
 
   const wolf = seatOfAliveRole(current, 'wolf');
   const killTarget = options.killTarget ?? seatOfAliveRole(current, 'villager');
@@ -164,6 +173,15 @@ describe('AC-6 · canShoot 只在开枪阶段为真', () => {
       if (speaker === undefined) break;
       current = push(current, { type: 'WOLF_CHAT', ts: 2, seat: speaker, text: '' });
     }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      if (current.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = current.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(current.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      current = push(current, { type: 'WOLF_READY', ts: 2, seat: readyWolf });
+    }
     const hunter = seatOfRole(current, 'hunter');
     current = push(current, {
       type: 'WOLF_KILL',
@@ -226,6 +244,15 @@ describe('AC-7 · 女巫在用药阶段看得到刀口', () => {
       )?.seat;
       if (speaker === undefined) break;
       current = push(current, { type: 'WOLF_CHAT', ts: 2, seat: speaker, text: '' });
+    }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      if (current.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = current.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(current.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      current = push(current, { type: 'WOLF_READY', ts: 2, seat: readyWolf });
     }
     const killTarget = seatOfAliveRole(current, 'villager');
     current = push(current, {

@@ -20,6 +20,7 @@ export const DecisionSchema = z.object({
     'shoot',
     'expose',
     'chat',
+    'ready',
   ]),
   target: z.number().int().min(1).max(9).optional(),
   reason: z.string().min(1).max(200),

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { App } from '@client/App';
 import type { ApiClient } from '@client/api';
+import { NightAction } from '@client/components/NightAction';
 import { ShootInput } from '@client/components/ShootInput';
 import type { ProjectedContext } from '@shared/project';
 
@@ -430,5 +431,83 @@ describe('狼人自曝入口', () => {
     render(<App gameId="g" client={client} />);
     await screen.findByRole('heading', { name: '你的身份' });
     expect(screen.queryByRole('button', { name: /自曝身份/ })).toBeNull();
+  });
+});
+
+describe('RUL-14 · 狼队讨论聊天室', () => {
+  it('30 秒前「准备完成」不可点；0 秒门槛时可点', () => {
+    const { unmount } = render(
+      <NightAction
+        pending="chat"
+        targets={[]}
+        potions={{ heal: 'available', poison: 'available' }}
+        killTarget={null}
+        wolfChats={[{ seat: 4, text: '今晚刀 2 号' }]}
+        wolfVotes={[]}
+        readyAfterSeconds={30}
+        readySeats={[4]}
+        wolfCount={3}
+        onChat={() => undefined}
+        onTarget={() => undefined}
+        onWitch={() => undefined}
+        onReady={() => undefined}
+      />,
+    );
+    expect((screen.getByRole('button', { name: /准备完成/ }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText(/已准备 1\/3 人/)).toBeTruthy();
+    unmount();
+
+    render(
+      <NightAction
+        pending="chat"
+        targets={[]}
+        potions={{ heal: 'available', poison: 'available' }}
+        killTarget={null}
+        wolfChats={[]}
+        wolfVotes={[]}
+        readyAfterSeconds={0}
+        readySeats={[]}
+        wolfCount={3}
+        onChat={() => undefined}
+        onTarget={() => undefined}
+        onWitch={() => undefined}
+        onReady={() => undefined}
+      />,
+    );
+    expect((screen.getByRole('button', { name: '准备完成' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('聊天室可以连续发送多条消息', async () => {
+    const user = userEvent.setup();
+    const sent: string[] = [];
+    render(
+      <NightAction
+        pending="chat"
+        targets={[]}
+        potions={{ heal: 'available', poison: 'available' }}
+        killTarget={null}
+        wolfChats={[]}
+        wolfVotes={[]}
+        readyAfterSeconds={30}
+        readySeats={[]}
+        wolfCount={3}
+        onChat={(text) => sent.push(text)}
+        onTarget={() => undefined}
+        onWitch={() => undefined}
+        onReady={() => undefined}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('狼队讨论'), '先刀 2 号');
+    await user.click(screen.getByRole('button', { name: '说' }));
+    await user.clear(screen.getByLabelText('狼队讨论'));
+    await user.type(screen.getByLabelText('狼队讨论'), '再刀 5 号');
+    await user.click(screen.getByRole('button', { name: '说' }));
+
+    expect(sent).toEqual(['先刀 2 号', '再刀 5 号']);
   });
 });

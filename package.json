@@ -2,7 +2,7 @@
   "name": "howl",
   "version": "0.0.0",
   "private": true,
-  "description": "\u5728\u6d4f\u89c8\u5668\u91cc\u4e0e AI \u5bf9\u6218\u7684\u8eab\u4efd\u63a8\u7406\u6e38\u620f",
+  "description": "在浏览器里与 AI 对战的身份推理游戏",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {
@@ -15,10 +15,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "lint": "eslint .",
     "format:check": "prettier --check .",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project client --maxWorkers=2 && vitest run --project meta",
     "test:e2e": "node scripts/test-e2e.mjs",
     "selfplay": "tsx scripts/selfplay.ts",
-    "test:perf": "pnpm build && playwright test -c playwright.perf.config.ts"
+    "test:perf": "pnpm build && playwright test -c playwright.perf.config.ts",
+    "test:e2e:all": "E2E_ALL=1 node scripts/test-e2e.mjs"
   },
   "dependencies": {
     "@fastify/static": "10.1.11",

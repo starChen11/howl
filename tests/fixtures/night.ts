@@ -48,6 +48,16 @@ export function nightStart(seed = 20_261_117): GameState {
     current = step(current, { type: 'WOLF_CHAT', ts: 1, seat: speaker, text: '' }).state;
   }
 
+  // RUL-14：讨论不再「说一句就过」；测试夹具让所有狼准备后进入投票。
+  for (let guard = 0; guard < 10 && current.phase === 'NIGHT_WOLF_CHAT'; guard += 1) {
+    const wolf = current.seats.find(
+      (seat) =>
+        seat.alive && seat.role === 'wolf' && !(current.wolfReady ?? []).includes(seat.seat),
+    )?.seat;
+    if (wolf === undefined) break;
+    current = step(current, { type: 'WOLF_READY', ts: 1, seat: wolf }).state;
+  }
+
   return current;
 }
 

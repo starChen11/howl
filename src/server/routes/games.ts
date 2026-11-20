@@ -101,7 +101,13 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       // 默认 `pending` **只给当前行动者**：夜间给所有人投影一个具体动作，
       // 等于告诉旁观者「某个神职还活着并且正在行动」（C-133，RFC-007 C-28）。
       // 发言阶段的行动者由发言顺序决定（`nextActor` 只覆盖按角色/投票的相位）。
-      const actor = seatToSpeak(state) ?? nextActor(state);
+      const playerIsWolf =
+        state.seats.find((seat) => seat.isPlayer)?.role === 'wolf' &&
+        state.seats.find((seat) => seat.isPlayer)?.alive === true;
+      const actor =
+        state.phase === 'NIGHT_WOLF_CHAT' && playerIsWolf
+          ? record.playerSeat
+          : (seatToSpeak(state) ?? nextActor(state));
       const defaultPending = actor === record.playerSeat ? pendingForPhase(state.phase) : null;
       const pending = (pendingParsed.data.pending ?? defaultPending) as PendingDecision | null;
       const view: ProjectedContext = project({
@@ -346,6 +352,10 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
     }
     if (accepted && parsed.data.action.type === 'WOLF_CHAT') {
       channels.submit(record.gameId, parsed.data.action.text);
+    }
+    // 准备完成：让编排层从「等玩家发言」中醒来（它会在重读后看到已经准备）。
+    if (accepted && parsed.data.action.type === 'WOLF_READY') {
+      channels.submit(record.gameId, '');
     }
     if (
       accepted &&

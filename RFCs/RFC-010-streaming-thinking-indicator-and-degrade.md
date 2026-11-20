@@ -296,3 +296,8 @@ $ pnpm test → 69 files / 587 tests
 **狼队击杀改为狼队投票**（RUL-13）：`NIGHT_WOLVES` 现在接受 `WOLF_VOTE`（每名存活狼一票），
 新增 `WOLF_VOTE_CAST` / `WOLF_VOTE_REVEALED` 事件与 `NIGHT_WOLF_RUNOFF` 相位；`WOLF_KILL`
 保持兼容但不再是产品流程。相关契约（动作表、相位表、事件流）由 RFC-017 重新定义。
+
+### 8.10 Spec changed（CHANGE-REQUEST-012 / RFC-018）
+
+夜间讨论/投票增加了服务端时限（50 秒讨论、10 秒投票），超时与流式降级互不影响；
+时限配置见 RFC-018。

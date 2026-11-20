@@ -42,7 +42,15 @@ function playGame(seed: number): { state: GameState; events: EventEnvelope[] } {
             seat.role === 'wolf' &&
             !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
         )?.seat;
-        if (speaker === undefined) return { state, events };
+        if (speaker === undefined) {
+          const notReady = state.seats.find(
+            (seat) =>
+              seat.alive && seat.role === 'wolf' && !(state.wolfReady ?? []).includes(seat.seat),
+          )?.seat;
+          if (notReady === undefined) return { state, events };
+          action = { type: 'WOLF_READY' as const, ts, seat: notReady };
+          break;
+        }
         action = { type: 'WOLF_CHAT' as const, ts, seat: speaker, text: '' };
         break;
       }

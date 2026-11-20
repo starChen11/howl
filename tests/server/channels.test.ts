@@ -133,6 +133,23 @@ describe('AC-12 · 新通道实现不需要改引擎', () => {
       if (!result.ok) break;
       current = result.record;
     }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
+    }
 
     // 把这一夜走完，进入白天
     for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
@@ -362,6 +379,23 @@ describe('AC-9 · 路由接受发言时通知挂起通道（正向用例）', ()
       if (!result.ok) break;
       current = result.record;
     }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
+    }
     for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
       const state = stateOf();
       if (state.phase === 'DAY_SPEECH') break;
@@ -417,6 +451,23 @@ describe('AC-9 · 路由接受发言时通知挂起通道（正向用例）', ()
       );
       if (!result.ok) break;
       current = result.record;
+    }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
     }
     for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
       const state = stateOf();
@@ -511,6 +562,23 @@ describe('C-115 · 弃权与空输入必须接上通道', () => {
       if (!r.ok) break;
       current = r.record;
     }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
+    }
     for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
       const state = stateOf();
       if (state.phase === 'DAY_SPEECH') break;
@@ -563,6 +631,23 @@ describe('C-115 · 弃权与空输入必须接上通道', () => {
       );
       if (!r.ok) break;
       current = r.record;
+    }
+    for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+      const readyState = registry.stateOf(current);
+      if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+      const readyWolf = readyState.seats.find(
+        (seat) =>
+          seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      if (readyWolf === undefined) break;
+      const readyResult = await registry.submit(
+        session,
+        current,
+        { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+        readyState.seq,
+      );
+      if (!readyResult.ok) break;
+      current = readyResult.record;
     }
     for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT'] as const) {
       const state = stateOf();
@@ -677,6 +762,23 @@ describe('B-R9-1 · 端到端：玩家是最后一位发言者时不重复提交
         );
         if (!r.ok) break;
         current = r.record;
+      }
+      for (let readyGuard = 0; readyGuard < 12; readyGuard += 1) {
+        const readyState = registry.stateOf(current);
+        if (readyState.phase !== 'NIGHT_WOLF_CHAT') break;
+        const readyWolf = readyState.seats.find(
+          (seat) =>
+            seat.alive && seat.role === 'wolf' && !(readyState.wolfReady ?? []).includes(seat.seat),
+        )?.seat;
+        if (readyWolf === undefined) break;
+        const readyResult = await registry.submit(
+          session,
+          current,
+          { type: 'WOLF_READY', ts: 1, seat: readyWolf } as never,
+          readyState.seq,
+        );
+        if (!readyResult.ok) break;
+        current = readyResult.record;
       }
       for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT', 'HUNTER_SHOOT'] as const) {
         const state = stateOf();

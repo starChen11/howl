@@ -145,6 +145,15 @@ describe('其余动作', () => {
   });
 });
 
+describe('RUL-14 · 讨论里可以准备', () => {
+  it('NIGHT_WOLF_CHAT 的 ready 映射成 WOLF_READY', () => {
+    const chat = { ...BASE, phase: 'NIGHT_WOLF_CHAT' as const };
+    expect(toAction(decision({ action: 'ready' }), chat, 1)).toEqual({
+      action: { type: 'WOLF_READY', ts: 1, seat: 3 },
+    });
+  });
+});
+
 describe('RUL-13 · 重投相位也能投票', () => {
   it('NIGHT_WOLF_RUNOFF 的 kill 也翻译成 WOLF_VOTE', () => {
     const runoff = {

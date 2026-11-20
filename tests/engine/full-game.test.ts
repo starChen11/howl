@@ -32,7 +32,11 @@ function nextAction(state: GameState, ts: number): Action | undefined {
           seat.role === 'wolf' &&
           !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
       )?.seat;
-      return speaker === undefined ? undefined : { type: 'WOLF_CHAT', ts, seat: speaker, text: '' };
+      if (speaker !== undefined) return { type: 'WOLF_CHAT', ts, seat: speaker, text: '' };
+      const notReady = alive.find(
+        (seat) => seat.role === 'wolf' && !(state.wolfReady ?? []).includes(seat.seat),
+      )?.seat;
+      return notReady === undefined ? undefined : { type: 'WOLF_READY', ts, seat: notReady };
     }
 
     case 'NIGHT_WOLVES': {
