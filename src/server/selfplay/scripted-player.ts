@@ -10,8 +10,23 @@ import type { ProjectedContext } from '@shared/project';
  * 要被单独归类（AC-6），而不是算成模型失败。
  */
 
-/** 可注入的随机源：默认 `Math.random`，测试里给固定序列。 */
+/** 可注入的随机源：默认由种子派生，测试里给固定序列。 */
 export type Rng = () => number;
+
+/**
+ * 由种子派生的确定性随机源（mulberry32）。
+ *
+ * `selfplay` 必须可复现：同一个 `--seed` 跑两次要得到同一批对局（DATA-5 / C-188）。
+ */
+export function mulberry32(seed: number): Rng {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 export interface ScriptedPlayerOptions {
   rng?: Rng;
@@ -27,7 +42,7 @@ export function scriptedPlayerAction(
   ctx: ProjectedContext,
   options: ScriptedPlayerOptions = {},
 ): Action | undefined {
-  const rng = options.rng ?? Math.random;
+  const rng = options.rng ?? mulberry32(ctx.self.seat);
   const seat = ctx.self.seat;
   const targets = ctx.legalTargets
     .filter((target) => typeof target === 'number')
@@ -96,7 +111,10 @@ export function scriptedPlayerAction(
  * 与玩家策略同一套取舍逻辑，但会把狼刀的目标限制在队友之外——投影给的清单不替引擎
  * 做这个判断（`targets.ts` 的注释写明了），所以这里补上。
  */
-export function legalActionFor(ctx: ProjectedContext, rng: Rng = Math.random): Action | undefined {
+export function legalActionFor(
+  ctx: ProjectedContext,
+  rng: Rng = mulberry32(ctx.day + ctx.self.seat),
+): Action | undefined {
   const seat = ctx.self.seat;
   const teammates = new Set(ctx.knowledge.teammates);
   const targets = ctx.legalTargets

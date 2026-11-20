@@ -147,3 +147,21 @@ $ HOWL_FAKE_AI=1 pnpm selfplay --games=100 --seed=1000 --out=/tmp/howl-sp3
 | 真实 100 局 | 会产生 API 费用（估 ¥30–80），留给用户决定何时跑 | 手工验收 |
 | 分组统计 | 按人格/打法分组是 B 方案，用户选了 A | 后续 |
 | 并发 | 明确不做（RFC §6） | — |
+
+### 8.7 Round 1 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-184** AC-6 归类在成功路径不生效 | 只在「没有 `GAME_ENDED`」时扫描 `REJECTED`；而且 `REJECTED` 的 payload 不带 `seat`，原判断永远为假 | 抽出 `findPlayerRejection(events, playerSeat)`：按 `visibleTo` 的 `self:N` 归属，动作类型限 `SPEECH`/`SPEECH_SKIP`/`VOTE`/`SELF_EXPOSE`；成局也扫描。补三组用例（玩家/他人/夜间） |
+| **C-185** AC-9 只断言 seq | 截掉最后一条事件仍绿 | 补「`replay(events)` 停在 `FINISHED` 且最后一条是 `GAME_ENDED`」 |
+| **C-186** AC-7 没有内存用例 | 只有手工记录 | 补 30 局堆增长 < 96MB 的用例 |
+| **C-187** `onGame` 抛错会逃逸 | catch 里再次调用并 reject 整批 | 抽出 `report()`：落盘异常记为 `REPORT_FAILED`，不终止整批；补「第二局写盘失败、第三局仍跑」用例 |
+| **C-188** 用 `Math.random` 破坏可复现 | 同 seed 胜率 73/77/78% | 每局用 `mulberry32(seed)`；玩家与假 AI 共用该随机源。补「同 seed 跑两次结果相同」用例；退回 `Math.random` 会红 |
+| **C-189** CLI 用例不跨平台 | 写死 `pnpm` | 按平台选 `pnpm.cmd` |
+| 非阻塞 | 失败局 usage 不计、`reports/` 被提交、失败缺错误类型、文档漂移 | 失败局 usage 计入汇总；`reports/` 加入 `.gitignore` 并从索引移除；失败记录加 `errorType`；文档同步 |
+
+```
+$ pnpm test → 88 files / 762 tests
+$ pnpm test:e2e → 10 passed
+$ 同 seed 跑两次：结果与事件数完全一致（只有耗时不同）
+```

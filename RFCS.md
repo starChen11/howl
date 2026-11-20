@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.142 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
+> 版本 v2.143 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -51,7 +51,7 @@
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Reviewed |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
-| [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Changes requested |
+| [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Implemented |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Not started |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
@@ -1109,6 +1109,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-20 | v2.143 | RFC-015 Round 1 修复（Status → Implemented）：玩家拒绝按 `visibleTo` 归属、replay 到终局断言、内存用例、写盘失败隔离、种子确定性 RNG、跨平台 CLI |
 | 2026-11-20 | v2.142 | RFC-015 Round 1 评审（Status → `Changes requested`）：门禁 88 files / 756 tests、10/10 e2e、覆盖率 96.96% / 92.85% 全绿。用户点名 AC-5 / AC-6 / AC-8 / AC-9 与 CLI 子进程。**AC-6 不成立**——归类只在无 `GAME_ENDED` 时执行，已结束局里的玩家拒绝被静默忽略；两条官方 AC-6 用例都不测 runner 归类，固定 `kind='model'` 后 8/8 仍绿（M-2）。**AC-9** 行为成立（100/100 replay FINISHED）但官方用例只锁 seq，截掉最后一条事件仍 8/8 绿（M-4）。**AC-7** 计划的内存用例未落地，仅手工记录；**AC-5** 的 `onGame` 写盘失败会双记并中止整批（P-2）。新增阻塞 C-184 ~ C-189：AC-6、AC-9 测试、AC-7 测试、`onGame` 隔离、DATA-5 的 `Math.random`（同 seed 三次 73/77/78%）、Windows CLI 用例；非阻塞 C-190 ~ C-196（AC-2 测试、失败局 usage、错误类型、DOC-1、reports 生成物、文档漂移、kill 兜底）。C-5 偏离消除。探针从 `/tmp/howl-rfc015-r1/` 文件备份恢复、两个源码文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-015.md`](reviews/REVIEW-RFC-015.md) Round 1 |
 | 2026-11-20 | v2.141 | RFC-015 实现完成（Status → Implemented）：`pnpm selfplay` 串行批量、种子递增、失败隔离、实现缺陷单独归类、汇总与 JSONL 输出 |
 | 2026-11-19 | v2.140 | RFC-014 Round 3 复核（Status → Reviewed）：C-157 / C-160 / C-163（核心）/ C-171 / C-176 关闭；M3-A ~ M3-D 打红，P-R3-1 / P-R3-2 全链路通过；新增非阻塞 C-181（派生标签未比对）、C-182（`GAME_ENDED` 时间线条目未断言）、C-183（无快照失败时 App 永久 loading）。门禁 87 files / 748 tests、10/10 e2e；探针从 `/tmp/howl-rfc014-r3/backup/` 文件备份恢复、6 个源码文件 SHA-256 全 `OK`、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-014.md`](reviews/REVIEW-RFC-014.md) Round 3 |

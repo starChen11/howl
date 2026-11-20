@@ -11,6 +11,8 @@ export interface GameFailure {
   seed: number;
   kind: 'model' | 'implementation';
   error: string;
+  /** 错误类型（如 `TimeoutError`），便于分组。 */
+  errorType?: string;
 }
 
 export interface SelfplaySummary {

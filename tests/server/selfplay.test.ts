@@ -224,3 +224,100 @@ describe('AC-1 / AC-3 · CLI 真的产出文件并以 0 退出', () => {
     expect(summary.usage).toBeDefined();
   }, 150_000);
 });
+
+describe('C-188 · 同一 seed 的批次完全可复现', () => {
+  it('跑两次得到相同的胜负分布与事件数', async () => {
+    const runOnce = async () =>
+      runSelfplay({ games: 6, seed: 77, decide: () => scriptedAgent, maxSteps: 400 });
+
+    const first = await runOnce();
+    const second = await runOnce();
+
+    expect(second.map((outcome) => outcome.events)).toEqual(first.map((outcome) => outcome.events));
+    expect(summarize(second).winDistribution).toEqual(summarize(first).winDistribution);
+  });
+});
+
+describe('C-187 · 写盘失败不终止整批', () => {
+  it('onGame 抛错时其余局仍跑完', async () => {
+    const outcomes = await runSelfplay({
+      games: 3,
+      seed: 8,
+      decide: () => scriptedAgent,
+      maxSteps: 400,
+      onGame: ({ seed }) => {
+        if (seed === 9) throw new Error('磁盘满');
+      },
+    });
+
+    expect(outcomes).toHaveLength(3);
+    expect(outcomes[1]?.failure?.error).toContain('REPORT_FAILED');
+    expect(outcomes[2]?.ok).toBe(true);
+  });
+});
+
+describe('C-184 · 玩家动作被拒 → 实现缺陷', () => {
+  it('只把玩家席位的 SPEECH/VOTE 拒绝归为实现缺陷', async () => {
+    const { findPlayerRejection } = await import('@server/selfplay/runner');
+    const rejection = (visibleTo: string, actionType: string) =>
+      ({
+        gameId: 'g',
+        seq: 1,
+        ts: 0,
+        type: 'REJECTED',
+        visibleTo,
+        payload: { actionType, code: 'INVALID_TARGET', message: '目标不合法' },
+      }) as never;
+
+    expect(findPlayerRejection([rejection('self:1', 'VOTE')], 1)).toBeDefined();
+    // 别人的拒绝不是玩家的错
+    expect(findPlayerRejection([rejection('self:2', 'VOTE')], 1)).toBeUndefined();
+    // 夜间动作是 AI 的，不算玩家缺陷
+    expect(findPlayerRejection([rejection('self:1', 'WOLF_KILL')], 1)).toBeUndefined();
+  });
+
+  it('真实对局里没有玩家侧拒绝（脚本玩家合法）', async () => {
+    const outcomes = await runSelfplay({
+      games: 2,
+      seed: 21,
+      decide: () => scriptedAgent,
+      maxSteps: 400,
+    });
+
+    expect(outcomes.filter((outcome) => outcome.failure?.kind === 'implementation')).toEqual([]);
+  });
+});
+
+describe('C-186 · 多局跑完内存不线性增长', () => {
+  it('30 局的堆增长在合理范围内', async () => {
+    const before = process.memoryUsage().heapUsed;
+    await runSelfplay({ games: 30, seed: 400, decide: () => scriptedAgent, maxSteps: 400 });
+    const after = process.memoryUsage().heapUsed;
+
+    // 30 局的状态都已释放；增长超过 96MB 说明有泄漏
+    expect(after - before).toBeLessThan(96 * 1024 * 1024);
+  });
+});
+
+describe('C-185 · 事件流能被 replay 到终局', () => {
+  it('用引擎 replay 重放后停在 FINISHED', async () => {
+    const { replay } = await import('@engine/replay');
+    const streams: { events: readonly { type: string }[] }[] = [];
+
+    await runSelfplay({
+      games: 2,
+      seed: 55,
+      decide: () => scriptedAgent,
+      maxSteps: 400,
+      onGame: (_outcome, events) => {
+        streams.push({ events });
+      },
+    });
+
+    for (const stream of streams) {
+      const state = replay(stream.events as never);
+      expect(state.phase).toBe('FINISHED');
+      expect(stream.events[stream.events.length - 1]?.type).toBe('GAME_ENDED');
+    }
+  });
+});

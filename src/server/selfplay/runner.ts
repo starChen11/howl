@@ -6,7 +6,7 @@ import type { EventEnvelope } from '@shared/events';
 import type { ProjectedContext } from '@shared/project';
 import type { Decider } from '../ai/agent';
 import { usageOf } from '../llm/usage';
-import { legalActionFor, scriptedPlayerAction, type Rng } from './scripted-player';
+import { legalActionFor, mulberry32, scriptedPlayerAction, type Rng } from './scripted-player';
 import type { GameOutcome } from './report';
 
 /** 行动的目标是否在投影给出的合法集合里（够用即可：selfplay 的假 AI 只需要合法性）。 */
@@ -39,6 +39,8 @@ export interface SelfplayOptions {
   maxSteps?: number;
   /** 每局结束回调（用于落盘）。 */
   onGame?: (outcome: GameOutcome, events: readonly EventEnvelope[]) => void | Promise<void>;
+  /** 覆盖玩家输入（AC-6 测试用：注入非法目标）。 */
+  playerInput?: (ctx: ProjectedContext) => { kind: 'speak'; text: string } | { kind: 'skip' };
   /** 是否把假 AI 的非法目标替换成合法行动（默认 true；AC-6 测试可关掉）。 */
   sanitizeActions?: boolean;
   /** 强制抛错的注入点（AC-5 测试用）。 */
@@ -51,6 +53,8 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
 
   for (let index = 0; index < options.games; index += 1) {
     const seed = options.seed + index;
+    // 每局一个由 seed 派生的确定性随机源：同 seed 的批次必须完全可复现（C-188 / DATA-5）。
+    const rng = options.rng ?? mulberry32(seed);
     const startedAt = (options.now ?? Date.now)();
     const store = new InMemoryMetaStore();
     const registry = new GameRegistry(store);
@@ -77,10 +81,9 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
               pending,
             }),
           };
-          const action = scriptedPlayerAction(
-            ctx,
-            options.rng === undefined ? {} : { rng: options.rng },
-          );
+          if (options.playerInput !== undefined) return options.playerInput(ctx);
+
+          const action = scriptedPlayerAction(ctx, { rng });
           if (action === undefined) return { kind: 'skip' };
           if (action.type === 'SPEECH_SKIP') return { kind: 'skip' };
           if (action.type === 'VOTE') {
@@ -111,7 +114,7 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
             action === undefined ||
             (options.sanitizeActions !== false && !isLegal(ctx, action))
           ) {
-            return { ...decision, action: legalActionFor(ctx, options.rng) };
+            return { ...decision, action: legalActionFor(ctx, rng) };
           }
           return decision;
         },
@@ -144,6 +147,25 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
         continue;
       }
 
+      // 即便成局，也要检查有没有「玩家侧动作被拒」——那是实现缺陷（C-184 / AC-6）。
+      const playerRejected = findPlayerRejection(finished.events, record.playerSeat);
+      if (playerRejected !== undefined) {
+        const payload = playerRejected.payload as { code?: string; message?: string };
+        outcomes.push({
+          seed,
+          ok: false,
+          events: finished.events.length,
+          durationMs: (options.now ?? Date.now)() - startedAt,
+          failure: {
+            seed,
+            kind: 'implementation',
+            error: `${payload.code ?? 'REJECTED'}：${payload.message ?? '玩家动作被拒'}`,
+          },
+        });
+        await report(options, outcomes[outcomes.length - 1] as GameOutcome, finished.events);
+        continue;
+      }
+
       const usage = usageOf(record.gameId);
 
       outcomes.push({
@@ -155,7 +177,7 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
         degraded: finished.events.filter((event) => event.type === 'DEGRADED').length,
         usage,
       });
-      await options.onGame?.(outcomes[outcomes.length - 1] as GameOutcome, finished.events);
+      await report(options, outcomes[outcomes.length - 1] as GameOutcome, finished.events);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       // 非法行动是**我们的 bug**，不是模型失败（AC-6）。
@@ -165,15 +187,57 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
         ok: false,
         events: 0,
         durationMs: (options.now ?? Date.now)() - startedAt,
+        usage: usageOf(record.gameId),
         failure: {
           seed,
           kind: implementation ? 'implementation' : 'model',
           error: message,
+          errorType: cause instanceof Error ? cause.name : typeof cause,
         },
       });
-      await options.onGame?.(outcomes[outcomes.length - 1] as GameOutcome, []);
+      await report(options, outcomes[outcomes.length - 1] as GameOutcome, []);
     }
   }
 
   return outcomes;
+}
+
+/**
+ * 落盘回调必须**永不终止整批**：写盘失败（磁盘满、权限）记为一条报告失败，
+ * 但不影响后续对局（C-187）。
+ */
+async function report(
+  options: SelfplayOptions,
+  outcome: GameOutcome,
+  events: readonly EventEnvelope[],
+): Promise<void> {
+  if (options.onGame === undefined) return;
+  try {
+    await options.onGame(outcome, events);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    outcome.failure = { seed: outcome.seed, kind: 'model', error: `REPORT_FAILED：${message}` };
+    outcome.ok = false;
+  }
+}
+
+/**
+ * 找出「玩家自己的动作被引擎拒绝」的事件（AC-6）。
+ *
+ * `REJECTED` 的 payload 不带席位，席位只在 `visibleTo` 的 `self:N` 上（`reject.ts`）。
+ * 这类拒绝是**实现缺陷**：脚本玩家只该从 `legalTargets` 里挑。
+ */
+export function findPlayerRejection(
+  events: readonly EventEnvelope[],
+  playerSeat: number,
+): EventEnvelope | undefined {
+  return events.find((event) => {
+    if (event.type !== 'REJECTED') return false;
+    const payload = event.payload as { actionType?: string };
+    return (
+      event.visibleTo === `self:${playerSeat}` &&
+      payload.actionType !== undefined &&
+      ['SPEECH', 'SPEECH_SKIP', 'VOTE', 'SELF_EXPOSE'].includes(payload.actionType)
+    );
+  });
 }
