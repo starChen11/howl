@@ -329,6 +329,12 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       const target = parsed.data.action.target;
       channels.submit(record.gameId, target === 'abstain' ? '' : String(target));
     }
+    // 开枪也要兑现挂起的输入：否则编排层等 60 秒后提交一个「不开枪」，
+    // 此时相位已经推进，那个迟到动作会被拒，runGame 随即 break、对局冻住。
+    if (accepted && parsed.data.action.type === 'HUNTER_SHOOT') {
+      const target = parsed.data.action.target;
+      channels.submit(record.gameId, target === undefined ? '' : String(target));
+    }
 
     // B1：只回该席位可见的事件。`step` 的原始事件里含 `server` 可见的死亡与夜间相位。
     return reply.send({

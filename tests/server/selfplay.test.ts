@@ -409,7 +409,7 @@ describe('C-184（Round 3）· 端到端：玩家投已出局席位 → 实现�
   it('runSelfplay 真的把成局里的玩家拒绝归为 implementation', async () => {
     const outcomes = await runSelfplay({
       games: 1,
-      seed: 3,
+      seed: 13,
       decide: () => scriptedAgent,
       maxSteps: 400,
       // 只投一次已出局席位（引擎回 REJECTED），之后正常弃权——这样对局还能打完，

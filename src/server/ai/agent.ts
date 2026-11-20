@@ -58,6 +58,15 @@ export const scriptedAgent: Decider = async ({ seat, ctx, phase }) => {
       return target === undefined || target === 'abstain'
         ? { action: { type: 'VOTE', ts, seat: seat as never, target: 'abstain' } }
         : { action: { type: 'VOTE', ts, seat: seat as never, target: target as never } };
+    case 'NIGHT_HUNTER_SHOOT':
+    case 'DAY_HUNTER_SHOOT':
+      // 出局后的开枪决定；没有目标就选择不开枪（规则允许）。
+      return {
+        action:
+          target === undefined
+            ? { type: 'HUNTER_SHOOT', ts, seat: seat as never }
+            : { type: 'HUNTER_SHOOT', ts, seat: seat as never, target: target as never },
+      };
     default:
       return { action: undefined };
   }

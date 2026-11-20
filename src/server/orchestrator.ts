@@ -118,7 +118,14 @@ export function pendingForPhase(phase: string): PendingDecision | null {
  * 发言与两种投票都要等玩家；夜间动作仍由注入的 `decide` 代劳（目标选择属 RFC-013）。
  */
 export function isPlayerPhase(phase: string): boolean {
-  return phase === 'DAY_SPEECH' || phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF';
+  return (
+    phase === 'DAY_SPEECH' ||
+    phase === 'DAY_VOTE' ||
+    phase === 'DAY_VOTE_RUNOFF' ||
+    // 出局后的开枪决定仍然属于玩家——哪怕他已经死了。
+    phase === 'NIGHT_HUNTER_SHOOT' ||
+    phase === 'DAY_HUNTER_SHOOT'
+  );
 }
 
 /** 从状态推出「现在该谁说话」；不是发言阶段返回 `undefined`。 */
@@ -198,7 +205,23 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
       seat === record.playerSeat && playerPhase
         ? await playerAction(seat, state.phase, deps)
         : await decide({ seat, ctx: ctxFor(seat), phase: state.phase });
-    if (action.action === undefined) break;
+    if (action.action === undefined) {
+      // 有行动者却没有动作：开枪阶段可以由我们替它放弃（规则允许）；
+      // 其他相位说明 AI 没给出动作，不能静默停在这里。
+      if (state.phase === 'NIGHT_HUNTER_SHOOT' || state.phase === 'DAY_HUNTER_SHOOT') {
+        const decline = await registry.submit(
+          session,
+          (await registry.getGame(record.gameId)) ?? record,
+          { type: 'HUNTER_SHOOT', ts: Date.now(), seat: seat as never },
+          registry.stateOf((await registry.getGame(record.gameId)) ?? record).seq,
+        );
+        if (!decline.ok) break;
+        record = decline.record;
+        steps += 1;
+        continue;
+      }
+      break;
+    }
 
     // **提交前再读一次**：等玩家输入的那段时间里，路由可能已经写入了别的动作
     // （比如玩家自己 POST 上来的发言）。用等待前的 `record` 提交会把它覆盖掉（B-R6-1）。
@@ -260,8 +283,22 @@ async function playerAction(
   const input = await deps.input.read({
     seat: seat as never,
     timeoutMs: 60_000,
-    kind: phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF' ? 'vote' : 'speech',
+    kind:
+      phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF'
+        ? 'vote'
+        : phase === 'NIGHT_HUNTER_SHOOT' || phase === 'DAY_HUNTER_SHOOT'
+          ? 'action'
+          : 'speech',
   });
+
+  if (phase === 'NIGHT_HUNTER_SHOOT' || phase === 'DAY_HUNTER_SHOOT') {
+    const parsed = input.kind === 'skip' ? Number.NaN : Number.parseInt(input.text, 10);
+    return {
+      action: Number.isNaN(parsed)
+        ? { type: 'HUNTER_SHOOT', ts: now(), seat: seat as never }
+        : { type: 'HUNTER_SHOOT', ts: now(), seat: seat as never, target: parsed as never },
+    };
+  }
 
   if (phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF') {
     // 投票轮把「目标席位」放在同一个 `text` 字段里；空 → 弃权。

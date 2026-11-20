@@ -590,3 +590,21 @@ body {
 .fallback h1 {
   margin-top: 0;
 }
+
+/* 猎人开枪（出局后仍可操作） */
+.shoot {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.shoot__hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.shoot__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

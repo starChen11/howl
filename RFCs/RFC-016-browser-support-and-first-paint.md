@@ -159,8 +159,8 @@ $ pnpm test:perf → 3 passed
 | **C-211 / C-212** | `?home=1` 不优先；首页无样式 | `?home=1` 优先于 `?game=`；补 `.home` / `.fallback` 样式；`Home` 检查 `/play` 响应 |
 
 ```
-$ pnpm test → 89 files / 771 tests
-$ pnpm test:e2e → 16 passed
+$ pnpm test → 90 files / 775 tests
+$ pnpm test:e2e → 18 passed
 $ pnpm test:perf → 3 passed
 ```
 

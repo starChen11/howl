@@ -280,3 +280,21 @@ test.describe('首页入口（RFC-016）', () => {
     expect(page.url()).toContain('?game=');
   });
 });
+
+test.describe('猎人出局（回归：曾经卡死）', () => {
+  test('玩家是猎人、夜里被杀后能自己选开枪，且对局继续', async ({ page }) => {
+    // seed=2：1 号固定是猎人，并在第一夜被刀。
+    await page.goto('/?seed=2');
+    await expect(page.locator('.app')).toBeVisible();
+
+    // 出局后出现开枪选择（不是只剩「打开真相视图」）
+    await expect(page.getByRole('button', { name: '不开枪' })).toBeVisible({ timeout: 30_000 });
+
+    const shoot = page.getByRole('button', { name: /开枪带走 \d+ 号/ }).first();
+    await expect(shoot).toBeVisible();
+    await shoot.click();
+
+    // 对局继续推进并走到终局（seed=2 这局会在第一天结束，所以不能只等「第 2 天」）
+    await expect(page.getByRole('heading', { name: '复盘' })).toBeVisible({ timeout: 60_000 });
+  });
+});

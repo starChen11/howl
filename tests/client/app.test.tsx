@@ -110,3 +110,37 @@ describe('AC-11 · 草稿同步真的接上', () => {
     await waitFor(() => expect(calls.drafts.at(-1)).toBe('我怀疑 2 号。'));
   });
 });
+
+describe('回归：SSE 不能在每次渲染时重建', () => {
+  it('传入不同 client 实例重渲染，openStream 仍然只调用一次', async () => {
+    const makeClient = () => {
+      const state = { opens: 0, closes: 0 };
+      const client = {
+        game: async () => ({ version: 1, view: view() }),
+        openStream: () => {
+          state.opens += 1;
+          return () => {
+            state.closes += 1;
+          };
+        },
+        draft: async () => undefined,
+        submit: async () => ({ ok: true as const }),
+        truth: async () => null,
+        replay: async () => null,
+      } as unknown as ApiClient;
+      return { client, state };
+    };
+
+    const first = makeClient();
+    const second = makeClient();
+    const { rerender } = render(<App gameId="g" client={first.client} />);
+
+    await screen.findByRole('heading', { name: '你的身份' });
+    rerender(<App gameId="g" client={second.client} />);
+    await waitFor(() => expect(screen.getByRole('heading', { name: '你的身份' })).toBeTruthy());
+
+    // 客户端实例被换掉也不能重开流：否则浏览器会不停重连（日志刷屏）
+    expect(first.state.opens).toBe(1);
+    expect(second.state.opens).toBe(0);
+  });
+});

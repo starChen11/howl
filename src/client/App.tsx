@@ -1,10 +1,11 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { GameViewResponse } from './api';
 import { ApiClient } from './api';
 import { boardAnnouncement, buildBoard, speakingSeat } from './game-state';
 import { IdCard } from './components/IdCard';
 import { VoteInput } from './components/VoteInput';
+import { ShootInput } from './components/ShootInput';
 import { EventPanel, buildPanelEntries } from './components/EventPanel';
 import { SpectatorBar } from './components/SpectatorBar';
 import { Notepad } from './components/Notepad';
@@ -27,7 +28,14 @@ import { streamReducer, initialStreamState, type StreamState } from './use-strea
  * 数据只有两个来源：`GET /api/games/:id` 的**投影**与 SSE 的增量。
  * 界面不推进状态机（ARCH-9）——所有 action 都 POST 到服务端。
  */
-export function App({ gameId, client = new ApiClient() }: { gameId: string; client?: ApiClient }) {
+export function App({ gameId, client }: { gameId: string; client?: ApiClient }) {
+  // 客户端实例必须**在多次渲染之间保持同一个**：`client` 出现在 effect 的依赖里，
+  // 每次渲染新建一个会让 SSE 订阅与轮询在每次渲染时重建——浏览器会对同一个流
+  // 反复重连，日志里就是刷屏的 `stream closed prematurely`（真实 bug，e2e 没抓到
+  // 是因为测试注入的假 client 恰好是稳定的）。
+  const clientRef = useRef<ApiClient | null>(null);
+  if (clientRef.current === null) clientRef.current = client ?? new ApiClient();
+  const api = clientRef.current;
   const [view, setView] = useState<GameViewResponse | null>(null);
   const [stream, setStream] = useState<StreamState>(initialStreamState);
   const [remaining, setRemaining] = useState(60);
@@ -40,31 +48,31 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
 
   const refresh = useCallback(async () => {
     try {
-      setView(await client.game(gameId));
+      setView(await api.game(gameId));
       setError(null);
     } catch (cause) {
       // 对局已被释放（GET 410）时仍然可以看复盘：这里退到复盘接口。
       setError(cause instanceof Error ? cause.message : '读取对局失败');
-      const snapshot = await client.replay(gameId);
+      const snapshot = await api.replay(gameId);
       if (snapshot !== null) setReplay(snapshot);
     }
-  }, [client, gameId]);
+  }, [api, gameId]);
 
   // 终局后取复盘（RFC-014）：同一个页面切换，不加路由。
   useEffect(() => {
     if (view?.view.phase !== 'FINISHED') return;
     let cancelled = false;
-    void client.replay(gameId).then((snapshot) => {
+    void api.replay(gameId).then((snapshot) => {
       if (!cancelled) setReplay(snapshot);
     });
     return () => {
       cancelled = true;
     };
-  }, [client, gameId, view?.view.phase]);
+  }, [api, gameId, view?.view.phase]);
 
   useEffect(() => {
     void refresh();
-    const close = client.openStream(gameId, (message) =>
+    const close = api.openStream(gameId, (message) =>
       setStream((previous) => streamReducer(previous, message, Date.now())),
     );
     const timer = setInterval(() => void refresh(), 1_000);
@@ -72,7 +80,7 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
       close();
       clearInterval(timer);
     };
-  }, [client, gameId, refresh]);
+  }, [api, gameId, refresh]);
 
   useEffect(() => {
     const timer = setInterval(() => setRemaining((value) => Math.max(0, value - 1)), 1_000);
@@ -82,9 +90,9 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   // 草稿同步（RFC-011 AC-6）：超时后服务端用最后一次草稿提交，而不是丢成弃权。
   const syncDraft = useCallback(
     (text: string) => {
-      void client.draft(gameId, text);
+      void api.draft(gameId, text);
     },
-    [client, gameId],
+    [api, gameId],
   );
 
   const board = useMemo(() => (view === null ? null : buildBoard(view.view)), [view]);
@@ -92,11 +100,11 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
 
   const restart = useCallback(() => {
     setRestarting(true);
-    void client.restart().then((nextGameId) => {
+    void api.restart().then((nextGameId) => {
       if (nextGameId !== null) window.location.search = `?game=${nextGameId}`;
       else setRestarting(false);
     });
-  }, [client]);
+  }, [api]);
 
   const jumpTo = useCallback((seq: number) => {
     setHighlight(seq);
@@ -113,8 +121,8 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
       return;
     }
     // 真相数据只对已出局者开放；服务端活着会回 403（SEC-6）。
-    setTruthData(await client.truth(gameId));
-  }, [client, gameId, truth]);
+    setTruthData(await api.truth(gameId));
+  }, [api, gameId, truth]);
 
   // 读屏公告只在「阶段 / 天数 / 轮到谁」变化时更新；跟着倒计时每秒刷会淹掉读屏（C-123）。
   const [announcement, setAnnouncement] = useState('');
@@ -157,7 +165,7 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
       <Suspense fallback={<p role="status">正在载入…</p>}>
         <ReplayPage
           snapshot={replay}
-          loadPerspective={(seat, seq) => client.replayPerspective(gameId, seat, seq)}
+          loadPerspective={(seat, seq) => api.replayPerspective(gameId, seat, seq)}
           restarting={restarting}
           onRestart={restart}
         />
@@ -169,8 +177,22 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   const speaking = speakingSeat(ctx);
   const myTurn = speaking === ctx.self.seat;
 
+  const shoot = async (target: number | null) => {
+    const result = await api.submit(gameId, {
+      action: {
+        type: 'HUNTER_SHOOT',
+        ts: Date.now(),
+        seat: ctx.self.seat,
+        ...(target === null ? {} : { target: target as never }),
+      },
+      expectedVersion: view.version,
+    });
+    if (!result.ok) setError(result.error.message);
+    await refresh();
+  };
+
   const submit = async (text: string) => {
-    const result = await client.submit(gameId, {
+    const result = await api.submit(gameId, {
       action: { type: 'SPEECH', ts: Date.now(), seat: ctx.self.seat, text },
       expectedVersion: view.version,
     });
@@ -179,7 +201,7 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   };
 
   const vote = async (target: number) => {
-    const result = await client.submit(gameId, {
+    const result = await api.submit(gameId, {
       action: {
         type: 'VOTE',
         ts: Date.now(),
@@ -193,7 +215,7 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
   };
 
   const skip = async () => {
-    const result = await client.submit(gameId, {
+    const result = await api.submit(gameId, {
       action: { type: 'SPEECH_SKIP', ts: Date.now(), seat: ctx.self.seat },
       expectedVersion: view.version,
     });
@@ -251,6 +273,14 @@ export function App({ gameId, client = new ApiClient() }: { gameId: string; clie
         ) : null}
         {ctx.self.alive && myTurn ? (
           <SpeechInput remaining={remaining} onSubmit={submit} onSkip={skip} onDraft={syncDraft} />
+        ) : null}
+        {ctx.pending === 'shoot' ? (
+          <ShootInput
+            targets={ctx.legalTargets
+              .filter((target) => typeof target === 'number' && target !== ctx.self.seat)
+              .map((target) => Number(target))}
+            onShoot={(target) => void shoot(target)}
+          />
         ) : null}
         {ctx.self.alive && (ctx.phase === 'DAY_VOTE' || ctx.phase === 'DAY_VOTE_RUNOFF') ? (
           <VoteInput

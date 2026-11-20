@@ -6,6 +6,7 @@ import { InMemoryMetaStore } from '@server/store/meta-store';
 import { StreamBus } from '@server/stream/bus';
 import { SseOutputChannel } from '@server/channels/sse';
 import { runGame } from '@server/orchestrator';
+import { scriptedAgent } from '@server/ai/agent';
 
 /**
  * RFC-011 §5 AC-9 / AC-10 / AC-11：编排层在服务端，用 stub 通道跑完整局。
@@ -648,5 +649,39 @@ describe('C-127 · 平票重投时玩家亲自投票', () => {
           (event.payload as { actionType?: string }).actionType === 'VOTE',
       ),
     ).toBe(false);
+  });
+});
+
+describe('猎人出局后仍由玩家决定是否开枪（回归：对局卡死）', () => {
+  it('玩家是猎人、夜里被杀后，runGame 问玩家一次 action 并跑到终局', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 2,
+      playerSeat: 1,
+    });
+    expect(registry.stateOf(record).seats.find((seat) => seat.seat === 1)?.role).toBe('hunter');
+
+    const kinds: string[] = [];
+    const result = await runGame({
+      registry,
+      session,
+      gameId: record.gameId,
+      input: {
+        async read(prompt) {
+          kinds.push(prompt.kind);
+          return { kind: 'skip' };
+        },
+        close() {},
+      },
+      output: { emit() {}, async flush() {} },
+      decide: scriptedAgent,
+      maxSteps: 400,
+    });
+
+    // 猎人必须被问一次（kind=action），且对局真的结束
+    expect(kinds).toContain('action');
+    expect(registry.stateOf(result.record).phase).toBe('FINISHED');
   });
 });
