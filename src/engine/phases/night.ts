@@ -145,6 +145,137 @@ const wolfKill: ActionHandlerFor<'WOLF_KILL'> = (state, action) => {
   ];
 };
 
+/** 狼队投票的唱票结果（RUL-13）。 */
+function tallyWolfVotes(
+  state: GameState,
+  cast: { seat: SeatId; target: SeatId },
+): { winner?: SeatId; tied?: SeatId[] } {
+  const wolves = aliveSeats(state).filter((seat) => seat.role === 'wolf');
+  const votes = [...(state.wolfVotes ?? []), cast];
+  if (votes.length < wolves.length) return {};
+
+  const counts = new Map<SeatId, number>();
+  for (const vote of votes) counts.set(vote.target, (counts.get(vote.target) ?? 0) + 1);
+
+  const max = Math.max(...counts.values());
+  const tied = [...counts.entries()]
+    .filter(([, count]) => count === max)
+    .map(([seat]) => seat)
+    .sort((a, b) => a - b);
+
+  const only = tied[0];
+  if (tied.length === 1 && only !== undefined) return { winner: only };
+
+  // 僵局兜底：重投仍未收缩（每人各投一票）时，取并列者里席位最小的那个。
+  // 没有这条，三狼各执一词会永远投下去（RUL-13 的兜底条款）。
+  const candidates = state.wolfRunoff;
+  if (
+    state.phase === 'NIGHT_WOLF_RUNOFF' &&
+    candidates !== undefined &&
+    tied.length === candidates.length
+  ) {
+    const first = tied[0];
+    if (first !== undefined) return { winner: first };
+  }
+
+  return { tied };
+}
+
+/** `WOLF_VOTE`（`NIGHT_WOLVES` / `NIGHT_WOLF_RUNOFF`）：狼队投票决定今晚刀谁。 */
+const wolfVote: ActionHandlerFor<'WOLF_VOTE'> = (state, action) => {
+  const actor = seatAt(state, action.seat);
+  if (!actor.alive || actor.role !== 'wolf') {
+    return [
+      rejectionDraft({
+        action,
+        code: 'NOT_YOUR_TURN',
+        message: `座位 ${action.seat} 不是存活的 wolf，不能参与狼队投票`,
+        seat: action.seat,
+      }),
+    ];
+  }
+
+  if ((state.wolfVotes ?? []).some((vote) => vote.seat === action.seat)) {
+    return [
+      rejectionDraft({
+        action,
+        code: 'WOLF_VOTE_DUPLICATE',
+        message: `座位 ${action.seat} 本轮已经投过票`,
+        seat: action.seat,
+      }),
+    ];
+  }
+
+  if (!isAlive(state, action.target)) {
+    return [
+      rejectionDraft({
+        action,
+        code: 'TARGET_NOT_ALIVE',
+        message: `座位 ${action.target} 已出局，不能作为刀口`,
+        seat: action.seat,
+      }),
+    ];
+  }
+  if (seatAt(state, action.target).role === 'wolf') {
+    return [
+      rejectionDraft({
+        action,
+        code: 'WOLF_KILL_WOLF',
+        message: `座位 ${action.target} 是狼队友，不能刀`,
+        seat: action.seat,
+      }),
+    ];
+  }
+
+  if (
+    state.phase === 'NIGHT_WOLF_RUNOFF' &&
+    state.wolfRunoff !== undefined &&
+    !state.wolfRunoff.includes(action.target)
+  ) {
+    return [
+      rejectionDraft({
+        action,
+        code: 'INVALID_RUNOFF_TARGET',
+        message: `重投只能投并列者（${state.wolfRunoff.join(', ')}），收到 ${String(action.target)}`,
+        seat: action.seat,
+      }),
+    ];
+  }
+
+  const cast = { seat: action.seat, target: action.target };
+  const outcome = tallyWolfVotes(state, cast);
+  const drafts: EventDraft[] = [{ type: 'WOLF_VOTE_CAST', visibleTo: 'wolves', payload: cast }];
+
+  if (outcome.tied !== undefined && outcome.winner === undefined) {
+    drafts.push(
+      {
+        type: 'WOLF_VOTE_REVEALED',
+        visibleTo: 'wolves',
+        payload: {
+          votes: [...(state.wolfVotes ?? []), cast],
+          tied: outcome.tied,
+        },
+      },
+      phaseChangedDraft(state.phase, 'NIGHT_WOLF_RUNOFF'),
+    );
+    return drafts;
+  }
+
+  const winner = outcome.winner;
+  if (winner === undefined) return drafts;
+
+  drafts.push(
+    {
+      type: 'WOLF_VOTE_REVEALED',
+      visibleTo: 'wolves',
+      payload: { votes: [...(state.wolfVotes ?? []), cast] },
+    },
+    { type: 'WOLF_KILL_CHOSEN', visibleTo: 'wolves', payload: { target: winner } },
+    phaseChangedDraft(state.phase, nextAfterWolves(state)),
+  );
+  return drafts;
+};
+
 /** `SEER_CHECK`（`NIGHT_SEER`）。 */
 const seerCheck: ActionHandlerFor<'SEER_CHECK'> = (state, action) => {
   const actor = seatAt(state, action.seat);
@@ -342,6 +473,7 @@ const hunterShoot: ActionHandlerFor<'HUNTER_SHOOT'> = (state, action, context) =
 /** RFC-003 交付的夜晚 handler 表。`step` 把它并进默认表。 */
 export const NIGHT_HANDLERS = {
   WOLF_KILL: wolfKill,
+  WOLF_VOTE: wolfVote,
   SEER_CHECK: seerCheck,
   WITCH_ACT: witchAct,
   HUNTER_SHOOT: hunterShoot,

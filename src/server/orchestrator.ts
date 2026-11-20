@@ -56,6 +56,7 @@ export function nextActor(state: {
   phase: string;
   seats: { seat: number; alive: boolean; role: string }[];
   wolfChat?: { seat: number }[];
+  wolfVotes?: { seat: number }[];
   votes?: { seat: number }[];
 }): number | undefined {
   const alive = state.seats.filter((seat) => seat.alive);
@@ -66,7 +67,11 @@ export function nextActor(state: {
       return alive.find((seat) => seat.role === 'wolf' && !spoken.has(seat.seat))?.seat;
     }
     case 'NIGHT_WOLVES':
-      return alive.find((seat) => seat.role === 'wolf')?.seat;
+    case 'NIGHT_WOLF_RUNOFF': {
+      // 投票：还没投的狼依次表态
+      const voted = new Set((state.wolfVotes ?? []).map((vote) => vote.seat));
+      return alive.find((seat) => seat.role === 'wolf' && !voted.has(seat.seat))?.seat;
+    }
     case 'NIGHT_SEER':
       return alive.find((seat) => seat.role === 'seer')?.seat;
     case 'NIGHT_WITCH':
@@ -94,7 +99,9 @@ export function pendingForPhase(phase: string): PendingDecision | null {
     case 'NIGHT_WOLF_CHAT':
       return 'chat';
     case 'NIGHT_WOLVES':
-      return 'kill';
+      return 'wolf-vote';
+    case 'NIGHT_WOLF_RUNOFF':
+      return 'wolf-runoff';
     case 'NIGHT_SEER':
       return 'check';
     case 'NIGHT_WITCH':
@@ -126,6 +133,7 @@ export function isPlayerPhase(phase: string): boolean {
     // 之前这些全由 `decide` 代劳，玩家当狼时会「一觉醒来天亮了」。
     phase === 'NIGHT_WOLF_CHAT' ||
     phase === 'NIGHT_WOLVES' ||
+    phase === 'NIGHT_WOLF_RUNOFF' ||
     phase === 'NIGHT_SEER' ||
     phase === 'NIGHT_WITCH' ||
     // 出局后的开枪决定仍然属于玩家——哪怕他已经死了。
@@ -341,18 +349,17 @@ async function playerAction(
     };
   }
 
-  if (phase === 'NIGHT_WOLVES' || phase === 'NIGHT_SEER') {
+  if (phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF' || phase === 'NIGHT_SEER') {
     const target = nightTarget();
+    if (target === undefined) return { action: undefined };
+
+    if (phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF') {
+      return {
+        action: { type: 'WOLF_VOTE', ts: now(), seat: seat as never, target: target as never },
+      };
+    }
     return {
-      action:
-        target === undefined
-          ? undefined
-          : {
-              type: phase === 'NIGHT_WOLVES' ? 'WOLF_KILL' : 'SEER_CHECK',
-              ts: now(),
-              seat: seat as never,
-              target: target as never,
-            },
+      action: { type: 'SEER_CHECK', ts: now(), seat: seat as never, target: target as never },
     };
   }
 

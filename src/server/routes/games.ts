@@ -336,7 +336,9 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
     }
     if (
       accepted &&
-      (parsed.data.action.type === 'WOLF_KILL' || parsed.data.action.type === 'SEER_CHECK')
+      (parsed.data.action.type === 'WOLF_VOTE' ||
+        parsed.data.action.type === 'WOLF_KILL' ||
+        parsed.data.action.type === 'SEER_CHECK')
     ) {
       channels.submit(record.gameId, String(parsed.data.action.target));
     }

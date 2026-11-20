@@ -15,6 +15,8 @@ export function phaseLabel(phase: string): string {
       return '狼队讨论';
     case 'NIGHT_WOLVES':
       return '狼队袭击';
+    case 'NIGHT_WOLF_RUNOFF':
+      return '狼队重投';
     case 'NIGHT_SEER':
       return '查验';
     case 'NIGHT_WITCH':

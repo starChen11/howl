@@ -290,3 +290,9 @@ $ pnpm test → 69 files / 586 tests
 ```
 $ pnpm test → 69 files / 587 tests
 ```
+
+### 8.9 Spec changed（CHANGE-REQUEST-011 / RFC-017）
+
+**狼队击杀改为狼队投票**（RUL-13）：`NIGHT_WOLVES` 现在接受 `WOLF_VOTE`（每名存活狼一票），
+新增 `WOLF_VOTE_CAST` / `WOLF_VOTE_REVEALED` 事件与 `NIGHT_WOLF_RUNOFF` 相位；`WOLF_KILL`
+保持兼容但不再是产品流程。相关契约（动作表、相位表、事件流）由 RFC-017 重新定义。

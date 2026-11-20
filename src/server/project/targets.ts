@@ -32,6 +32,16 @@ export function legalTargetsOf(
       // 狼不能刀自己人——但投影层面不替引擎做决定，只给存活者；引擎会拒绝刀狼。
       return [...alive];
 
+    case 'wolf-vote':
+      // RUL-13：狼队内部投票，只能投存活且非狼的席位。
+      return state.seats
+        .filter((seat) => seat.alive && seat.role !== 'wolf')
+        .map((seat) => seat.seat);
+
+    case 'wolf-runoff':
+      // 重投只能投并列者（RUL-13），且不能弃权。
+      return [...(state.wolfRunoff ?? [])];
+
     case 'check':
       return [...alive];
 

@@ -264,8 +264,6 @@ test.describe('复盘（RFC-014）', () => {
           legalTargets: (number | string)[];
         };
       };
-      if (step % 40 === 0)
-        console.log('step', step, body.view.phase, body.view.pending, body.version);
       if (body.view.phase === 'FINISHED') break;
 
       const seat = body.view.self.seat;
@@ -289,9 +287,10 @@ test.describe('复盘（RFC-014）', () => {
         case 'chat':
           await act(body.version, { type: 'WOLF_CHAT', ts, seat, text: '' });
           break;
-        case 'kill':
+        case 'wolf-vote':
+        case 'wolf-runoff':
           if (typeof target === 'number') {
-            await act(body.version, { type: 'WOLF_KILL', ts, seat, target });
+            await act(body.version, { type: 'WOLF_VOTE', ts, seat, target });
           }
           break;
         case 'check':

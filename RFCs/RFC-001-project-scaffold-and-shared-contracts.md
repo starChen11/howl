@@ -502,3 +502,9 @@ Round 3 的结论是「代码与 16 条 AC 都是好的，Round 2 的 B1 / B3 / 
 | **可维护性 5** `contracts.test.ts` 已 317 行 | 拆成 `domain.test.ts` / `actions.test.ts` / `events.test.ts`，每份职责单一 | — |
 
 非阻塞项也顺手清掉了：`.tsx` 的 ESLint 等级（M8）、`playwright.config.ts` 的 `baseURL` 与注释、`commands.test.ts` 的 T-2→T-4 与 `VERIFICATION`→§8.5、`tsconfig.test.ts` 过强的用例名并补上 `include` 断言、`configs/alias.ts` 那句「测试会断言」（现在真的有测试了）、`FACTION_OF` 等契约常量断言（F7）。**未做**：F8 的全量术语扫描，理由见 §8.6。
+
+### 8.9 Spec changed（CHANGE-REQUEST-011 / RFC-017）
+
+**狼队击杀改为狼队投票**（RUL-13）：`NIGHT_WOLVES` 现在接受 `WOLF_VOTE`（每名存活狼一票），
+新增 `WOLF_VOTE_CAST` / `WOLF_VOTE_REVEALED` 事件与 `NIGHT_WOLF_RUNOFF` 相位；`WOLF_KILL`
+保持兼容但不再是产品流程。相关契约（动作表、相位表、事件流）由 RFC-017 重新定义。

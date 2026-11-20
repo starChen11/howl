@@ -39,6 +39,7 @@ describe('AC-9 · 声明与实现一致', () => {
       'LOBBY',
       'NIGHT_WOLF_CHAT',
       'NIGHT_WOLVES',
+      'NIGHT_WOLF_RUNOFF',
       'NIGHT_SEER',
       'NIGHT_WITCH',
       'NIGHT_HUNTER_SHOOT',

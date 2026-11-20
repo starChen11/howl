@@ -26,6 +26,16 @@ export async function passNight(page: Page): Promise<boolean> {
       continue;
     }
 
+    // 狼队投票（RUL-13）：点第一个候选
+    const wolfVote = page.getByRole('button', { name: /^投 \d+ 号$/ });
+    if ((await wolfVote.count()) > 0) {
+      await wolfVote
+        .first()
+        .click({ timeout: 2_000 })
+        .catch(() => undefined);
+      continue;
+    }
+
     const noPotion = page.getByRole('button', { name: '不用药' });
     if ((await noPotion.count()) > 0) {
       await noPotion

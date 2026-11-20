@@ -15,6 +15,7 @@ const EXPECTED_PHASES = [
   'LOBBY',
   'NIGHT_WOLF_CHAT',
   'NIGHT_WOLVES',
+  'NIGHT_WOLF_RUNOFF',
   'NIGHT_SEER',
   'NIGHT_WITCH',
   'NIGHT_RESOLVE',
@@ -29,10 +30,10 @@ const EXPECTED_PHASES = [
 ] as const;
 
 describe('AC-5 · Phase 的取值集合', () => {
-  it('恰好 14 个取值，且与 RFC 列出的取值逐项一致', () => {
-    expect(PHASES).toHaveLength(14);
+  it('恰好 15 个取值，且与 RFC 列出的取值逐项一致', () => {
+    expect(PHASES).toHaveLength(15);
     expect([...PHASES]).toEqual([...EXPECTED_PHASES]);
-    expect(new Set(PHASES).size).toBe(14);
+    expect(new Set(PHASES).size).toBe(15);
   });
 
   it('是封闭联合：列表外的取值无法赋给 Phase', () => {

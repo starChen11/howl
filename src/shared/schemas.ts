@@ -63,6 +63,12 @@ export const ActionSchema = z.discriminatedUnion('type', [
     target: seatIdSchema,
   }),
   z.object({
+    type: z.literal('WOLF_VOTE'),
+    ts: timestampSchema,
+    seat: seatIdSchema,
+    target: seatIdSchema,
+  }),
+  z.object({
     type: z.literal('SEER_CHECK'),
     ts: timestampSchema,
     seat: seatIdSchema,
@@ -240,6 +246,19 @@ export const DegradedPayloadSchema = z.object({
   seat: z.number().int().min(1).max(9),
 });
 
+/** 狼队投票（RUL-13）。 */
+export const WolfVoteCastPayloadSchema = z.object({
+  seat: z.number().int().min(1).max(9),
+  target: z.number().int().min(1).max(9),
+});
+
+export const WolfVoteRevealedPayloadSchema = z.object({
+  votes: z.array(
+    z.object({ seat: z.number().int().min(1).max(9), target: z.number().int().min(1).max(9) }),
+  ),
+  tied: z.array(z.number().int().min(1).max(9)).optional(),
+});
+
 /** 已登记 payload schema 的事件，可以拿去 `makeEventEnvelopeSchema` 组合成完整校验。 */
 export const PAYLOAD_SCHEMAS = {
   GAME_STARTED: GameStartedPayloadSchema,
@@ -260,4 +279,6 @@ export const PAYLOAD_SCHEMAS = {
   GAME_ENDED: GameEndedPayloadSchema,
   AI_THOUGHT: AiThoughtPayloadSchema,
   DEGRADED: DegradedPayloadSchema,
+  WOLF_VOTE_CAST: WolfVoteCastPayloadSchema,
+  WOLF_VOTE_REVEALED: WolfVoteRevealedPayloadSchema,
 } as const;

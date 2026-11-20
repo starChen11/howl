@@ -12,17 +12,20 @@ export function NightAction({
   potions,
   killTarget,
   wolfChats,
+  wolfVotes,
   onChat,
   onTarget,
   onWitch,
 }: {
-  pending: 'chat' | 'kill' | 'check' | 'witch';
+  pending: 'chat' | 'kill' | 'wolf-vote' | 'wolf-runoff' | 'check' | 'witch';
   targets: number[];
   potions: { heal: 'available' | 'used'; poison: 'available' | 'used' };
   /** 用药者看到的刀口（没有则为 null）。 */
   killTarget: number | null;
   /** 狼队频道：自己和队友说过的话（只有狼看得到）。 */
   wolfChats: { seat: number; text: string }[];
+  /** 狼队当前票型（只有狼看得到）。 */
+  wolfVotes: { seat: number; target: number }[];
   onChat: (text: string) => void;
   onTarget: (target: number) => void;
   onWitch: (choice: 'none' | `heal:${number}` | `poison:${number}`) => void;
@@ -96,6 +99,44 @@ export function NightAction({
     );
   }
 
+  if (pending === 'wolf-vote' || pending === 'wolf-runoff') {
+    const isRunoff = pending === 'wolf-runoff';
+    return (
+      <section className="night" aria-label={`${ROLE_LABELS.wolf}队投票`}>
+        <p className="night__hint">
+          {isRunoff
+            ? '平票了，只能投并列者（且不能弃权）。'
+            : '狼队投票决定今晚刀谁；票型只有狼看得到。'}
+        </p>
+        {wolfChats.length === 0 ? null : (
+          <ul className="night__chat-log" aria-label="狼队消息">
+            {wolfChats.map((chat, index) => (
+              <li key={`${chat.seat}-${index}`}>
+                {chat.seat} 号：{chat.text === '' ? '（没说话）' : chat.text}
+              </li>
+            ))}
+          </ul>
+        )}
+        {wolfVotes.length === 0 ? null : (
+          <ul className="night__chat-log" aria-label="当前票型">
+            {wolfVotes.map((vote, index) => (
+              <li key={`${vote.seat}-${index}`}>
+                {vote.seat} 号投 {vote.target} 号
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="night__buttons">
+          {targets.map((seat) => (
+            <button key={seat} type="button" className="button" onClick={() => onTarget(seat)}>
+              投 {seat} 号
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   const verb = pending === 'kill' ? TERMS.knife.label : TERMS.check.label;
   return (
     <section
@@ -107,15 +148,6 @@ export function NightAction({
           <p className="night__hint">
             狼队今晚只有一刀：<strong>你选谁，今晚就刀谁</strong>。
           </p>
-          {wolfChats.length === 0 ? null : (
-            <ul className="night__chat-log" aria-label="狼队消息">
-              {wolfChats.map((chat, index) => (
-                <li key={`${chat.seat}-${index}`}>
-                  {chat.seat} 号：{chat.text === '' ? '（没说话）' : chat.text}
-                </li>
-              ))}
-            </ul>
-          )}
         </>
       ) : (
         <p className="night__hint">选择今晚要{verb}的人。</p>

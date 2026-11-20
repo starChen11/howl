@@ -10,7 +10,16 @@ import type { EventEnvelope } from './events';
 
 /** 当前正在请求的决策类型。决定 `legalTargets` 与提示语。 */
 export type PendingDecision =
-  'speak' | 'kill' | 'check' | 'witch' | 'vote' | 'shoot' | 'chat' | null;
+  | 'speak'
+  | 'kill'
+  | 'wolf-vote'
+  | 'wolf-runoff'
+  | 'check'
+  | 'witch'
+  | 'vote'
+  | 'shoot'
+  | 'chat'
+  | null;
 
 export interface ProjectInput {
   state: GameState;

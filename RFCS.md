@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.152 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
+> 版本 v2.153 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-20
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -37,22 +37,23 @@
 
 | RFC | 标题 | 功能 | 复杂度 | Status |
 |---|---|---|---|---|
-| [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Reviewed |
+| [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Spec changed |
 | [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
-| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Reviewed |
+| [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Spec changed |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Reviewed |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Reviewed |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Reviewed |
 | [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
-| [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Reviewed |
+| [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Spec changed |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Reviewed |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Reviewed |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Reviewed |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Reviewed |
+| [RFC-017](RFCs/RFC-017-wolf-team-vote.md) | 狼队投票决定刀谁 | F9, F10 | Medium | Implemented |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
 
@@ -78,6 +79,7 @@
 | RFC-014 | 007, 008, 009, 013 | — |
 | RFC-015 | 006, 007, 008, 009, 011 | — |
 | RFC-016 | 012 | — |
+| RFC-017 | 003, 005 | — |
 
 **可并行分支**（顺序实现时无意义，多人协作有用）：
 
@@ -1202,6 +1204,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-20 | v2.153 | CHANGE-REQUEST-011 / RFC-017：RUL-13「狼队投票决定刀谁」（每人一票、平票重投、僵持取最小席位）。RFC-001/003/010 → Spec changed；新增 RFC-017（Implemented） |
 | 2026-11-20 | v2.152 | RFC-016 Round 2 复核（Status → Reviewed）：门禁 **89 files / 771 tests**、16/16 e2e、3/3 perf；冷启动 5 次中位 141ms（每次 231,963 字节）。C-205 / C-206 / C-207 / C-208 / C-209 关闭，C-211 / C-212 的用户点名项关闭；C-210 部分关闭（文档残留 a–e）；新增 C-213 / C-214 / C-215 为非阻塞。探针从 `/tmp/howl-rfc016-r2/backup/` 文件备份恢复、七个文件 MD5 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-016.md`](reviews/REVIEW-RFC-016.md) Round 2 |
 | 2026-11-20 | v2.151 | RFC-016 Round 1 修复（Status → Implemented）：Chromium 也跑跨浏览器用例、首屏改冷启动测量、首页不再请求 session、`test:perf` 入命令表、产物扫描扩到全部 chunk、文档同步 |
 | 2026-11-20 | v2.150 | RFC-016 Round 1 评审（Status → `Changes requested`）：门禁 **89 files / 770 tests**、14/14 e2e、2/2 perf。**C-205**（Chromium 被 `testIgnore` 跳过 `browsers.spec.ts`，AC-1 只完成 2/3）、**C-206**（AC-5 测的是 warm cache + visible，不是无缓存/可点击）、**C-207**（首页 `await /api/session` 违反 A 方案「首屏不碰后端」；AC-8 只过滤 `/api/games`）、**C-209**（OPS-2：`test:perf` 未登记到 RULES §3）为阻塞；C-208 / C-210 / C-211 / C-212 为非阻塞。探针从 `/tmp/howl-rfc016-r1/backup/` 文件备份恢复、`main.tsx` / `App.tsx` / `ReplayPage.tsx` 三个文件 MD5 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-016.md`](reviews/REVIEW-RFC-016.md) Round 1 |

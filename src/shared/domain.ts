@@ -38,14 +38,15 @@ export const FACTION_OF = {
 } as const satisfies Record<Role, Faction>;
 
 /**
- * 对局阶段，共 14 个取值：
- * `LOBBY`、6 个 `NIGHT_*`、`DAY_ANNOUNCE` / `DAY_SPEECH` / `DAY_VOTE` /
+ * 对局阶段，共 15 个取值：
+ * `LOBBY`、7 个 `NIGHT_*`、`DAY_ANNOUNCE` / `DAY_SPEECH` / `DAY_VOTE` /
  * `DAY_VOTE_RUNOFF` / `DAY_LYNCH` / `DAY_HUNTER_SHOOT`、`FINISHED`。
  */
 export const PHASES = [
   'LOBBY',
   'NIGHT_WOLF_CHAT',
   'NIGHT_WOLVES',
+  'NIGHT_WOLF_RUNOFF',
   'NIGHT_SEER',
   'NIGHT_WITCH',
   'NIGHT_RESOLVE',
@@ -134,6 +135,10 @@ export interface GameState {
   runoff?: SeatId[];
   /** 本夜狼队已提交的发言（`WOLF_CHAT_POSTED` 折叠而来，可重建）。 */
   wolfChat?: { seat: SeatId; text: string }[];
+  /** 狼队这一轮的票（RUL-13）。 */
+  wolfVotes?: { seat: SeatId; target: SeatId }[];
+  /** 重投时的候选（并存席位）；空/未定义表示不在重投。 */
+  wolfRunoff?: SeatId[];
   /** 已被放逐的席位（`VOTE_REVEALED` 唯一最高票时写入，`DAY_LYNCH` 的自动推进读它）。 */
   lynched?: SeatId;
   // 注：无 stalemateDays 之类的平局兜底字段。RUL-10 已移除该规则（见 RULES.md §6）。

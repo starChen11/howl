@@ -115,6 +115,8 @@ describe('PAYLOAD_SCHEMAS · 登记表完整性（Round 2 评审）', () => {
       'WITCH_POTION_USED',
       'WOLF_CHAT_POSTED',
       'WOLF_KILL_CHOSEN',
+      'WOLF_VOTE_CAST',
+      'WOLF_VOTE_REVEALED',
     ]);
   });
 

@@ -64,9 +64,10 @@ export const scriptedAgent: Decider = async ({ seat, ctx, phase }) => {
     case 'NIGHT_WOLF_CHAT':
       return { action: { type: 'WOLF_CHAT', ts, seat: seat as never, text: '今晚刀他' } };
     case 'NIGHT_WOLVES':
-      return target === undefined
+    case 'NIGHT_WOLF_RUNOFF':
+      return target === undefined || target === 'abstain'
         ? { action: undefined }
-        : { action: { type: 'WOLF_KILL', ts, seat: seat as never, target: target as never } };
+        : { action: { type: 'WOLF_VOTE', ts, seat: seat as never, target: target as never } };
     case 'NIGHT_SEER':
       return target === undefined
         ? { action: undefined }

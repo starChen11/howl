@@ -477,3 +477,20 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 2026-11-17 | v1.3 | RFC-001 Round 2 修复后回填：`contracts.test.ts` 拆成 domain / actions / events 三个文件；补 B3（`EventEnvelope` 夹具）、N1（五个严格开关）、N2（构建前清 `dist`）、N3（`EFFECT_SOURCES` / `SELF_VISIBILITY_PREFIX`）与 CR-003 一行 |
 | 2026-11-17 | v1.1 | RFC-001 实现后按实际落地的测试回填：新增 T-4（自递归）、T-5（代理改用 HTTP）、T-6（路径按 RFC）、T-7（构建测试不跳过）；RFC-001 小节的实际用例数以 `RFCs/RFC-001-*.md` §8.5 为准 |
 | 2026-11-17 | v1.0 | 初次生成：16 个 RFC 小节、222 条验收标准的逐条落表、126 条计划测试、6 项人工检查 |
+
+## RFC-017: 狼队投票决定刀谁
+
+| AC | 计划测试 | 层级 | Exists? | 优先级 |
+|---|---|---|---|---|
+| 1 | `tests/engine/wolf-vote.test.ts`：三票 2:1 → `WOLF_KILL_CHOSEN` 与相位推进 | unit | existing | Must |
+| 2 | 同上：三票各不同 → `WOLF_VOTE_REVEALED.tied` 非空、进入 `NIGHT_WOLF_RUNOFF` | unit | existing | Must |
+| 3 | 同上：重投投并列者以外 → `INVALID_RUNOFF_TARGET`，相位不变 | unit | existing | Must |
+| 4 | 同上：重投僵持 → 取最小席位，对局继续 | unit | existing | Must |
+| 5 | 同上：重复票 / 投队友 / 非狼投票 三种拒绝码 | unit | existing | Must |
+| 6 | `tests/server/project/*`：好人投影不含 `WOLF_VOTE_*` 事件 | integration | existing | Must |
+| 7 | `tests/server/orchestrator.test.ts`：玩家是狼时被问且提交 `WOLF_VOTE` | integration | existing | Must |
+| 8 | `tests/client/shoot.test.tsx`：投票界面显示实时票型；重投只有并列者 | unit(jsdom) | existing | Must |
+| 9 | `tests/engine/wolf-vote.test.ts`：旧 `WOLF_KILL` 仍能推进（兼容） | unit | existing | Should |
+
+**已知时序偏离**：本小节与实现同批落地（先代码后计划），违反 RULES 硬规则 3；
+记录在 `CHANGE-REQUEST-011` §8 与 `RFCs/RFC-017` §8。

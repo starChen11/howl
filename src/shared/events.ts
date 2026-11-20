@@ -107,6 +107,10 @@ export interface GameEventMap {
   /** `actionType` 是 `Action['type']` 而不是 `string`：`DATA-2` 的「不得用裸字符串」同样适用于载荷（CR-003 C1，与 RFC-002 §2.3 一致）。 */
   REJECTED: { actionType: Action['type']; code: string; message: string };
   WOLF_KILL_CHOSEN: { target: SeatId };
+  /** 狼队内部投票（RUL-13）：每人一票，票型只有狼看得到。 */
+  WOLF_VOTE_CAST: { seat: SeatId; target: SeatId };
+  /** 唱票结果：`tied` 非空表示进入重投。 */
+  WOLF_VOTE_REVEALED: { votes: { seat: SeatId; target: SeatId }[]; tied?: SeatId[] };
   SEER_CHECKED: { target: SeatId; result: 'wolf' | 'not-wolf' };
   WITCH_POTION_USED: { potion: 'heal' | 'poison'; target: SeatId };
   PLAYER_DIED: { seat: SeatId; cause: 'wolf' | 'poison' | 'lynch' | 'shoot' };
@@ -148,6 +152,8 @@ export const GAME_EVENT_TYPES = [
   'GAME_STARTED',
   'REJECTED',
   'WOLF_KILL_CHOSEN',
+  'WOLF_VOTE_CAST',
+  'WOLF_VOTE_REVEALED',
   'SEER_CHECKED',
   'WITCH_POTION_USED',
   'PLAYER_DIED',

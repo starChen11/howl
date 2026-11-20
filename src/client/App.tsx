@@ -297,10 +297,18 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         ) : null}
         {ctx.pending === 'chat' ||
         ctx.pending === 'kill' ||
+        ctx.pending === 'wolf-vote' ||
+        ctx.pending === 'wolf-runoff' ||
         ctx.pending === 'check' ||
         ctx.pending === 'witch' ? (
           <NightAction
             pending={ctx.pending}
+            wolfVotes={ctx.privateEvents
+              .filter((event) => event.type === 'WOLF_VOTE_CAST')
+              .map((event) => ({
+                seat: (event.payload as { seat: number }).seat,
+                target: (event.payload as { target: number }).target,
+              }))}
             wolfChats={ctx.privateEvents
               .filter((event) => event.type === 'WOLF_CHAT_POSTED')
               .map((event) => ({
@@ -320,10 +328,14 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
             killTarget={ctx.knowledge.knownKillTarget}
             onChat={(text) => void nightAction({ type: 'WOLF_CHAT', text })}
             onTarget={(target) =>
-              void nightAction({
-                type: ctx.pending === 'kill' ? 'WOLF_KILL' : 'SEER_CHECK',
-                target,
-              })
+              void nightAction(
+                ctx.pending === 'wolf-vote' || ctx.pending === 'wolf-runoff'
+                  ? { type: 'WOLF_VOTE', target }
+                  : {
+                      type: ctx.pending === 'kill' ? 'WOLF_KILL' : 'SEER_CHECK',
+                      target,
+                    },
+              )
             }
             onWitch={(choice) => {
               if (choice === 'none') {

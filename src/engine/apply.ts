@@ -59,6 +59,19 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       return base;
     case 'PHASE_CHANGED':
       return applyPhaseChanged(base, event.payload);
+    case 'WOLF_VOTE_CAST':
+      return {
+        ...base,
+        wolfVotes: [...(base.wolfVotes ?? []), event.payload],
+      };
+    case 'WOLF_VOTE_REVEALED':
+      // 唱票后清空本轮票；`tied` 非空则进入重投。
+      if (event.payload.tied === undefined) {
+        const next = { ...base, wolfVotes: [] };
+        delete next.wolfRunoff;
+        return next;
+      }
+      return { ...base, wolfVotes: [], wolfRunoff: event.payload.tied };
     case 'WOLF_KILL_CHOSEN':
       return patchNight(base, { killTarget: event.payload.target });
     case 'WITCH_POTION_USED':
