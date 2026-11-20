@@ -103,6 +103,7 @@
 | **D-3** | 能力不足只显示提示，不写降级实现 | RFC §2.1 的明确取舍：降级路径没人维护更危险 |
 | **D-4** | Edge 不单独跑，按 Chromium 引擎覆盖 | Q-016-1 的假设，记录于此（AC-2） |
 | **D-5** | 首屏预算用独立 Playwright 配置（`playwright.perf.config.ts`，端口 4179） | 它需要构建产物与稳定服务，不能混进 `pnpm test`（§6） |
+| **D-6** | 首屏用**墙钟时间**测到「按钮可点击」，不是页内 `performance.now()` | 用户感知的是从导航到能点的那段时间；两者差在导航与脚本启动，墙钟更接近体感（C-214） |
 
 ### 8.3 文件清单（FILES CHANGED）
 
@@ -113,7 +114,7 @@
 | 配置 | `playwright.config.ts`（三引擎 projects）、`playwright.perf.config.ts`、`package.json`（`test:perf`）、`RULES.md` §3 命令表 |
 | 服务端脚本 | `scripts/e2e-server.ts`（支持 `--port=`，供 perf 用） |
 | 文档 | `RFCS.md`、`README.md`、`TEST-STRATEGY.md` |
-| 测试 | `tests/e2e/browsers.spec.ts`、`tests/perf/first-paint.spec.ts`、`tests/client/capabilities.test.ts` |
+| 测试 | `tests/e2e/browsers.spec.ts`、`tests/perf/first-paint.spec.ts`、`tests/client/capabilities.test.ts`、`tests/meta/build.test.ts`（产物扫描） |
 
 ### 8.4 验收逐条
 
@@ -126,15 +127,15 @@
 | 5 | `tests/perf` 5 次中位数 ≤ 2s（实测约 400ms 内） | PASS |
 | 6 | 入口 chunk 不含 `复盘时间线` / `/stream` / 模型地址；静态 import 复盘页会红 | PASS |
 | 7 | 客户端产物不含 `api.deepseek` / `DEEPSEEK_API_KEY` | PASS |
-| 8 | 首页加载到「开始一局」可点期间没有 `/api/games` 请求（e2e 断言） | PASS |
+| 8 | 首页加载到「开始一局」可点期间**没有任何 `/api/` 请求**（e2e 断言） | PASS |
 
 ### 8.5 验证输出（实跑）
 
 ```
 $ pnpm typecheck / lint / format:check / build → 全 exit 0
-$ pnpm test → 89 files / 770 tests
-$ pnpm test:e2e → 14 passed（Chromium 10 + Firefox 2 + WebKit 2）
-$ pnpm test:perf → 2 passed
+$ pnpm test → 89 files / 771 tests
+$ pnpm test:e2e → 16 passed（Chromium 12 + Firefox 2 + WebKit 2）
+$ pnpm test:perf → 3 passed
 ```
 
 ### 8.6 已知缺口
@@ -160,5 +161,22 @@ $ pnpm test:perf → 2 passed
 ```
 $ pnpm test → 89 files / 771 tests
 $ pnpm test:e2e → 16 passed
+$ pnpm test:perf → 3 passed
+```
+
+### 8.8 Round 2 回应（Reviewed）
+
+Round 2 无阻塞项。顺手补了评审提到的非阻塞：
+
+| 项 | 处理 |
+|---|---|
+| **C-210** 文档残留 | TEST-STRATEGY 的「RFC-016 待实现」与文件引用、README 的「占位页」、RFC §8.5 数字、§8.3 文件清单全部同步 |
+| **C-213** 默认入口没有 e2e 锁 | `game.spec.ts` 增加「默认 `/` 是首页、首屏无 `/api/` 请求、点开始才进对局」用例 |
+| **C-214** 测量方式与 RFC §4 的措辞 | 记录为 D-6：用墙钟时间测「到可点击」，而不是页内 `performance.now()`——用户感知的是前者 |
+| **C-215** 英文网络错误文案 | 保留原始错误（排查用），由 `role="alert"` 呈现；后续可换成人话 | 非阻塞 |
+
+```
+$ pnpm test → 89 files / 771 tests
+$ pnpm test:e2e → 17 passed
 $ pnpm test:perf → 3 passed
 ```

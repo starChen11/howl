@@ -262,3 +262,21 @@ test.describe('复盘（RFC-014）', () => {
     await expect(page.getByRole('heading', { name: '复盘' })).toHaveCount(0);
   });
 });
+
+test.describe('首页入口（RFC-016）', () => {
+  test('默认 / 是首页，首屏无 API 请求，点「开始一局」才进对局', async ({ page }) => {
+    const apiCalls: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/api/')) apiCalls.push(request.url());
+    });
+
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Howl' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '开始一局' })).toBeEnabled();
+    expect(apiCalls).toEqual([]);
+
+    await page.getByRole('button', { name: '开始一局' }).click();
+    await expect(page.locator('.app')).toBeVisible({ timeout: 30_000 });
+    expect(page.url()).toContain('?game=');
+  });
+});

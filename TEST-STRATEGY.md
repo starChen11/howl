@@ -35,7 +35,7 @@ $ pnpm test
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
 
-覆盖统计：**16 个 RFC、222 条验收标准；RFC-001 ~ 015 的用例已落地（`existing`），RFC-016 待实现。**
+覆盖统计：**16 个 RFC、222 条验收标准；RFC-001 ~ 016 的用例已全部落地（`existing`）。**
 
 ---
 
