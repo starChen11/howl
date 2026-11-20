@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.149 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
+> 版本 v2.150 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -52,7 +52,7 @@
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Reviewed |
-| [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Implemented |
+| [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Changes requested |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
 
@@ -1161,10 +1161,28 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 > **Round 4 后的状态**：C-184 / C-202 关闭；C-195 仍 Open（非阻塞，部分修复）；新增 C-203 / C-204 为非阻塞。C-185 / C-186 / C-188 / C-194 与 C-190 / C-192 / C-193 / C-196 ~ C-201 未重查。RFC-015 的 Status = **`Reviewed`**。
 
+### 8.58 RFC-016 Round 1 评审（2026-11-20）
+
+> 由 `/review-rfc 016` 执行；完整证据见 [`reviews/REVIEW-RFC-016.md`](reviews/REVIEW-RFC-016.md) Round 1。评审时 HEAD `5e06e49`，工作树 clean；门禁 **89 files / 770 tests**、`typecheck` / `lint` / `format:check` / `build` 全 exit 0、`pnpm test:e2e` **14/14 passed**（Chromium 10 + Firefox 2 + WebKit 2；**Chromium 没有 `browsers.spec.ts`**）、`pnpm test:perf` **2/2 passed**。探针从 `/tmp/howl-rfc016-r1/backup/` 文件备份恢复（**未用 `git checkout` / `git restore`**），`main.tsx` / `App.tsx` / `ReplayPage.tsx` 三个文件 MD5 与探针前一致；临时探针已删除；工作树 clean；没有 `git commit`。结论：**`Changes requested`**（4 条阻塞）。
+
+| # | 复核 | 状态与痕迹 |
+|---|---|---|
+| **C-205** | AC-1 的 Chromium 主路径被 `testIgnore: /browsers\.spec\.ts/` 跳过；14 条 e2e = Chromium 10 + Firefox 2 + WebKit 2，没有任何 `[chromium] › browsers.spec.ts`；Chromium 的 10 条全走 `game.spec.ts` 的 `?seed=13`，不点「开始一局」。`browsers.spec.ts:6-7`、RFC §8.4:120 与 §8.5:134 的说法互相矛盾 | **Open（阻塞，Round 1）** · `playwright.config.ts:24-31`、`tests/e2e/browsers.spec.ts:6-7,14`、`tests/e2e/game.spec.ts:13`、`RFCs/RFC-016-browser-support-and-first-paint.md:120,134`；Round 1 §0 e2e 输出 / §1 AC-1 |
+| **C-206** | AC-5 的 5 次样本在同一个 page / context 内，`clearCookies` + `about:blank` 不清 HTTP 缓存；实测 warm 中位数 30ms（`transferSize=300`）vs 新 context cold 中位数 172ms（`transferSize=224958`）；用 `waitFor visible` 代替可点击、`Date.now()` 代替 `performance.now()`、测 `/?home=1` 而非默认 `/`。1.6s 人为延迟下官方用例仍绿（warm 中位约 1.83s），1.9s 才红 | **Open（阻塞，Round 1）** · `tests/perf/first-paint.spec.ts:32-51`、`RFCs/RFC-016-browser-support-and-first-paint.md:58`；Round 1 §1 AC-5 / P-R1-4 / P-R1-5 |
+| **C-207** | 首页渲染前 `await fetch('/api/session')`（`main.tsx:28`），违反用户批准的 A 方案「首屏不碰后端」与 RFC §2.2.3「进入对局页前不发请求」；abort `/api/session` 后首页变成「打不开对局 / Failed to fetch」。AC-8 的 e2e 只过滤 `/api/games`，抓不到它，且只跑 Firefox / WebKit | **Open（阻塞，Round 1）** · `src/client/main.tsx:28`、`tests/e2e/browsers.spec.ts:19`、`RFCs/RFC-016-browser-support-and-first-paint.md:95`；Round 1 §1 AC-8 / P-R1-6 |
+| **C-208** | AC-7 的回归锁只扫入口 chunk 的 `api.deepseek` / `DEEPSEEK_API_KEY`；把 `https://api.deepseek.com/...` 放进 ReplayPage 后 perf 打包用例仍绿（`ReplayPage-*.js` 含 `api.deepseek`，入口不含）。`tests/meta/build.test.ts` 全量扫密钥与 `@fastify/static`，但不扫模型地址 / `openai` / 服务端 LLM 模块 | **Open（非阻塞，Round 1 新登记）** · `tests/perf/first-paint.spec.ts:18-22`、`tests/meta/build.test.ts:45-68`；Round 1 §1 AC-7 / P-R1-3 |
+| **C-209** | `package.json` 新增 `test:perf`，但 `RULES.md:91-100` 的固定命令表没有它；`OPS-2` 要求新增脚本在本节登记；RFC §8.3 的 FILES CHANGED 也没提 RULES.md | **Open（阻塞，Round 1）** · `package.json:21`、`RULES.md:91-100`、`RFCs/RFC-016-browser-support-and-first-paint.md:107-114`；Round 1 §3.2 |
+| **C-210** | `TEST-STRATEGY.md:38` 仍写「RFC-016 待实现」，`:391-400` 六行全 `proposed` 且文件名（`capabilities.spec.ts` / `first-paint.test.ts` / `bundle.test.ts` / `e2e/first-paint.spec.ts`）在仓库中不存在；README `:11` 仍写 15 Reviewed / 1 Not started / 001–015；RFC §8.3 漏 `scripts/e2e-server.ts`、`README.md`、`TEST-STRATEGY.md`、`RFCS.md`，§8.4 AC-1 / AC-7 证据与实测不符 | **Open（非阻塞，Round 1 新登记）** · `TEST-STRATEGY.md:38,391-400`、`README.md:11`、`RFCs/RFC-016-browser-support-and-first-paint.md:107-127`；Round 1 §2 C-210 |
+| **C-211** | 默认 `/` 的首页路径没有被 e2e 覆盖（所有首页用例都用 `/?home=1`；`/` 只在能力失败用例里出现且 boot 不执行）；`Home.start` 的 `seed === null` 分支无测试；`main.tsx:20-21` 先处理 `?game=`，`?home=1` 不覆盖 `?game=`，与 D-1 的「强制」措辞不符 | **Open（非阻塞，Round 1 新登记）** · `tests/e2e/browsers.spec.ts:14,47`、`tests/perf/first-paint.spec.ts:40`、`src/client/main.tsx:20-26`、`src/client/pages/Home.tsx:21-24`；Round 1 §2 C-211 |
+| **C-212** | `Home.tsx` 的 `home*` class 与 `main.tsx` 的 `fallback` 在 `global.css` 中没有样式（只有 `.button`）；`boot()` catch 直接把 `Error.message` 显示给用户，P-R1-6 出现英文 `Failed to fetch`；`Home.start` 不检查 `/play` 的响应 | **Open（非阻塞，Round 1 新登记）** · `src/client/pages/Home.tsx:31-35,42-64`、`src/client/main.tsx:85-91`、`src/client/styles/global.css`；Round 1 §2 C-212 |
+
+> **Round 1 后的状态**：C-205 / C-206 / C-207 / C-209 为阻塞；C-208 / C-210 / C-211 / C-212 为非阻塞。RFC-016 的 Status = **`Changes requested`**。下一轮复核时，已关闭项与用户未点名项不重查。
+
 ## 变更历史
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-20 | v2.150 | RFC-016 Round 1 评审（Status → `Changes requested`）：门禁 **89 files / 770 tests**、14/14 e2e、2/2 perf。**C-205**（Chromium 被 `testIgnore` 跳过 `browsers.spec.ts`，AC-1 只完成 2/3）、**C-206**（AC-5 测的是 warm cache + visible，不是无缓存/可点击）、**C-207**（首页 `await /api/session` 违反 A 方案「首屏不碰后端」；AC-8 只过滤 `/api/games`）、**C-209**（OPS-2：`test:perf` 未登记到 RULES §3）为阻塞；C-208 / C-210 / C-211 / C-212 为非阻塞。探针从 `/tmp/howl-rfc016-r1/backup/` 文件备份恢复、`main.tsx` / `App.tsx` / `ReplayPage.tsx` 三个文件 MD5 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-016.md`](reviews/REVIEW-RFC-016.md) Round 1 |
 | 2026-11-20 | v2.149 | RFC-016 实现完成（Status → Implemented）：首页入口、能力探测提示、对局/复盘懒加载、三引擎 Playwright projects、首屏预算与打包产物断言 |
 | 2026-11-20 | v2.148 | RFC-015 Round 4 复核（Status → Reviewed）：门禁 88 files / 766 tests、10/10 e2e、单元覆盖率行 97.14% / 分支 93.11%；100 局 1.65s / 83.0MB。**C-184 闭合**——`runner.ts:152` 真正调用 `classifyFinished`，P-R4-1 用 `playerInput` 投已出局席位得到 45 事件、末条 `GAME_ENDED`、`REJECTED self:1 VOTE TARGET_NOT_ALIVE`；把调用改成 `null` 后 selfplay 用例 **1 failed / 17 passed**（M-R4-1）。**C-202 闭合（行为）**——未终局与被拒路径都挂 usage，P-R4-2a/b 实测 2 次 / 224 input 与 23 次 / 4669 input；但删掉两处后 18/18 仍绿（M-R4-2），新增 C-203（回归锁）。**C-195 仍 Open（非阻塞）**——TEST-STRATEGY `:38` 的「全部 existing」与 13 行 `proposed` 矛盾、`:133` 占位测试描述与现行用例相反。新增 C-204（C-184 用例加固 + JSDoc）。探针从 `/tmp/howl-rfc015-r4/backup/` 文件备份恢复、三个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-015.md`](reviews/REVIEW-RFC-015.md) Round 4 |
 | 2026-11-20 | v2.147 | RFC-015 Round 3 修复（Status → Implemented）：runner 真正调用 `classifyFinished`、端到端「投已出局席位」用例、被拒/未终局路径挂 usage、文档同步 |
