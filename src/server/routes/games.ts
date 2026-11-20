@@ -308,6 +308,15 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       });
     }
 
+    // 空狼聊不是「说了一句空话」：它会被通道当成 skip，等于绕过准备门槛。
+    // 必须在写入事件流之前拒绝，否则状态已经被污染。
+    if (parsed.data.action.type === 'WOLF_CHAT' && parsed.data.action.text.trim() === '') {
+      return reply.code(400).send({
+        error: 'EMPTY_WOLF_CHAT',
+        message: '狼队聊天不能是空消息；要结束讨论请点「准备完成」',
+      });
+    }
+
     const seatOfAction = 'seat' in parsed.data.action ? parsed.data.action.seat : undefined;
     if (seatOfAction !== undefined && seatOfAction !== record.playerSeat) {
       return reply.code(403).send({
@@ -345,13 +354,6 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       const target = parsed.data.action.target;
       channels.submit(record.gameId, target === 'abstain' ? '' : String(target));
     }
-    if (accepted && parsed.data.action.type === 'WOLF_CHAT' && parsed.data.action.text.trim() === '') {
-      return reply.code(400).send({
-        error: 'EMPTY_WOLF_CHAT',
-        message: '狼队聊天不能是空消息；要结束讨论请点「准备完成」',
-      });
-    }
-
     // 夜间动作同理：把目标/文本交给挂起的输入，避免 60 秒后提交迟到动作。
     // 自曝会让白天立即结束：挂起的发言等待要被兑现，否则编排层会等 60 秒超时。
     if (accepted && parsed.data.action.type === 'SELF_EXPOSE') {

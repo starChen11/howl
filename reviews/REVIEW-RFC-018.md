@@ -330,3 +330,105 @@ $ pnpm format:check→ 0（All matched files use Prettier code style!）
   生效（推荐由服务端投影给出 `readyAfterSeconds`）。
 - 本轮未新增冲突；C-235 / C-238 仍 Open，C-237 的测试计划回填仍未做。
 
+---
+
+## Round 3 -- 2026-11-21
+
+复核范围：只复核 Round 2 剩余两项 **B1 / B3**。按 lead 指令，**本轮不运行任何命令**
+（不执行 `pnpm` / `vitest` / `playwright` / `git`），以下判定全部来自仓库文件静态阅读；
+测试是否实际通过未被本轮独立复测，因此不声称门禁结果，也不把「实现方说绿」当作证据。
+
+### 1. 结论
+
+| 项 | 结论 | 一句话证据 |
+|---|---|---|
+| **B1** 重投超时不再弃权 | **PASS** | `src/server/orchestrator.ts:371-384` 在 `NIGHT_WOLF_RUNOFF` 取 `ctx.legalTargets` 第一个数字目标，普通 `NIGHT_WOLVES` 仍 `abstain`；`tests/server/wolf-chat-room.test.ts:122-183`（最后一个 describe）覆盖该分支 |
+| **B3** 空聊天/5 秒门槛/无跳过 | **FAIL** | `src/client/App.tsx:336-340` 仍以 `?fast=1` 把门槛降到 5 秒；`src/server/routes/games.ts:348-353` 的 `EMPTY_WOLF_CHAT` 检查在 `registry.submit(...)`（`:319-331`）之后，空消息已写入事件流后才返回 400 |
+
+**RFC-018 Status 保持 `Changes requested`。**
+
+### 2. B1 —— PASS
+
+**代码（符合要求）**
+
+- `src/server/orchestrator.ts:331` 把 `NIGHT_WOLVES` 与 `NIGHT_WOLF_RUNOFF` 一起当作狼队投票；
+- `:371-375` 的超时分支：`NIGHT_WOLF_RUNOFF` 取
+  `ctx.legalTargets.find((target) => typeof target === 'number') ?? 'abstain'`，
+  即**第一个数字目标**；`NIGHT_WOLVES` 固定返回 `'abstain'`；
+- `src/server/project/targets.ts:41-43` 的 `wolf-runoff` 返回 `state.wolfRunoff`（并列者，均为数字），
+  与 `pendingForPhase('NIGHT_WOLF_RUNOFF')`（`orchestrator.ts:111-112`）配套；
+- 引擎侧 `src/engine/phases/night.ts:214-223` 已拒绝重投阶段的显式 `abstain`（`INVALID_RUNOFF_TARGET`），
+  与 Round 2 的修复一致。
+
+**回归锁（最后一个 describe）**
+
+`tests/server/wolf-chat-room.test.ts:122-183`：
+
+- 第一次 `read` 返回 `skip`（狼聊阶段），随后全部返回 `timeout`；
+- 首轮狼投票超时 → `abstain`；AI 狼按 `targets[seat % targets.length]` 分票制造平票 → `NIGHT_WOLF_RUNOFF`；
+- 重投阶段再次 `timeout`，若实现退回 `abstain`，`night.ts:214-223` 会产出 `REJECTED`，
+  `runGame` 在 `orchestrator.ts:286-289` 直接抛 `动作被拒绝：INVALID_RUNOFF_TARGET`，该用例必红；
+- 用例断言玩家 1 号至少有一票 `target !== 'abstain'` 且最终相位不是 `NIGHT_WOLF_RUNOFF`。
+
+同种子/同席位的既有编排用例 `tests/server/orchestrator.test.ts:814-859` 也明确用
+`seed: 3, playerSeat: 1` 的 AI 分票制造平票，并注明「2 号是并列者之一」，可佐证该场景确实进入重投，
+不是空跑的断言。
+
+**非阻塞的回归锁强度问题**
+
+- 该用例只断言「重投那一票不是 `abstain`」，没有断言「等于 `ctx.legalTargets` 的第一个数字目标」。
+  若实现改成投第二个并列者，测试仍绿。代码本身用的是 `.find`，行为正确；建议后续把断言收紧为
+  「等于并列者排序后的第一个席位」，让 AC-7 的「第一个」也被锁住。
+
+### 3. B3 —— FAIL
+
+#### 3.1 `?fast=1` 仍然生效（阻塞）
+
+`src/client/App.tsx:336-340`：
+
+```ts
+readyAfterSeconds={
+  __HOWL_FAKE_AI__ || new URLSearchParams(window.location.search).get('fast') === '1'
+    ? 5
+    : 30
+}
+```
+
+`?fast=1` 仍在或运算里；`src/client/pages/Home.tsx:39` 开局时还会把 `fast=1` 继续带进对局 URL。
+因此真实模型局加 `?fast=1` 依旧把准备门槛降到 5 秒，与用户要求的「`readyAfterSeconds` 只由
+`__HOWL_FAKE_AI__` 决定（5/30）」以及 RFC-018 §8.1 B3 的声明不符。这是本轮 B3 的直接失败点。
+（`__HOWL_FAKE_AI__` 本身由 `vite.config.ts:11` 注入，`vitest.config.ts:16` 固定为 false，这部分没问题。）
+
+#### 3.2 空 `WOLF_CHAT` 的「拒绝」发生在写入之后（阻塞）
+
+`src/server/routes/games.ts:348-353` 确实返回了 `400 EMPTY_WOLF_CHAT`，但它在
+`registry.submit(...)`（`:319-331`）之后：
+
+- `src/shared/schemas.ts:53-58` 的 `WOLF_CHAT.text` 是 `z.string()`，没有 `min(1)`；
+- `src/engine/phases/wolf-chat.ts:42-55` 对空文本只做 `slice`，不拒绝；
+- 所以 `registry.submit` 先接受了空消息并写入 `WOLF_CHAT_POSTED`，路由再返回 400；
+  这是一个「响应拒绝、状态已变」的假拒绝。`channels.submit`（`:360-362`）因提前返回而未执行，
+  Round 2 的「空消息 → `normalizeInput('')` → `markReady`」即时旁路确实被切断，但事件流仍被污染，
+  且同一请求的 400 与已落盘事件互相矛盾。
+
+`tests/server/strengthen.test.ts:433-457` 只断言状态码 400 与 `error: 'EMPTY_WOLF_CHAT'`；
+标题写的「不推进/不准备」没有任何断言，也没有断言事件流里没有 `WOLF_CHAT_POSTED`。
+建议把空文本检查移到 `registry.submit` **之前**（或在 `registry.submit` 内部按 action 校验），
+并在该用例里补「提交前后 `WOLF_CHAT_POSTED` 数量不变」的断言。
+
+#### 3.3 聊天室无「跳过」（通过）
+
+`src/client/components/NightAction.tsx:65-116` 的 `pending === 'chat'` 分支没有「跳过」按钮；
+表单只在 `text.trim() !== ''` 时调用 `onChat`（`:100-105`），`App.tsx:380` 只把非空文本发成
+`WOLF_CHAT`。客户端 grep 也只剩 `NightAction` / `App` 两处 `onChat`，没有聊天室跳过路径。
+这一子项 **PASS**。
+
+### 4. Round 3 总结
+
+- **B1 闭合**：代码与用例都对，超时分支不再在重投提交 `abstain`；仅剩「没有锁死第一个并列者」的
+  测试强度小缺口（非阻塞）。
+- **B3 未闭合**：`?fast=1` 仍可绕过 5/30 秒的单一来源；空 `WOLF_CHAT` 的 400 发生在事件落盘之后。
+  前者直接违反用户本轮的验收口径，后者是同一路径上的真实状态污染。
+- 因此 **Status 保持 `Changes requested`**，不改 `RFCS.md` 的状态列；等 B3 两处修完后再复核。
+- 本轮未新增冲突，C-238 继续 Open；C-235 / C-237 的既有状态不变。
+

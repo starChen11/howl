@@ -454,5 +454,11 @@ describe('RFC-018 · 空狼队消息不能当准备', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual(expect.objectContaining({ error: 'EMPTY_WOLF_CHAT' }));
+
+    // 拒绝必须发生在写入之前：事件流不新增，相位仍停在讨论。
+    const { GameRegistry } = await import('@server/store/game-registry');
+    const after = await new GameRegistry(store).getGame(gameId);
+    expect(after?.events.some((event) => event.type === 'WOLF_CHAT_POSTED')).toBe(false);
+    expect(after?.events.length).toBe(created.json<{ version: number }>().version);
   });
 });
