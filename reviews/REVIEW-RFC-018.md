@@ -432,3 +432,81 @@ readyAfterSeconds={
 - 因此 **Status 保持 `Changes requested`**，不改 `RFCS.md` 的状态列；等 B3 两处修完后再复核。
 - 本轮未新增冲突，C-238 继续 Open；C-235 / C-237 的既有状态不变。
 
+---
+
+## Round 4 -- 2026-11-21
+
+复核范围：只复核 Round 3 遗留的 **B3**。按 lead 指令本轮**不运行任何命令**，结论基于静态阅读；
+测试是否实际通过未被本轮独立复测。
+
+### 1. 结论：B3 PASS（闭合）
+
+| 子项 | 结果 | 证据 |
+|---|---|---|
+| 空 `WOLF_CHAT` 在写入前拒绝 | **PASS** | `src/server/routes/games.ts:311-318` 的 `EMPTY_WOLF_CHAT` 检查已前移到 `registry.submit`（`:328`）之前；空消息不会再落成 `WOLF_CHAT_POSTED` |
+| `readyAfterSeconds` 只由 `__HOWL_FAKE_AI__` 决定 | **PASS** | `src/client/App.tsx:336` 只剩 `__HOWL_FAKE_AI__ ? 5 : 30`；`src/client/pages/Home.tsx:38` 只拼 `?game=`；`src/` 内 grep 已无 `fast=1` / `fast === '1'` |
+| 聊天室无「跳过」 | **PASS** | `NightAction.tsx:65-116` 的 `pending === 'chat'` 分支仍无「跳过」按钮，表单只在 `text.trim() !== ''` 时 `onChat`（`:100-105`） |
+
+### 2. 逐项证据
+
+**2.1 空 `WOLF_CHAT` 前置校验**
+
+`src/server/routes/games.ts:311-318`：
+
+```ts
+// 空狼聊不是「说了一句空话」：它会被通道当成 skip，等于绕过准备门槛。
+// 必须在写入事件流之前拒绝，否则状态已经被污染。
+if (parsed.data.action.type === 'WOLF_CHAT' && parsed.data.action.text.trim() === '') {
+  return reply.code(400).send({
+    error: 'EMPTY_WOLF_CHAT',
+    message: '狼队聊天不能是空消息；要结束讨论请点「准备完成」',
+  });
+}
+```
+
+检查位于 `WOLF_KILL` 检查（`:304-309`）之后、席位校验（`:320-326`）与 `registry.submit`
+（`:328-333`）之前。空消息请求因此不会进入引擎，也不会触发 `channels.submit`。
+
+回归锁 `tests/server/strengthen.test.ts:458-462` 已补上 Round 3 缺失的断言：
+
+```ts
+const after = await new GameRegistry(store).getGame(gameId);
+expect(after?.events.some((event) => event.type === 'WOLF_CHAT_POSTED')).toBe(false);
+expect(after?.events.length).toBe(created.json<{ version: number }>().version);
+```
+
+即「响应 400」与「事件流不新增、版本不变」同时被锁住。`CreateGameResponse.version` 是
+创建后 `state.seq`，与创建时事件数一致，这条断言成立。
+
+**2.2 `?fast=1` 已移除**
+
+`src/client/App.tsx:336`：
+
+```tsx
+readyAfterSeconds={__HOWL_FAKE_AI__ ? 5 : 30}
+```
+
+`src/client/pages/Home.tsx:38`：
+
+```ts
+window.location.search = `?game=${game.gameId}`;
+```
+
+全 `src/` 搜索 `fast=1` / `fast === '1'` 已无命中；真实模型局无论 URL 带什么参数都固定 30 秒，
+纯脚本局由 `__HOWL_FAKE_AI__`（`vite.config.ts:11`）决定 5 秒，符合 RFC-018 §8.1 B3 的声明。
+
+**2.3 聊天室无「跳过」**
+
+`NightAction.tsx:65-116` 未变，`pending === 'chat'` 分支没有「跳过」按钮；表单只在非空文本时调用
+`onChat`。这一子项在 Round 3 已通过，本轮无回归。
+
+### 3. 非阻塞项（文档残留）
+
+- `TEST-STRATEGY.md:512` 仍把「`readyAfterSeconds=0` 时可点」注为「对应 `?fast=1`」；
+- `RFCs/RFC-018-wolf-night-chat-room.md:49`（§2.3）仍写「`?fast=1` 或纯脚本局 5 秒」。
+
+两处都是文档未跟上 Round 3/4 的代码，不影响 B3 的行为验收；建议下一次 docs 提交一并修正。
+本轮没有新增阻塞。
+
+**Round 4 结论：B3 闭合。RFC-018 Status → `Reviewed`；C-238 关闭。**
+

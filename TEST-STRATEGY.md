@@ -509,7 +509,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 2 | 同上：部分狼准备不推进；全员准备 → NIGHT_WOLVES | unit | existing | Must |
 | 3 | `tests/server/wolf-chat-room.test.ts`：短时限下自动准备并推进 | integration | existing | Must |
 | 4 | `tests/client/shoot.test.tsx`：倒计时、`已准备 x/y`、30 秒前按钮禁用 | unit(jsdom) | existing | Must |
-| 5 | 同上：`readyAfterSeconds=0` 时可点（对应 `?fast=1`） | unit(jsdom) | existing | Must |
+| 5 | 同上：`readyAfterSeconds=0` 时可点（纯脚本局 5 秒） | unit(jsdom) | existing | Must |
 | 6 | `tests/engine/wolf-vote.test.ts` + `tests/server/wolf-chat-room.test.ts`：弃权票不计；全员弃权不产生刀口 | unit | existing | Must |
 | 7 | `tests/engine/wolf-vote.test.ts`：重投阶段弃权被拒 | unit | existing | Must |
 | 8 | `tests/server/wolf-chat-room.test.ts`：AI 在讨论阶段能推进/回应（脚本路径） | integration | existing | Must |
