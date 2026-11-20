@@ -271,3 +271,23 @@ $ pnpm test:e2e → 8 passed
 ```
 $ pnpm test → 80 files / 689 tests
 ```
+
+### 8.12 后续修复：夜间行动也交给玩家
+
+用户实测「当狼人却一觉醒来天亮了」——原因是 `isPlayerPhase` 只覆盖白天发言/投票与
+开枪，夜间的讨论、刀人、查验、用药全都走注入的 `decide`（脚本或模型）代打。
+
+现在夜间四类相位也属于玩家：
+
+| 相位 | 玩家看到 | 提交的动作 |
+|---|---|---|
+| `NIGHT_WOLF_CHAT` | 一条讨论输入框 + 「跳过」 | `WOLF_CHAT`（空文本也会推进） |
+| `NIGHT_WOLVES` | 「刀 N 号」按钮（只列合法目标，不含队友） | `WOLF_KILL` |
+| `NIGHT_SEER` | 「查验 N 号」按钮 | `SEER_CHECK` |
+| `NIGHT_WITCH` | 「用解药救 N 号」/「用毒药毒 N 号」/「不用药」 | `WITCH_ACT`（`none` / `heal:N` / `poison:N`） |
+
+服务端在投影给出的 `legalTargets` 上选目标，客户端只负责把选择送回去；路由收到动作后
+兑现挂起的输入（否则会等 60 秒超时后提交迟到动作）。
+
+回归：`tests/server/death-matrix.test.ts`（玩家是狼时先被问讨论）、
+`tests/client/shoot.test.tsx`（讨论与刀人界面）、e2e 的夜间辅助函数覆盖所有旧用例。

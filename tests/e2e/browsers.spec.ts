@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { waitForMyTurn } from './helpers';
+
 /**
  * RFC-016 §5 AC-1 / AC-2 / AC-3 / AC-8：跨浏览器主路径、能力兜底与首屏请求。
  *
@@ -22,9 +24,9 @@ test('主路径：开始一局 → 发言 → 投票', async ({ page }) => {
   await page.getByRole('button', { name: '开始一局' }).click();
   await expect(page.locator('.app')).toBeVisible({ timeout: 30_000 });
 
-  // 轮到自己时发言
+  // 轮到自己时发言（夜间行动先点掉）
+  await waitForMyTurn(page, 45_000);
   const box = page.getByLabel('你的发言');
-  await expect(box).toBeVisible({ timeout: 30_000 });
   await box.fill('我来说一句。');
   await box.press('Enter');
 

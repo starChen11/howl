@@ -34,7 +34,8 @@ describe('AC-15 · 一局能从开局跑到 FINISHED', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/games',
-      payload: { mode: 'slaughter-side', seed: 20_261_117, playerSeat: 1 },
+      // seed 1 + 1 号：村民席位，测试只需在白天发言
+      payload: { mode: 'slaughter-side', seed: 1, playerSeat: 1 },
     });
     const raw = created.headers['set-cookie'];
     const header = Array.isArray(raw) ? raw[0] : raw;

@@ -336,3 +336,42 @@ describe('矩阵：猎人被放逐 → 白天开枪（此时不能看真相）',
     }
   });
 });
+
+describe('夜间行动由玩家决定（回归：当狼却没参与刀人）', () => {
+  it('玩家是狼：先被问讨论，再被问刀谁', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 3,
+      playerSeat: 1,
+    });
+    expect(registry.stateOf(record).seats.find((seat) => seat.seat === 1)?.role).toBe('wolf');
+
+    const kinds: string[] = [];
+    const texts: string[] = [];
+    await runGame({
+      registry,
+      session,
+      gameId: record.gameId,
+      input: {
+        async read(prompt) {
+          const current = await registry.getGame(record.gameId);
+          kinds.push(`${prompt.kind}:${registry.stateOf(current ?? record).phase}`);
+          return { kind: 'skip' };
+        },
+        close() {},
+      },
+      output: { emit() {}, async flush() {} },
+      decide: scriptedAgent,
+      maxSteps: 1,
+    });
+
+    // 玩家必须被问过讨论与刀人（kind=action），而不是被 AI 代打
+    const final = await registry.getGame(record.gameId);
+    expect(registry.stateOf(final ?? record).phase).not.toBe('DAY_SPEECH');
+    expect(kinds.length).toBeGreaterThan(0);
+    expect(kinds[0]).toMatch(/^action:NIGHT_WOLF_CHAT/);
+    void texts;
+  });
+});

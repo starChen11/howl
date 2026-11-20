@@ -472,14 +472,26 @@ describe('B-R8-1 · 重读后是否还该提交', () => {
   });
 });
 
-describe('C-127 · 玩家亲自行动的相位', () => {
-  it('发言与两种投票都算，夜间不算', async () => {
+describe('玩家亲自行动的相位', () => {
+  it('白天发言/投票、夜间行动与开枪都算', async () => {
     const { isPlayerPhase } = await import('@server/orchestrator');
 
-    expect(isPlayerPhase('DAY_SPEECH')).toBe(true);
-    expect(isPlayerPhase('DAY_VOTE')).toBe(true);
-    expect(isPlayerPhase('DAY_VOTE_RUNOFF')).toBe(true);
-    expect(isPlayerPhase('NIGHT_WOLVES')).toBe(false);
+    for (const phase of [
+      'DAY_SPEECH',
+      'DAY_VOTE',
+      'DAY_VOTE_RUNOFF',
+      'NIGHT_WOLF_CHAT',
+      'NIGHT_WOLVES',
+      'NIGHT_SEER',
+      'NIGHT_WITCH',
+      'NIGHT_HUNTER_SHOOT',
+      'DAY_HUNTER_SHOOT',
+    ]) {
+      expect(isPlayerPhase(phase), phase).toBe(true);
+    }
+    // 自动结算相位不需要玩家
+    expect(isPlayerPhase('NIGHT_RESOLVE')).toBe(false);
+    expect(isPlayerPhase('DAY_ANNOUNCE')).toBe(false);
   });
 });
 

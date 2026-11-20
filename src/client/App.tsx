@@ -6,6 +6,7 @@ import { boardAnnouncement, buildBoard, speakingSeat } from './game-state';
 import { IdCard } from './components/IdCard';
 import { VoteInput } from './components/VoteInput';
 import { ShootInput } from './components/ShootInput';
+import { NightAction } from './components/NightAction';
 import { EventPanel, buildPanelEntries } from './components/EventPanel';
 import { SpectatorBar } from './components/SpectatorBar';
 import { Notepad } from './components/Notepad';
@@ -183,6 +184,20 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
   const speaking = speakingSeat(ctx);
   const myTurn = speaking === ctx.self.seat;
 
+  const nightAction = async (action: {
+    type: string;
+    target?: number;
+    text?: string;
+    potion?: string;
+  }) => {
+    const result = await api.submit(gameId, {
+      action: { ...action, ts: Date.now(), seat: ctx.self.seat } as never,
+      expectedVersion: view.version,
+    });
+    if (!result.ok) setError(result.error.message);
+    await refresh();
+  };
+
   const shoot = async (target: number | null) => {
     const result = await api.submit(gameId, {
       action: {
@@ -279,6 +294,38 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         ) : null}
         {ctx.self.alive && myTurn ? (
           <SpeechInput remaining={remaining} onSubmit={submit} onSkip={skip} onDraft={syncDraft} />
+        ) : null}
+        {ctx.pending === 'chat' ||
+        ctx.pending === 'kill' ||
+        ctx.pending === 'check' ||
+        ctx.pending === 'witch' ? (
+          <NightAction
+            pending={ctx.pending}
+            targets={ctx.legalTargets
+              .filter((target) => typeof target === 'number' && target !== ctx.self.seat)
+              .map((target) => Number(target))}
+            potions={ctx.knowledge.potions}
+            killTarget={ctx.knowledge.knownKillTarget}
+            onChat={(text) => void nightAction({ type: 'WOLF_CHAT', text })}
+            onTarget={(target) =>
+              void nightAction({
+                type: ctx.pending === 'kill' ? 'WOLF_KILL' : 'SEER_CHECK',
+                target,
+              })
+            }
+            onWitch={(choice) => {
+              if (choice === 'none') {
+                void nightAction({ type: 'WITCH_ACT', potion: 'none' });
+                return;
+              }
+              const [potion, raw] = choice.split(':');
+              void nightAction({
+                type: 'WITCH_ACT',
+                potion: potion as 'heal' | 'poison',
+                target: Number(raw),
+              });
+            }}
+          />
         ) : null}
         {ctx.pending === 'shoot' ? (
           <ShootInput

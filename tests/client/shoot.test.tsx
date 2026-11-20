@@ -95,3 +95,41 @@ describe('出局但仍待决定时，不提供真相视图入口', () => {
     expect(screen.queryByRole('button', { name: /真相视图/ })).toBeNull();
   });
 });
+
+describe('夜间行动由玩家操作（回归：当狼却没参与刀人）', () => {
+  it('狼的讨论与刀人界面都出现，刀人提交 WOLF_KILL', async () => {
+    const user = userEvent.setup();
+    const submitted: unknown[] = [];
+    const client = {
+      game: async () => ({
+        version: 3,
+        view: {
+          ...hunterView(),
+          self: { seat: 1, role: 'wolf', alive: true, personaId: null },
+          phase: 'NIGHT',
+          aliveSeats: [1, 2, 3],
+          deadSeats: [],
+          pending: 'chat',
+          legalTargets: [],
+        },
+      }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async (_gameId: string, body: unknown) => {
+        submitted.push(body);
+        return { ok: true as const };
+      },
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+
+    const { rerender } = render(<App gameId="g" client={client} />);
+
+    // 讨论阶段：可以直接跳过
+    await screen.findByRole('button', { name: '跳过' });
+    await user.click(screen.getByRole('button', { name: '跳过' }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toMatchObject({ action: { type: 'WOLF_CHAT', seat: 1 } });
+    rerender(<App gameId="g" client={client} />);
+  });
+});

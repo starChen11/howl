@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { passNight, waitForMyTurn } from './helpers';
+
 /**
  * RFC-012 §5 AC-1 / AC-8 / AC-9 / AC-10 / AC-11。
  *
@@ -52,8 +54,8 @@ test.describe('整局界面', () => {
     await expect(page.locator('.app')).toBeVisible();
 
     // 等到输入区真的出现（玩家轮）
+    await waitForMyTurn(page);
     const box = page.getByLabel('你的发言');
-    await expect(box).toBeVisible({ timeout: 25_000 });
 
     // 三段式布局：状态条 / 主区 / 底部，互不重叠。
     // 注意：主区内部滚动，席位可能滚到主区之外——它被主区裁剪，不算遮挡。
@@ -182,8 +184,8 @@ test.describe('整局界面', () => {
     await expect(page.locator('.app')).toBeVisible();
 
     // 先发言，推进到投票阶段
+    await waitForMyTurn(page);
     const box = page.getByLabel('你的发言');
-    await expect(box).toBeVisible({ timeout: 25_000 });
     await box.fill('我来说一句。');
     await box.press('Enter');
 
@@ -214,13 +216,20 @@ test.describe('整局界面', () => {
     await page.setViewportSize({ width: 1100, height: 800 });
     await page.goto('/?seed=13');
 
-    // 等到轮到玩家（脚本 AI 会很快说完前面几位）
+    // 等到轮到玩家（脚本 AI 会很快说完前面几位；夜间行动也点掉）
+    await waitForMyTurn(page);
     const box = page.getByLabel('你的发言');
-    await expect(box).toBeVisible({ timeout: 20_000 });
 
-    await box.focus();
-    await box.fill('我觉得 2 号像狼。');
-    await box.press('Enter');
+    // 真的用 Tab 走到输入框，而不是 focus()（评审 C-119 的同一条要求）
+    let reached = false;
+    for (let hop = 0; hop < 40 && !reached; hop += 1) {
+      await page.keyboard.press('Tab');
+      reached = await box.evaluate((element) => element === document.activeElement);
+    }
+    expect(reached, 'Tab 到不了发言框').toBe(true);
+
+    await page.keyboard.type('我觉得 2 号像狼。');
+    await page.keyboard.press('Enter');
     // 提交后这条发言会出现在记录里（或输入框消失表示该轮结束）
     await expect(box).toBeHidden({ timeout: 10_000 });
   });
@@ -236,6 +245,7 @@ test.describe('复盘（RFC-014）', () => {
     // 玩家一旦轮到就过/弃权；循环到复盘出现为止。
     for (let step = 0; step < 80; step += 1) {
       if ((await page.getByRole('heading', { name: '复盘' }).count()) > 0) break;
+      await passNight(page);
       const skip = page.getByRole('button', { name: '过' });
       if ((await skip.count()) > 0) await skip.click({ timeout: 1000 }).catch(() => undefined);
       const abstain = page.getByRole('button', { name: '弃权' });

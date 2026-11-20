@@ -608,3 +608,23 @@ body {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* 夜间行动 */
+.night {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.night__hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.night__buttons,
+.night__chat {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}

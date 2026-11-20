@@ -329,6 +329,24 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       const target = parsed.data.action.target;
       channels.submit(record.gameId, target === 'abstain' ? '' : String(target));
     }
+    // 夜间动作同理：把目标/文本交给挂起的输入，避免 60 秒后提交迟到动作。
+    if (accepted && parsed.data.action.type === 'WOLF_CHAT') {
+      channels.submit(record.gameId, parsed.data.action.text);
+    }
+    if (
+      accepted &&
+      (parsed.data.action.type === 'WOLF_KILL' || parsed.data.action.type === 'SEER_CHECK')
+    ) {
+      channels.submit(record.gameId, String(parsed.data.action.target));
+    }
+    if (accepted && parsed.data.action.type === 'WITCH_ACT') {
+      channels.submit(
+        record.gameId,
+        parsed.data.action.potion === 'none'
+          ? 'none'
+          : `${parsed.data.action.potion}:${String(parsed.data.action.target ?? '')}`,
+      );
+    }
     // 开枪也要兑现挂起的输入：否则编排层等 60 秒后提交一个「不开枪」，
     // 此时相位已经推进，那个迟到动作会被拒，runGame 随即 break、对局冻住。
     if (accepted && parsed.data.action.type === 'HUNTER_SHOOT') {

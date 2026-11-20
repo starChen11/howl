@@ -1,6 +1,6 @@
 import { GameRegistry } from '../store/game-registry';
 import { InMemoryMetaStore } from '../store/meta-store';
-import { runGame } from '../orchestrator';
+import { pendingForPhase, runGame } from '../orchestrator';
 import type { InputChannel } from '@shared/channels';
 import type { EventEnvelope } from '@shared/events';
 import type { ProjectedContext } from '@shared/project';
@@ -72,7 +72,8 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
         async read(prompt) {
           // 脚本玩家只从投影给的合法目标里挑；这里拿到的是最新视图。
           const latest = (await registry.getGame(record.gameId)) ?? record;
-          const pending = prompt.kind === 'vote' ? 'vote' : 'speak';
+          // 用相位推 `pending`：夜间行动不是 speak，猜错会让 legalTargets 为空。
+          const pending = pendingForPhase(registry.stateOf(latest).phase);
           const ctx: ProjectedContext = {
             ...(await import('../project')).project({
               state: registry.stateOf(latest),
@@ -82,6 +83,17 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
             }),
           };
           if (options.playerInput !== undefined) return options.playerInput(ctx);
+
+          // 夜间行动：目标放进同一个 `text` 字段（与投票一致）。
+          // 直接交给脚本策略，保证只会选合法目标（狼刀不会指向队友）。
+          if (prompt.kind === 'action') {
+            if (ctx.pending === 'witch') return { kind: 'skip' };
+            if (ctx.pending === 'chat') return { kind: 'skip' };
+            const legal = legalActionFor(ctx, rng);
+            const target = (legal as { target?: number } | undefined)?.target;
+            if (target !== undefined) return { kind: 'speak', text: String(target) };
+            return { kind: 'skip' };
+          }
 
           const action = scriptedPlayerAction(ctx, { rng });
           if (action === undefined) return { kind: 'skip' };

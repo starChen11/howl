@@ -122,6 +122,12 @@ export function isPlayerPhase(phase: string): boolean {
     phase === 'DAY_SPEECH' ||
     phase === 'DAY_VOTE' ||
     phase === 'DAY_VOTE_RUNOFF' ||
+    // 夜间行动也属于玩家：狼要讨论与刀人、神职要查验与用药。
+    // 之前这些全由 `decide` 代劳，玩家当狼时会「一觉醒来天亮了」。
+    phase === 'NIGHT_WOLF_CHAT' ||
+    phase === 'NIGHT_WOLVES' ||
+    phase === 'NIGHT_SEER' ||
+    phase === 'NIGHT_WITCH' ||
     // 出局后的开枪决定仍然属于玩家——哪怕他已经死了。
     phase === 'NIGHT_HUNTER_SHOOT' ||
     phase === 'DAY_HUNTER_SHOOT'
@@ -203,7 +209,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     const playerPhase = isPlayerPhase(state.phase);
     const action =
       seat === record.playerSeat && playerPhase
-        ? await playerAction(seat, state.phase, deps)
+        ? await playerAction(seat, state.phase, deps, ctxFor(seat))
         : await decide({ seat, ctx: ctxFor(seat), phase: state.phase });
     if (action.action === undefined) {
       // 有行动者却没有动作：开枪阶段可以由我们替它放弃（规则允许）；
@@ -287,6 +293,7 @@ async function playerAction(
   seat: number,
   phase: string,
   deps: OrchestratorDeps,
+  ctx: ProjectedContext,
 ): Promise<AgentDecision> {
   const now = deps.now ?? Date.now;
   const input = await deps.input.read({
@@ -295,10 +302,74 @@ async function playerAction(
     kind:
       phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF'
         ? 'vote'
-        : phase === 'NIGHT_HUNTER_SHOOT' || phase === 'DAY_HUNTER_SHOOT'
+        : phase.startsWith('NIGHT')
           ? 'action'
           : 'speech',
   });
+
+  /** 夜间目标：取玩家给的座位；没有/不合法就退化到投影里的第一个合法目标。 */
+  const nightTarget = (): number | undefined => {
+    const parsed = input.kind === 'skip' ? Number.NaN : Number.parseInt(input.text, 10);
+    if (!Number.isNaN(parsed)) return parsed;
+    return ctx.legalTargets
+      .filter(
+        (target) =>
+          typeof target === 'number' &&
+          target !== seat &&
+          !ctx.knowledge.teammates.includes(target as never),
+      )
+      .map((target) => Number(target))[0];
+  };
+
+  if (phase === 'NIGHT_WOLF_CHAT') {
+    // 讨论可以说，也可以不说；空消息同样算「发过言」，相位会继续推进。
+    return {
+      action: {
+        type: 'WOLF_CHAT',
+        ts: now(),
+        seat: seat as never,
+        text: input.kind === 'skip' ? '' : input.text,
+      },
+    };
+  }
+
+  if (phase === 'NIGHT_WOLVES' || phase === 'NIGHT_SEER') {
+    const target = nightTarget();
+    return {
+      action:
+        target === undefined
+          ? undefined
+          : {
+              type: phase === 'NIGHT_WOLVES' ? 'WOLF_KILL' : 'SEER_CHECK',
+              ts: now(),
+              seat: seat as never,
+              target: target as never,
+            },
+    };
+  }
+
+  if (phase === 'NIGHT_WITCH') {
+    // 文本格式：`none` / `heal:<seat>` / `poison:<seat>`；跳过等于不用药。
+    if (input.kind === 'skip') {
+      return { action: { type: 'WITCH_ACT', ts: now(), seat: seat as never, potion: 'none' } };
+    }
+    const [potion, rawTarget] = input.text.split(':');
+    if (potion !== 'heal' && potion !== 'poison') {
+      return { action: { type: 'WITCH_ACT', ts: now(), seat: seat as never, potion: 'none' } };
+    }
+    const target = Number.parseInt(rawTarget ?? '', 10);
+    return {
+      action: Number.isNaN(target)
+        ? { type: 'WITCH_ACT', ts: now(), seat: seat as never, potion: 'none' }
+        : {
+            type: 'WITCH_ACT',
+            ts: now(),
+            seat: seat as never,
+            potion,
+            target: target as never,
+          },
+    };
+  }
 
   if (phase === 'NIGHT_HUNTER_SHOOT' || phase === 'DAY_HUNTER_SHOOT') {
     const parsed = input.kind === 'skip' ? Number.NaN : Number.parseInt(input.text, 10);
