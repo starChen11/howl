@@ -1,0 +1,26 @@
+{
+  "games": 1,
+  "succeeded": 0,
+  "failed": 1,
+  "failures": [
+    {
+      "seed": 1,
+      "kind": "model",
+      "error": "缺少 DEEPSEEK_API_KEY"
+    }
+  ],
+  "winDistribution": {
+    "wolf": 0,
+    "good": 0
+  },
+  "avgEvents": 0,
+  "avgDurationMs": 0,
+  "degradedCount": 0,
+  "wolfWinRate": 0,
+  "usage": {
+    "calls": 0,
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cachedTokens": 0
+  }
+}
