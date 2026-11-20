@@ -18,6 +18,10 @@ export default defineConfig({
   testDir: 'tests/e2e',
   reporter: 'list',
   timeout: 60_000,
+  // 对局是有状态的：多个 worker 同时开新局会互相拖慢，个别用例偶发超时。
+  // 18 条用例串行只要十几秒，稳定性值得这点时间。
+  fullyParallel: false,
+  workers: 1,
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
   },

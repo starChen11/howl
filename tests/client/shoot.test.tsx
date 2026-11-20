@@ -29,28 +29,28 @@ describe('ShootInput', () => {
   });
 });
 
-describe('出局后的猎人界面', () => {
-  function hunterView(): ProjectedContext {
-    return {
-      self: { seat: 1, role: 'hunter', alive: false, personaId: null },
-      phase: 'NIGHT',
-      day: 1,
-      aliveSeats: [2, 3],
-      deadSeats: [1],
-      publicEvents: [],
-      privateEvents: [],
-      knowledge: {
-        teammates: [],
-        checks: [],
-        potions: { heal: 'used', poison: 'used' },
-        canShoot: true,
-        knownKillTarget: null,
-      },
-      legalTargets: [2, 3],
-      pending: 'shoot',
-    } as ProjectedContext;
-  }
+function hunterView(): ProjectedContext {
+  return {
+    self: { seat: 1, role: 'hunter', alive: false, personaId: null },
+    phase: 'NIGHT',
+    day: 1,
+    aliveSeats: [2, 3],
+    deadSeats: [1],
+    publicEvents: [],
+    privateEvents: [],
+    knowledge: {
+      teammates: [],
+      checks: [],
+      potions: { heal: 'used', poison: 'used' },
+      canShoot: true,
+      knownKillTarget: null,
+    },
+    legalTargets: [2, 3],
+    pending: 'shoot',
+  } as ProjectedContext;
+}
 
+describe('出局后的猎人界面', () => {
   it('pending=shoot 时出现开枪按钮，提交 HUNTER_SHOOT', async () => {
     const user = userEvent.setup();
     const submitted: unknown[] = [];
@@ -75,5 +75,23 @@ describe('出局后的猎人界面', () => {
     expect(submitted[0]).toMatchObject({
       action: { type: 'HUNTER_SHOOT', seat: 1, target: 3 },
     });
+  });
+});
+
+describe('出局但仍待决定时，不提供真相视图入口', () => {
+  it('pending=shoot 时不渲染「打开真相视图」', async () => {
+    const client = {
+      game: async () => ({ version: 7, view: hunterView() }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async () => ({ ok: true as const }),
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByRole('button', { name: '不开枪' });
+    expect(screen.queryByRole('button', { name: /真相视图/ })).toBeNull();
   });
 });

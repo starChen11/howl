@@ -258,7 +258,9 @@ test.describe('复盘（RFC-014）', () => {
 
     // 再来一局：回到对局界面（新一局可能立刻进入发言/投票，所以等的是 .app 里的输入区）
     await page.getByRole('button', { name: '再来一局' }).click();
-    await expect(page.locator('.app')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.app').or(page.getByRole('heading', { name: '复盘' }))).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByRole('heading', { name: '复盘' })).toHaveCount(0);
   });
 });
@@ -276,8 +278,13 @@ test.describe('首页入口（RFC-016）', () => {
     expect(apiCalls).toEqual([]);
 
     await page.getByRole('button', { name: '开始一局' }).click();
-    await expect(page.locator('.app')).toBeVisible({ timeout: 30_000 });
-    expect(page.url()).toContain('?game=');
+    // 先确认导航真的发生了（比直接等 .app 更容易定位「点了没反应」）
+    await expect(page).toHaveURL(/game=/, { timeout: 30_000 });
+    // 随机身份下玩家可能第一夜就出局，整局会被脚本 AI 一口气跑完直接进复盘，
+    // 所以「开始一局成功」的判据是「进了对局页或复盘页」。
+    await expect(page.locator('.app').or(page.getByRole('heading', { name: '复盘' }))).toBeVisible({
+      timeout: 60_000,
+    });
   });
 });
 
@@ -290,9 +297,19 @@ test.describe('猎人出局（回归：曾经卡死）', () => {
     // 出局后出现开枪选择（不是只剩「打开真相视图」）
     await expect(page.getByRole('button', { name: '不开枪' })).toBeVisible({ timeout: 30_000 });
 
+    // 但还没交枪之前**不能**看真相：否则可以直接按身份挑人（用户实测发现的漏洞）
+    await expect(page.getByRole('button', { name: /真相视图/ })).toHaveCount(0);
+
     const shoot = page.getByRole('button', { name: /开枪带走 \d+ 号/ }).first();
     await expect(shoot).toBeVisible();
     await shoot.click();
+
+    // 交枪之后才恢复观战条与真相入口；这局也可能直接结束（seed=2 常在第一晚就终局）
+    await expect(
+      page
+        .getByRole('button', { name: /真相视图/ })
+        .or(page.getByRole('heading', { name: '复盘' })),
+    ).toBeVisible({ timeout: 30_000 });
 
     // 对局继续推进并走到终局（seed=2 这局会在第一天结束，所以不能只等「第 2 天」）
     await expect(page.getByRole('heading', { name: '复盘' })).toBeVisible({ timeout: 60_000 });

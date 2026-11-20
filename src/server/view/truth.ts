@@ -13,7 +13,16 @@ import type { TruthView } from '@shared/truth';
 
 export function canSeeTruth(state: GameState, playerSeat: number): boolean {
   const player = state.seats.find((seat) => seat.seat === playerSeat);
-  return player !== undefined && !player.alive;
+  if (player === undefined || player.alive) return false;
+
+  // 出局不等于「没事可做」：如果是他还要决定开枪，此时让他看真相就能直接按身份
+  // 挑人——那等于允许作弊。等这个决定交出去之后才开放（用户实测发现的漏洞）。
+  if (state.phase === 'NIGHT_HUNTER_SHOOT' || state.phase === 'DAY_HUNTER_SHOOT') {
+    const hunter = state.seats.find((seat) => seat.role === 'hunter')?.seat;
+    if (hunter === playerSeat) return false;
+  }
+
+  return true;
 }
 
 /**

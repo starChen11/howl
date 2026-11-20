@@ -58,6 +58,12 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
     }
   }, [api, gameId]);
 
+  // 还有待决定（例如出局后的开枪）时不开放真相视图：否则可以直接按身份挑人。
+  const deciding = view?.view.pending !== null && view?.view.pending !== undefined;
+  useEffect(() => {
+    if (deciding && truth.enabled) setTruth({ enabled: false });
+  }, [deciding, truth.enabled]);
+
   // 终局后取复盘（RFC-014）：同一个页面切换，不加路由。
   useEffect(() => {
     if (view?.view.phase !== 'FINISHED') return;
@@ -245,7 +251,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         {announcement}
       </p>
       <footer className="app__footer">
-        {ctx.self.alive ? null : (
+        {ctx.self.alive || ctx.pending !== null ? null : (
           <SpectatorBar truthEnabled={truth.enabled} onToggleTruth={() => void onToggleTruth()} />
         )}
         {truth.enabled && truthData !== null ? (

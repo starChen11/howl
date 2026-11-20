@@ -267,3 +267,72 @@ describe('C-155 · 夜晚死亡属于第 N 天', () => {
     expect(buildTruth(state, secondNight).deaths[0]?.day).toBe(2);
   });
 });
+
+describe('出局后仍待决定时不能看真相（防作弊）', () => {
+  it('玩家是猎人、正等他决定开枪 → canSeeTruth 为 false', async () => {
+    const { buildTruth, canSeeTruth } = await import('@server/view/truth');
+    const { GameRegistry } = await import('@server/store/game-registry');
+    const { InMemoryMetaStore } = await import('@server/store/meta-store');
+
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 2,
+      playerSeat: 1,
+    });
+
+    let current = record;
+    const stateOf = () => registry.stateOf(current);
+    // 推进到「玩家猎人被杀、等他开枪」的那一刻
+    while (stateOf().phase !== 'NIGHT_HUNTER_SHOOT') {
+      const state = stateOf();
+      const action = (() => {
+        switch (state.phase) {
+          case 'NIGHT_WOLF_CHAT': {
+            const wolf = state.seats.find(
+              (seat) =>
+                seat.alive &&
+                seat.role === 'wolf' &&
+                !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+            )?.seat;
+            return wolf === undefined
+              ? undefined
+              : { type: 'WOLF_CHAT', ts: 0, seat: wolf, text: '' };
+          }
+          case 'NIGHT_WOLVES': {
+            const wolf = state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat;
+            return wolf === undefined
+              ? undefined
+              : { type: 'WOLF_KILL', ts: 0, seat: wolf, target: 1 };
+          }
+          case 'NIGHT_SEER': {
+            const seer = state.seats.find((seat) => seat.alive && seat.role === 'seer')?.seat;
+            return seer === undefined
+              ? undefined
+              : { type: 'SEER_CHECK', ts: 0, seat: seer, target: 2 };
+          }
+          case 'NIGHT_WITCH': {
+            const witch = state.seats.find((seat) => seat.alive && seat.role === 'witch')?.seat;
+            return witch === undefined
+              ? undefined
+              : { type: 'WITCH_ACT', ts: 0, seat: witch, potion: 'none' };
+          }
+          default:
+            return undefined;
+        }
+      })();
+
+      if (action === undefined) break;
+      const result = await registry.submit(session, current, action as never, state.seq);
+      if (!result.ok) break;
+      current = result.record;
+    }
+
+    const state = stateOf();
+    expect(state.phase).toBe('NIGHT_HUNTER_SHOOT');
+    expect(canSeeTruth(state, 1)).toBe(false);
+    // 数据本身还是能构造的；被拦住的是「能不能看」这道门
+    expect(buildTruth(state, current.events).seats).toHaveLength(9);
+  });
+});
