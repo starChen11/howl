@@ -404,3 +404,31 @@ describe('C-191 · 失败局已经花掉的 token 也计入汇总', () => {
     expect(summary.failures[0]?.errorType).toBe('TimeoutError');
   });
 });
+
+describe('C-184（Round 3）· 端到端：玩家投已出局席位 → 实现缺陷', () => {
+  it('runSelfplay 真的把成局里的玩家拒绝归为 implementation', async () => {
+    const outcomes = await runSelfplay({
+      games: 1,
+      seed: 3,
+      decide: () => scriptedAgent,
+      maxSteps: 400,
+      // 只投一次已出局席位（引擎回 REJECTED），之后正常弃权——这样对局还能打完，
+      // 才能真正走到「成局之后的拒绝扫描」那条路径（C-184 / Round 3）。
+      playerInput: (() => {
+        let fired = false;
+        return (ctx: { pending: string | null; deadSeats: number[] }) => {
+          const dead = ctx.deadSeats[0];
+          if (!fired && ctx.pending === 'vote' && dead !== undefined) {
+            fired = true;
+            return { kind: 'speak' as const, text: String(dead) };
+          }
+          return { kind: 'skip' as const };
+        };
+      })(),
+    });
+
+    expect(outcomes[0]?.ok).toBe(false);
+    expect(outcomes[0]?.failure?.kind).toBe('implementation');
+    expect(outcomes[0]?.failure?.error).toContain('TARGET_NOT_ALIVE');
+  });
+});

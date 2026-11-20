@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.145 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
+> 版本 v2.147 · 来源 `PRD.md` v0.4 / `FEATURES.md` v1.0 / `RULES.md` v1.3 · 最后更新 2026-11-20
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -51,7 +51,7 @@
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Reviewed |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
-| [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Changes requested |
+| [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Implemented |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Not started |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
@@ -1151,6 +1151,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-20 | v2.147 | RFC-015 Round 3 修复（Status → Implemented）：runner 真正调用 `classifyFinished`、端到端「投已出局席位」用例、被拒/未终局路径挂 usage、文档同步 |
 | 2026-11-20 | v2.146 | RFC-015 Round 3 复核（Status → `Changes requested`）：门禁 88 files / 765 tests、10/10 e2e、覆盖率行 96.96% / 分支 92.85%。C-187 / C-189 / C-191 关闭；**C-184 仍未闭合**——`classifyFinished` 未被 runner 调用，关闭 runner 成局扫描后 selfplay 用例 17/17 仍绿（M-R3-1）；同一变异下真实非法投票局变 `ok:true`（M-R3-1b）；P-R3-1 证明 `playerInput` 端到端造得出拒绝。C-195 部分修复（README 数字已对，TEST-STRATEGY 仍 720 / 15 proposed / placeholder）；新增非阻塞 C-202（两类失败局不带 usage）。探针从 `/tmp/howl-rfc015-r3/backup/` 文件备份恢复、三个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-015.md`](reviews/REVIEW-RFC-015.md) Round 3 |
 | 2026-11-20 | v2.145 | RFC-015 Round 2 修复（Status → Implemented）：`classifyFinished` 成局分类锁、未终局写盘隔离、跨平台 CLI、失败局 token 计入、文档同步 |
 | 2026-11-20 | v2.144 | RFC-015 Round 2 复核（Status → `Changes requested`）：门禁 88 files / 762 tests、10/10 e2e、覆盖率行 96.96% / 分支 92.85%。C-185 / C-186 / C-188 / C-194 关闭；C-184 行为已修但回归锁仍缺（M-R2-1 14/14 绿）、C-187 未终局路径仍绕过 `report()` 导致双记（P-R2-2 2 局 → 4 条 outcome）、C-189 未改（`execFile('pnpm')`）；C-190/191/192/193/195/196 仍 Open。探针从 `/tmp/howl-rfc015-r2/backup/` 文件备份恢复、三个文件 SHA-256 一致、临时探针删除、工作树 clean、无 commit。详见 [`reviews/REVIEW-RFC-015.md`](reviews/REVIEW-RFC-015.md) Round 2 |

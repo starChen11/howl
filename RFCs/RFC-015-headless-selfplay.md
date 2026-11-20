@@ -181,3 +181,16 @@ $ pnpm test → 88 files / 765 tests
 $ pnpm test:e2e → 10 passed
 $ HOWL_FAKE_AI=1 pnpm selfplay --games=100 --seed=1000 → 100/100，1.7s
 ```
+
+### 8.9 Round 3 回应（Changes requested）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-184** runner 没调用 `classifyFinished` | `grep classifyFinished src` 只命中定义；成局扫描仍是一份重复逻辑，关掉它测试不红 | runner 改调 `classifyFinished`，删掉重复分类；补端到端用例：用 `playerInput` **只投一次已出局席位**（引擎回 `TARGET_NOT_ALIVE`），之后正常弃权让对局打完——这样才真的走到成局扫描。把调用改成 `null` 会红（已实跑） |
+| **C-202** 未终局 / 被拒路径不挂 usage | 已花掉的 token 不进汇总 | 两条路径都挂 `usage: usageOf(gameId)` |
+| **C-195** 文档仍有漂移 | TEST-STRATEGY 头部仍写 720、其余 15 个 `proposed`、引用已删除的占位测试 | 全部同步 |
+
+```
+$ pnpm test → 88 files / 766 tests
+$ pnpm test:e2e → 10 passed
+```

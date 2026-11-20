@@ -137,6 +137,7 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
           ok: false,
           events: finished.events.length,
           durationMs: (options.now ?? Date.now)() - startedAt,
+          usage: usageOf(record.gameId),
           failure: {
             seed,
             kind: playerActionType ? 'implementation' : 'model',
@@ -148,19 +149,15 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
       }
 
       // 即便成局，也要检查有没有「玩家侧动作被拒」——那是实现缺陷（C-184 / AC-6）。
-      const playerRejected = findPlayerRejection(finished.events, record.playerSeat);
-      if (playerRejected !== undefined) {
-        const payload = playerRejected.payload as { code?: string; message?: string };
+      const playerRejection = classifyFinished(finished.events, record.playerSeat);
+      if (playerRejection !== null) {
         outcomes.push({
           seed,
           ok: false,
           events: finished.events.length,
           durationMs: (options.now ?? Date.now)() - startedAt,
-          failure: {
-            seed,
-            kind: 'implementation',
-            error: `${payload.code ?? 'REJECTED'}：${payload.message ?? '玩家动作被拒'}`,
-          },
+          usage: usageOf(record.gameId),
+          failure: { seed, ...playerRejection },
         });
         await report(options, outcomes[outcomes.length - 1] as GameOutcome, finished.events);
         continue;

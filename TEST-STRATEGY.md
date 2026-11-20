@@ -30,12 +30,12 @@ RFC-001 / RFC-002 已实现并通过评审修复，`Exists?` 按实际落地情�
 ```
 $ pnpm test
  Test Files  88 passed (88)     # unit 68 + client 4 + meta 7
-      Tests  720 passed (720)
+      Tests  766 passed (766)
 
 $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ pnpm build ⇒ 0
 ```
 
-覆盖统计：**16 个 RFC、222 条验收标准、其中 RFC-001 的 16 条全部已实现（`existing`）**，其余 15 个 RFC 仍为 `proposed`。
+覆盖统计：**16 个 RFC、222 条验收标准；RFC-001 ~ 015 的用例已落地（`existing`），RFC-016 待实现。**
 
 ---
 
@@ -130,7 +130,7 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 12 | `tests/server/health.test.ts`（`inject`）+ `tests/meta/dev-proxy.test.ts`：起真实 `pnpm dev`，`localhost:3000` 直连与 `localhost:5173` 代理都要 200 且 `{"ok":true}`。**不用 Playwright**（T-5：代理规则不需要浏览器内核） | integration | existing: 两文件 | Must |
 | 13 | `tests/meta/build.test.ts`：跑 `pnpm build` 后断言 `dist/client/index.html` 与 `dist/server/index.js` 存在；递归扫 `dist/client` 无 `DEEPSEEK_API_KEY`、无 `@fastify/static` | integration | existing: tests/meta/build.test.ts | Must |
 | 14、15 | `tests/meta/lint.test.ts`：用 ESLint API 问 `.ts` 与 `.tsx` 的**生效**等级（M8 的缺口）、`pnpm lint` / `format:check` / `test:e2e` 退出 0，且 `test:e2e` 的 stdout 含 `skipped`（M9） | integration | existing: tests/meta/lint.test.ts | Must |
-| 16 | `tests/meta/selfplay-placeholder.test.ts`：退出码 1，stderr 同时含「未实现」与 `RFC-015`（M10） | integration | existing: tests/meta/selfplay-placeholder.test.ts | Must |
+| 16 | `tests/meta/selfplay-entry.test.ts`：退出码 1，stderr 同时含「未实现」与 `RFC-015`（M10） | integration | existing: tests/meta/selfplay-entry.test.ts | Must |
 | F1（评审新增） | `tests/shared/events.test.ts`：`GameEvent` 的未知 type / 错误 payload 负向夹具、`GameEvent` 与 `EventEnvelope` 各一份（B3）、`GAME_EVENT_TYPES` 与 `keyof GameEventMap` 双向等值、`EventSchema` 拒绝假 type | unit | existing: tests/shared/events.test.ts | Must |
 | F2（评审新增） | `tests/shared/actions.test.ts`：`WITCH_ACT` 三种非法组合在类型与 Zod 两侧都被拒、三种合法组合通过 | unit | existing: tests/shared/actions.test.ts | Must |
 | F7（评审新增） | `domain.test.ts`（`SEAT_IDS` / `ROLES` / `FACTION_OF` / `FACTIONS` / `WIN_MODES`）、`effects.test.ts`（`EFFECT_SOURCES`）、`events.test.ts`（`SELF_VISIBILITY_PREFIX`） | unit | existing: 三个文件 | Should |
