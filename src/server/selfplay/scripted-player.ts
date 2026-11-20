@@ -141,9 +141,10 @@ export function legalActionFor(
     case 'wolf-vote':
     case 'wolf-runoff': {
       const target = pickOne();
-      return target === undefined
-        ? { type: 'WOLF_KILL', ts: Date.now(), seat, target: seat }
-        : { type: 'WOLF_KILL', ts: Date.now(), seat, target };
+      if (target === undefined) return undefined;
+      return ctx.pending === 'kill'
+        ? { type: 'WOLF_KILL', ts: Date.now(), seat, target }
+        : { type: 'WOLF_VOTE', ts: Date.now(), seat, target };
     }
     case 'check':
     case 'shoot': {

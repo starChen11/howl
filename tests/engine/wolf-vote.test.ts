@@ -164,6 +164,9 @@ describe('RUL-13 · 事件的可见性与跨夜清理', () => {
 
     const cast = result.events.find((event) => event.type === 'WOLF_VOTE_CAST');
     expect(cast?.visibleTo).toBe('wolves');
+    // 刀口也是狼队内部信息，不能公开
+    const kill = result.events.find((event) => event.type === 'WOLF_KILL_CHOSEN');
+    if (kill !== undefined) expect(kill.visibleTo).toBe('wolves');
   });
 
   it('进入新一夜会清空 wolfVotes / wolfRunoff', () => {
