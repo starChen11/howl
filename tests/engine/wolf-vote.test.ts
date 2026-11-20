@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { applyEvent } from '@engine/apply';
 import { step } from '@engine/step';
 import { goodTarget, nightStart, roleSeat, run } from '../fixtures/night';
 
@@ -152,5 +153,33 @@ describe('RUL-13 · 唱票后清空票型（不能带到下一夜）', () => {
     expect(current.phase).not.toBe('NIGHT_WOLVES');
     expect(current.wolfVotes ?? []).toEqual([]);
     expect(current.wolfRunoff).toBeUndefined();
+  });
+});
+
+describe('RUL-13 · 事件的可见性与跨夜清理', () => {
+  it('引擎产出的投票事件只对狼可见', () => {
+    const state = nightStart();
+    const pack = wolves(state);
+    const result = vote(state, pack[0] as number, goodTarget(state));
+
+    const cast = result.events.find((event) => event.type === 'WOLF_VOTE_CAST');
+    expect(cast?.visibleTo).toBe('wolves');
+  });
+
+  it('进入新一夜会清空 wolfVotes / wolfRunoff', () => {
+    const state = nightStart();
+    const withVotes = { ...state, wolfVotes: [{ seat: 2, target: 3 }], wolfRunoff: [3] } as never;
+
+    const applied = applyEvent(withVotes, {
+      gameId: state.gameId,
+      seq: state.seq + 1,
+      ts: 0,
+      type: 'PHASE_CHANGED',
+      visibleTo: 'server',
+      payload: { from: state.phase, to: 'NIGHT_WOLF_CHAT' },
+    } as never);
+
+    expect(applied.wolfVotes).toBeUndefined();
+    expect(applied.wolfRunoff).toBeUndefined();
   });
 });

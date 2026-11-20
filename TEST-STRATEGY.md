@@ -489,7 +489,9 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 5 | 同上：重复票 / 投队友 / 非狼投票 三种拒绝码 | unit | existing | Must |
 | 6 | `tests/server/project/*`：好人投影不含 `WOLF_VOTE_*` 事件 | integration | existing | Must |
 | 7 | `tests/server/orchestrator.test.ts`：玩家是狼时被问且提交 `WOLF_VOTE` | integration | existing | Must |
-| 8 | `tests/client/shoot.test.tsx`：投票界面显示实时票型；重投只有并列者 | unit(jsdom) | existing | Must |
+| 8 | `tests/client/shoot.test.tsx`：投票界面显示实时票型；重投只有并列者；投完显示等待态 | unit(jsdom) | existing | Must |
+| 10 | `tests/server/llm/to-action.test.ts`：`kill` 在 `NIGHT_WOLVES` 与 `NIGHT_WOLF_RUNOFF` 都翻译成 `WOLF_VOTE` | unit | existing | Must |
+| 11 | `tests/server/orchestrator.test.ts`：LLM 形状的决策在重投也能推进，不停住 | integration | existing | Must |
 | 9 | `tests/engine/wolf-vote.test.ts`：旧 `WOLF_KILL` 仍能推进（兼容） | unit | existing | Should |
 
 **已知时序偏离**：本小节与实现同批落地（先代码后计划），违反 RULES 硬规则 3；

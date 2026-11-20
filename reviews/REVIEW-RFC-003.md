@@ -1663,3 +1663,160 @@ AC-16 字面第二句「对该阶段的非法 action 仍产出 `Rejected` 且状
 #### 8.2 本轮未改 `src/`
 
 评审只写了本文件与 `RFCS.md`。`src/`、`RULES.md`、`PRD.md`、`FEATURES.md`、`TEST-STRATEGY.md`、`RFCs/` 均未改动；所有代码探针均已恢复。
+
+## Round 6 -- 2026-11-20（窄范围复核：RUL-13 契约变更）
+
+> **评审会话**：独立 subagent `agent-68`，全新上下文；没有参与 RFC-003、RFC-017 或本变更的 RFC / 测试 / 代码写作。
+> **范围**：只复核 RFC-003 §8.9 记载的这次契约变更——动作表、相位转移、事件可见性、重投与僵持兜底、拒绝码，以及 §8.9 的文档说明。Round 1–5 已 Reviewed 的其余内容不在本轮重审范围。
+> **评审时 HEAD**：`33d1d40`（`fix(rfc-017): 生产路径走狼队投票、堵住旧下刀、修票型残留与界面`）；评审开始时 `git status --porcelain` 为空。
+> **结论**：**不通过**。引擎层的五项契约全部与实现一致；但**默认模型路径在 `NIGHT_WOLF_RUNOFF` 无法提交 `WOLF_VOTE`，重投在真实产品路径会卡死**，见 §2 B-N1。
+> **整体风险**：**High**。
+
+### 0. STEP 0 · 门禁实跑
+
+环境：macOS / Node `v22.22.2` / pnpm `10.33.0`。评审开始时 HEAD `33d1d40`，工作树 clean。
+
+```
+$ pnpm typecheck
+TYPECHECK_EXIT=0
+
+$ pnpm lint
+LINT_EXIT=0
+
+$ pnpm format:check
+All matched files use Prettier code style!
+FORMAT_EXIT=0
+
+$ pnpm build
+BUILD_EXIT=0
+
+$ pnpm test
+ Test Files  93 passed (93)
+      Tests  807 passed (807)
+EXIT 0
+
+$ pnpm test:e2e
+  18 passed (42.0s)
+EXIT 0
+
+$ pnpm exec vitest run --project unit --coverage
+All files | % Stmts 96.74 | % Branch 93.21 | % Funcs 97.5 | % Lines 97.2
+```
+
+e2e 的 `webServer.env` 显式设置 `HOWL_FAKE_AI=1`，18 条全部只跑 `scriptedAgent`；**不能证明默认 LLM 路径会投票**（这正是 B-N1 没有被 e2e 抓到的原因）。
+
+### 1. 五项契约逐条复核
+
+| # | 复核项 | 结论 | 证据 |
+|---|---|---|---|
+| 1 | **动作表** | **PASS（引擎层）** | `Action`、`ACTION_TYPES`、Zod 都有 `WOLF_VOTE`（`src/shared/actions.ts:19,45`、`src/shared/schemas.ts:66`）；`DEFAULT_TRANSITIONS` 为 `NIGHT_WOLVES: ['WOLF_VOTE', 'WOLF_KILL']`、`NIGHT_WOLF_RUNOFF: ['WOLF_VOTE']`（`src/engine/transitions.ts:25-27`）。旧 `WOLF_KILL` 仍走引擎（兼容）；HTTP 路由在 `src/server/routes/games.ts:296-303` 以 400 `LEGACY_ACTION_DISABLED` 拒绝，M8 实跑打红 |
+| 2 | **相位转移** | **PASS（引擎层）** | 平票时产出 `PHASE_CHANGED(NIGHT_WOLVES → NIGHT_WOLF_RUNOFF)`；分出结果时产出 `WOLF_KILL_CHOSEN` 后进入 `nextAfterWolves()`（`src/engine/phases/night.ts:246-275`）。夜间相位统一走 `phaseChangedDraft` = `server`（`src/engine/phases/visibility.ts:22-31`）。新一夜进入 `NIGHT_WOLF_CHAT` 时清空 `wolfVotes` / `wolfRunoff`（`src/engine/apply.ts:143-148`），探针输出 `undefined undefined` |
+| 3 | **事件可见性** | **PASS（实现）** / **测试锁有缺口** | 真实引擎产出：`WOLF_VOTE_CAST → wolves`、`WOLF_VOTE_REVEALED → wolves`、`WOLF_KILL_CHOSEN → wolves`、`PHASE_CHANGED → server`。好人投影里 `WOLF_VOTE_*` 为 0、`wolfVoteOpen` 为 `undefined`；`wolfVoteOpen` / `wolfCandidates` 只给存活的狼（`src/server/project/index.ts:94-101`、`src/shared/project.ts:64-70`）。**但** M3 把 `WOLF_VOTE_CAST` 改成 `public` 后 7 files / 47 tests 全绿——见 N-1 |
+| 4 | **重投与僵持兜底** | **PASS（引擎层）** | 3 狼各投不同 → `NIGHT_WOLF_RUNOFF`、`wolfRunoff=[1,4,5]`；重投再各投一票 → `WOLF_KILL_CHOSEN target=1`（最小席位）并离开重投。2 只存活狼、2 候选的构造局同样收敛到最小席位。M1（删 `NIGHT_WOLF_RUNOFF` transition）2 红、M2（关掉兜底）1 红，均实跑 |
+| 5 | **拒绝码** | **PASS（引擎层）** | 实跑得到 `WOLF_VOTE_DUPLICATE` / `WOLF_KILL_WOLF` / `NOT_YOUR_TURN` / `PHASE_MISMATCH` / `TARGET_NOT_ALIVE` / `INVALID_RUNOFF_TARGET`，与 RFC-017 §4 AC-3/AC-5 一致；被拒后 phase 不变（`tests/engine/wolf-vote.test.ts:79-93`） |
+| 6 | **§8.9 文档说明** | **PASS（内容）** / 精度可再补 | §8.9 的四句与代码一致：`NIGHT_WOLVES` 接受 `WOLF_VOTE`、每名存活狼一票；新增两条事件；新增 `NIGHT_WOLF_RUNOFF`；`WOLF_KILL` 引擎兼容、产品流程不再产生。建议补一句「HTTP 由 `LEGACY_ACTION_DISABLED` 拒绝」，并说明「相关契约由 RFC-017 重新定义」的具体落点；非阻塞，见 N-4 |
+
+**关键探针输出（均实跑）**
+
+```
+1) 2:1 -> NIGHT_SEER target 1
+   events: WOLF_VOTE_CAST:wolves, WOLF_VOTE_REVEALED:wolves,
+           WOLF_KILL_CHOSEN:wolves, PHASE_CHANGED:server
+
+2) tie -> NIGHT_WOLF_RUNOFF runoff [1,4,5]
+   events: WOLF_VOTE_CAST:wolves, WOLF_VOTE_REVEALED:wolves, PHASE_CHANGED:server
+
+3) runoff split -> NIGHT_SEER target 1 expected 1
+   events: WOLF_VOTE_CAST:wolves, WOLF_VOTE_REVEALED:wolves,
+           WOLF_KILL_CHOSEN:wolves, PHASE_CHANGED:server
+
+4) codes: WOLF_VOTE_DUPLICATE, WOLF_KILL_WOLF, NOT_YOUR_TURN,
+          PHASE_MISMATCH, TARGET_NOT_ALIVE
+7) invalid runoff: INVALID_RUNOFF_TARGET, phase NIGHT_WOLF_RUNOFF
+
+5) wolfCandidates [1,4,5,6,7,9]; good wolfVoteOpen undefined;
+   good legalTargets []
+6) new night clears: undefined undefined
+
+2 alive wolves: round1 NIGHT_WOLF_RUNOFF runoff [4,5];
+                round2 NIGHT_SEER kill 4 expected min 4
+```
+
+### 2. 阻塞项
+
+#### B-N1 · 默认模型路径在 `NIGHT_WOLF_RUNOFF` 无法投票，重投会让对局停住
+
+**代码事实**
+
+- `src/server/llm/to-action.ts:39-40`：`case 'kill': return ctx.phase === 'NIGHT_WOLVES';` —— 相位门禁只允许首轮。
+- 同文件 `:116-121`：`buildWithTarget` 明明写了「`NIGHT_WOLVES` 或 `NIGHT_WOLF_RUNOFF` → `WOLF_VOTE`」，但 `kill` 在 `NIGHT_WOLF_RUNOFF` 根本到不了这里；`phaseAllows` 先返回 false。
+- `src/server/ai/agent.ts:150-152`：翻译被拒时返回 `{ action: undefined }`。
+- `src/server/orchestrator.ts:222-237`：`action.action === undefined` 且不是猎人开枪阶段时直接 `break`，`runGame` 结束，相位停在原处。
+
+**端到端复现（默认路径的翻译层）**
+
+构造一局玩家不是狼、三狼首轮各投不同好人 → `NIGHT_WOLF_RUNOFF`，再用 `toAction` 驱动 AI 狼（`createLlmAgent` 内部正是这一步）：
+
+```
+seed 1 player role villager
+after 3 split votes: NIGHT_WOLF_RUNOFF candidates [ 1, 3, 5 ]
+decide 2 NIGHT_WOLF_RUNOFF target 1
+  => {"reject":"阶段 NIGHT_WOLF_RUNOFF 不接受动作 kill"}
+after runGame: NIGHT_WOLF_RUNOFF steps 0
+still stuck in runoff? true
+```
+
+**为什么是阻塞**：RUL-13 的重投不是可选的边界行为——`NIGHT_WOLF_RUNOFF` 是这次变更新增的相位，重投与僵持兜底是用户明确要求的终止机制。9 人局里只要进入重投，至少有一只 AI 狼要投票；默认启动（不设 `HOWL_FAKE_AI=1`）走的就是 `createLlmAgent`。因此**每一局进入重投的默认模式对局都会停住**。引擎的票型/唱票/兜底写对了，但产品路径无法使用它。e2e 18/18 全绿是因为全部使用 `scriptedAgent`；`to-action.test.ts:108-114` 只测了 `NIGHT_WOLVES`。
+
+**建议修法**
+
+1. `phaseAllows('kill')` 增加 `|| ctx.phase === 'NIGHT_WOLF_RUNOFF'`；若模型可能输出 `vote`，同步考虑在重投把 `vote` 也映射为 `WOLF_VOTE`（提示词目前写的是 `kill`）。
+2. 在 `tests/server/llm/to-action.test.ts` 加一条 `NIGHT_WOLF_RUNOFF + kill → WOLF_VOTE`；再加一条编排/agent 级用例，断言重投阶段 `runGame` 真的离开 `NIGHT_WOLF_RUNOFF`（不必联网，用注入的 `decideFn` 或直接调用 `toAction`）。
+3. 顺带补 `src/server/selfplay/scripted-player.ts:120-152` 的 `legalActionFor` 分支（`wolf-vote` / `wolf-runoff`），否则 selfplay 的 LLM 批次在重投也可能因回退 `undefined` 停住（C-226）。这一条不影响本阻塞的判定，但与 B-N1 同源。
+
+### 3. 非阻塞项
+
+| # | 问题 | 证据 / 建议 |
+|---|---|---|
+| **N-1** | **`WOLF_VOTE_CAST` 的可见性没有回归锁**。把 `src/engine/phases/night.ts:247` 的 `visibleTo: 'wolves'` 改成 `'public'` 后，`tests/engine/wolf-vote.test.ts`、`tests/server/wolf-vote-visibility.test.ts` 与 `tests/server/project/*` 共 7 files / 47 tests 全绿。现有测试用手写事件（`visibleTo: 'wolves'`）验证 `isVisibleTo`，没有验证引擎实际产出。RFC-017 Round 1 的 C-222 仍成立 | 建议在 `wolf-vote.test.ts` 断言真实 `WOLF_VOTE_CAST.visibleTo === 'wolves'`，并让好人投影使用同一批真实事件 |
+| **N-2** | **新一夜清空 `wolfVotes` / `wolfRunoff` 没有回归锁**。删掉 `src/engine/apply.ts:146-147` 的两行后，`wolf-vote` / `full-game` / `orchestrator` 共 3 files / 22 tests 全绿。代码行为本身正确（探针 `undefined undefined`），但 C-218 的修复没有测试守护 | 构造「先投票 → 放逐进入下一夜」或直接 `applyEvent(PHASE_CHANGED→NIGHT_WOLF_CHAT)`，断言两个字段被清空 |
+| **N-3** | **HTTP 拒绝码不在共享联合类型里**：`src/server/routes/games.ts:300` 返回 `LEGACY_ACTION_DISABLED`，但 `src/shared/api.ts:56-65` 的 `ApiErrorCode` 没有这个值；客户端 `as ApiError` 会静默接受 | 把 `LEGACY_ACTION_DISABLED` 加进 `ApiErrorCode`（并考虑是否给前端固定文案），或复用已登记的拒绝码 |
+| **N-4** | **文档精度**：§8.9 的「`WOLF_KILL` 保持兼容」只对引擎层成立（HTTP 已 400），建议明写「引擎兼容旧事件流；HTTP 路由拒绝旧动作」；`RFC-017 §2.2` 仍写「兼容旧回放/旧客户端」，与路由拒绝矛盾。另 §8.9 追加在 §11.5 之后，而 §2.2 的动作表 / §2.4 的事件表 / §4 的拒绝码 / D-6「第一只狼决定」仍是旧内容；本轮按「不重审其余部分」不展开，但建议下一次 docs-only 提交顺手加交叉引用 | 见 `RFCs/RFC-003...:406-410`、`RFCs/RFC-017...:39,80,86,99`、`src/shared/api.ts:56-65` |
+| **N-5** | **测试清单漂移**：`tests/server/orchestrator.test.ts:484-493` 的 `isPlayerPhase` 列表没有 `NIGHT_WOLF_RUNOFF`（C-227）；`tests/engine/full-game.test.ts:35-45` 的整局脚本仍用 `WOLF_KILL`，所以单元层的「整局跑通」不覆盖新投票流 | 补 `NIGHT_WOLF_RUNOFF` 到列表；把 full-game 的 `NIGHT_WOLVES` 分支改为逐狼 `WOLF_VOTE`，或明确由 e2e 覆盖 |
+| **N-6** | **旧兼容分支仍是活代码**：`src/server/selfplay/scripted-player.ts:69-72,140-145` 的 `WOLF_KILL` 分支在当前 `pending` 下不可达；`src/server/llm/to-action.ts:121` 的 `WOLF_KILL` 回退也不可达。不是产品缺陷，但容易让下一个人误以为旧路径还活着 | 与 C-226 / C-227 一起清掉或加注释说明「仅测试/旧回放」 |
+
+### 4. 评审维度
+
+| 维度 | 结论 | 说明 |
+|---|---|---|
+| **RFC ADHERENCE** | **NEEDS WORK** | 引擎的五项契约与 RFC-017 §2.1–§2.3、§4 AC-1~5、AC-9 一致；但默认 LLM 路径无法完成重投，AC-2 / AC-4 的“对局能继续”在产品默认模式不成立。改动未记录偏离 |
+| **RULES COMPLIANCE** | **NEEDS WORK** | `ARCH-3`（引擎无 UI/网络依赖）、`ARCH-11`、`DATA-2` 未受影响；但 RUL-13 的「重投」在默认产品路径不可用，规则没有真正落地。RUL-13 的票型可见性、死狼不投、最小席位兜底在引擎层正确 |
+| **SECURITY** | **PASS** | `WOLF_VOTE_CAST` / `REVEALED` / `KILL_CHOSEN` 都是 `wolves`，夜间相位都是 `server`；好人投影没有 `WOLF_VOTE_*`，`wolfVoteOpen` / `wolfCandidates` 只给存活狼。未发现新泄漏或输入面扩大。N-1 只是回归锁缺口，不是当前的泄漏 |
+| **PERFORMANCE** | **PASS** | 每夜多 3 张票与一两条事件；`tallyWolfVotes` 为 O(wolves × votes)，9 人局可忽略；没有新增网络、数据库或 LLM 调用 |
+| **MAINTAINABILITY** | **NEEDS WORK** | B-N1 的接入层漏改；N-1/N-2 两个 Round 1 修复没有回归锁；N-3 错误码漂移；N-4/N-5 文档与测试清单漂移；旧 `WOLF_KILL` 死分支仍在 |
+| **TEST EFFECTIVENESS** | **NEEDS WORK** | M1 / M2 / M8 实跑变红；M3 / M4 全绿，说明可见性与跨夜清理没有被测试守护；LLM 重投路径完全没有测试（B-N1） |
+
+**Overall Risk Level**：**High**
+
+**Summary**：这次契约变更的**引擎层实现是正确的**：动作表、相位转移、事件可见性、3 狼 / 2 狼重投、最小席位兜底、六种拒绝码都能在真实 `step` 路径上复现，M1/M2/M8 也证明关键测试会红。问题出在同一变更的**默认产品接入层**：`toAction` 的相位门禁把 `NIGHT_WOLF_RUNOFF` 挡在 `kill` 之外，`createLlmAgent` 于是返回 `undefined`，`runGame` 直接 `break`——默认模式的每一局重投都会停住。这个缺口不被 18/18 e2e（fake AI）和现有 `toAction` 单测覆盖，必须在 RFC-017 修掉并补测试后，才能把 RFC-003 的窄范围复核判为通过。
+
+**Blocking Issues**
+
+- **B-N1**：默认 LLM 路径无法在 `NIGHT_WOLF_RUNOFF` 提交 `WOLF_VOTE`，重投停住（`src/server/llm/to-action.ts:39-40`、`src/server/ai/agent.ts:150-152`、`src/server/orchestrator.ts:222-237`）。
+
+**Improvement Suggestions**
+
+1. 修 B-N1 并补 `toAction` + 编排级测试；同时补 `legalActionFor` 的 `wolf-vote` / `wolf-runoff` 分支（N-6 / C-226）。
+2. 补 N-1（CAST 可见性）与 N-2（跨夜清理）的回归锁；两者都是 Round 1 的阻塞项修复，当前只靠代码正确而没有测试。
+3. N-3 把 `LEGACY_ACTION_DISABLED` 加进 `ApiErrorCode`；N-4 补 §8.9 的 HTTP 说明与 RFC-017 §2.2 的「旧客户端」措辞；N-5 同步测试清单与 full-game 脚本。
+
+### 5. 状态与恢复
+
+- **RFC-003 状态保持 `Spec changed`，本轮未改 `RFCS.md`**：用户只授权在窄范围复核通过时改 `Reviewed`；本轮不通过，且 B-N1 位于 RFC-017 的接入层，故不把 RFC-003 标成 `Changes requested`。B-N1 修复后重跑本轮窄范围复核，再决定 `Reviewed`。
+- **评审文件**：本节追加到 `reviews/REVIEW-RFC-003.md`，未覆盖 Round 1–5。
+- **探针恢复**：所有变异探针的备份在 `/tmp/howl-rfc003-narrow/backup/`；恢复后四个被改文件 SHA-256 与探针前完全一致：
+  - `src/engine/transitions.ts` `b660799a…`
+  - `src/engine/phases/night.ts` `14c4eaa8…`
+  - `src/engine/apply.ts` `2ea80961…`
+  - `src/server/routes/games.ts` `bad96f28…`
+- 临时探针目录已删除；`git status --porcelain` 为空；未执行 `git commit` / `git checkout` / `git restore`；恢复后 `pnpm test` **93 files / 807 tests** 全绿。

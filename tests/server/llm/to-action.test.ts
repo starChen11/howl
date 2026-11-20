@@ -144,3 +144,16 @@ describe('其余动作', () => {
     });
   });
 });
+
+describe('RUL-13 · 重投相位也能投票', () => {
+  it('NIGHT_WOLF_RUNOFF 的 kill 也翻译成 WOLF_VOTE', () => {
+    const runoff = {
+      ...BASE,
+      phase: 'NIGHT_WOLF_RUNOFF' as const,
+      legalTargets: [1] as SeatId[],
+    };
+    expect(toAction(decision({ action: 'kill', target: 1 }), runoff, 1)).toEqual({
+      action: { type: 'WOLF_VOTE', ts: 1, seat: 3, target: 1 },
+    });
+  });
+});

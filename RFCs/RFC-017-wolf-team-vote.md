@@ -36,7 +36,7 @@ NIGHT_WOLF_CHAT（讨论，每人一句）
 
 | 相位 | 动作 | 说明 |
 |---|---|---|
-| `NIGHT_WOLVES` | `WOLF_VOTE {seat, target}` | 每名狼一次；旧 `WOLF_KILL` 仍被接受（兼容旧回放/旧客户端） |
+| `NIGHT_WOLVES` | `WOLF_VOTE {seat, target}` | 每名狼一次；旧 `WOLF_KILL` 仅引擎层保留用于旧回放，HTTP 层会拒绝 |
 | `NIGHT_WOLF_RUNOFF` | `WOLF_VOTE` | 目标必须在 `state.wolfRunoff` 里 |
 
 ### 2.3 事件与状态
@@ -83,7 +83,7 @@ NIGHT_WOLF_CHAT（讨论，每人一句）
 
 - **不做**：狼队语音/私聊多轮（讨论仍为每人每晚一句，RFC-005 的规则）。
 - **不做**：好人阵营的技能投票（女巫/预言家仍是单人决策）。
-- 兼容路径 `WOLF_KILL` 只用于旧回放与既有测试，界面与 AI 不产生它。
+- 兼容路径 `WOLF_KILL` 只用于旧回放与既有测试；HTTP 接口返回 `LEGACY_ACTION_DISABLED`，界面/AI 不产生它。
 
 ## 6. 实现记录（§8）
 
@@ -118,3 +118,16 @@ pnpm test:e2e → 18 passed
 
 - TEST-STRATEGY 的 RFC-017 小节是在同一批次补的（先写代码、后补计划），违反硬规则 3 的时序；
   已在 `CHANGE-REQUEST-011` 记录，后续变更恢复「先计划后实现」。
+
+### 8.1 Round 1 回应（Review）
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| **C-216** | 默认模型路径仍产出 `WOLF_KILL` | `toAction` 在 `NIGHT_WOLVES` **与 `NIGHT_WOLF_RUNOFF`** 都把 `kill` 翻译成 `WOLF_VOTE`；补两个相位的用例 |
+| **C-217** | 路由仍接受旧 `WOLF_KILL`，单狼可替全队决定 | HTTP 层返回 400 `LEGACY_ACTION_DISABLED`；引擎保留仅用于旧回放。`LEGACY_ACTION_DISABLED` 进 `ApiErrorCode` |
+| **C-218** | `wolfVotes` / `wolfRunoff` 跨夜残留 | 进入新一夜时清空；补 applyEvent 级用例 |
+| **C-219** | 可见性/玩家狼票/界面票型/等待态无测试 | 新增 `tests/server/wolf-vote-visibility.test.ts`、orchestrator 玩家狼票用例、界面票型与等待态用例；引擎测试断言投票事件 `visibleTo: 'wolves'` |
+| **C-220** | 界面票型不实时的两处根因 | 票型按「当前轮」计算（唱票后重置）；投影只对**存活狼**给出 `wolfVoteOpen` / `wolfCandidates`；玩家投完后保留只读面板显示「等待队友」 |
+| **B-N1** | 重投相位被 `phaseAllows('kill')` 拦住，默认路径每局都会停在重投 | 放行 `NIGHT_WOLF_RUNOFF`；补「LLM 形状的决策在重投也能翻译并跑完」的编排级用例 |
+| **N-3** | `LEGACY_ACTION_DISABLED` 不在错误码里 | 已补 |
+| **N-5** | `isPlayerPhase` 清单漏重投 | 已补 |

@@ -37,7 +37,8 @@ const REQUIRED_TARGET: ReadonlySet<Decision['action']> = new Set([
 function phaseAllows(action: Decision['action'], ctx: DecisionContext): boolean {
   switch (action) {
     case 'kill':
-      return ctx.phase === 'NIGHT_WOLVES';
+      // 狼队投票有普通轮与重投两个相位（RUL-13）
+      return ctx.phase === 'NIGHT_WOLVES' || ctx.phase === 'NIGHT_WOLF_RUNOFF';
     case 'check':
       return ctx.phase === 'NIGHT_SEER';
     case 'heal':

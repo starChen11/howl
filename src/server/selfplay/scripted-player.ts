@@ -137,7 +137,9 @@ export function legalActionFor(
       const target = pickOne();
       return target === undefined ? undefined : { type: 'VOTE', ts: Date.now(), seat, target };
     }
-    case 'kill': {
+    case 'kill':
+    case 'wolf-vote':
+    case 'wolf-runoff': {
       const target = pickOne();
       return target === undefined
         ? { type: 'WOLF_KILL', ts: Date.now(), seat, target: seat }

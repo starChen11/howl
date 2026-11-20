@@ -62,7 +62,8 @@ export type ApiErrorCode =
   | 'NOT_YOUR_SEAT'
   | 'NOT_FINISHED'
   | 'NOT_IMPLEMENTED'
-  | 'TRUTH_LOCKED';
+  | 'TRUTH_LOCKED'
+  | 'LEGACY_ACTION_DISABLED';
 
 export interface ApiError {
   error: ApiErrorCode;

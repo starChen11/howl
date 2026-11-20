@@ -482,6 +482,7 @@ describe('玩家亲自行动的相位', () => {
       'DAY_VOTE_RUNOFF',
       'NIGHT_WOLF_CHAT',
       'NIGHT_WOLVES',
+      'NIGHT_WOLF_RUNOFF',
       'NIGHT_SEER',
       'NIGHT_WITCH',
       'NIGHT_HUNTER_SHOOT',
@@ -738,5 +739,70 @@ describe('RUL-13 · 玩家是狼时亲自投票', () => {
           event.type === 'WOLF_KILL_CHOSEN' && (event.payload as { target?: number }).target === 1,
       ),
     ).toBe(false);
+  });
+});
+
+describe('RUL-13 · 重投不会让对局停住（默认模型路径的翻译层）', () => {
+  it('LLM 形状的 kill 决策在 NIGHT_WOLF_RUNOFF 也能转成 WOLF_VOTE 并跑完', async () => {
+    const { toAction } = await import('@server/llm/to-action');
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 3,
+      playerSeat: 1,
+    });
+
+    // 玩家固定投 2 号：首轮它是并列者之一，重投时仍然合法。
+    const playerVoteTarget = 2;
+    const result = await runGame({
+      registry,
+      session,
+      gameId: record.gameId,
+      input: {
+        async read(prompt) {
+          return prompt.kind === 'vote'
+            ? { kind: 'speak', text: String(playerVoteTarget) }
+            : { kind: 'speak', text: String(playerVoteTarget) };
+        },
+        close() {},
+      },
+      output: { emit() {}, async flush() {} },
+      decide: async ({ seat, ctx, phase }) => {
+        if (phase === 'NIGHT_WOLF_CHAT') {
+          return { action: { type: 'WOLF_CHAT', ts: 0, seat: seat as never, text: '' } };
+        }
+        if (phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF') {
+          // 每只 AI 狼投不同的人，制造平票 → 重投
+          const targets = ctx.legalTargets
+            .filter((target) => typeof target === 'number')
+            .map((target) => Number(target));
+          const target = targets[seat % targets.length];
+          const translated = toAction(
+            { action: 'kill', target, reason: '测试用' },
+            { seat: seat as never, phase, day: ctx.day, legalTargets: ctx.legalTargets },
+            0,
+          );
+          return 'action' in translated ? { action: translated.action } : { action: undefined };
+        }
+        if (phase === 'DAY_SPEECH') {
+          return { action: { type: 'SPEECH_SKIP', ts: 0, seat: seat as never } };
+        }
+        if (phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF') {
+          const target = ctx.legalTargets.find((value) => typeof value === 'number');
+          return {
+            action:
+              typeof target === 'number'
+                ? { type: 'VOTE', ts: 0, seat: seat as never, target: target as never }
+                : { type: 'SPEECH_SKIP', ts: 0, seat: seat as never },
+          };
+        }
+        return { action: undefined };
+      },
+      maxSteps: 60,
+    });
+
+    // 关键：没有停在 NIGHT_WOLF_RUNOFF
+    expect(registry.stateOf(result.record).phase).not.toBe('NIGHT_WOLF_RUNOFF');
   });
 });
