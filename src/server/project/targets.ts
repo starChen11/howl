@@ -33,8 +33,14 @@ export function legalTargetsOf(
       return [...alive];
 
     case 'check':
-    case 'shoot':
       return [...alive];
+
+    case 'shoot':
+      // 开枪发生在死亡结算之后：此时用**引擎真值**的存活席位，否则会列出刚死的人，
+      // 引擎必然拒绝，编排层会一直重试同一个非法目标（真实对局里表现为卡死）。
+      return state.seats
+        .filter((seat) => seat.alive && seat.seat !== observer)
+        .map((seat) => seat.seat);
 
     case 'witch':
       return [...alive];

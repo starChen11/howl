@@ -178,7 +178,10 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       // 非法行动是**我们的 bug**，不是模型失败（AC-6）。
-      const implementation = /INVALID_|非法|NOT_YOUR_TURN|RULE_/.test(message);
+      // 编排层把「引擎拒绝动作」抛成 `动作被拒绝：CODE`：那是实现缺陷（AC-6）。
+      const implementation = /动作被拒绝|INVALID_|非法|NOT_YOUR_TURN|RULE_|TARGET_NOT_ALIVE/.test(
+        message,
+      );
       outcomes.push({
         seed,
         ok: false,

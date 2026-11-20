@@ -361,3 +361,25 @@ describe('C-171 · 对局已释放时仍能看到复盘', () => {
     expect(screen.getByText(/释放后仍可读/)).toBeTruthy();
   });
 });
+
+describe('矩阵：五种角色出局后（无待决定）都能观战与看真相', () => {
+  for (const role of ['wolf', 'villager', 'seer', 'witch', 'hunter'] as const) {
+    it(`${role} 出局后：没有输入框、没有投票，有观战提示与真相入口`, async () => {
+      const { client } = fakeClient(
+        view({
+          self: { seat: 1, role, alive: false, personaId: null },
+          phase: 'DAY_SPEECH',
+          legalTargets: [],
+          pending: null,
+        }),
+      );
+      render(<App gameId="g" client={client} />);
+
+      await screen.findByRole('heading', { name: '你的身份' });
+      expect(screen.getByText(/你已出局，正在观战/)).toBeTruthy();
+      expect(screen.queryByLabelText('你的发言')).toBeNull();
+      expect(screen.queryByRole('button', { name: /投 \d+ 号/ })).toBeNull();
+      expect(screen.getByRole('button', { name: '打开真相视图' })).toBeTruthy();
+    });
+  }
+});

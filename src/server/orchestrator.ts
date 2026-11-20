@@ -242,6 +242,15 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
       registry.stateOf(latest).seq,
     );
     if (!result.ok) break;
+
+    // 引擎拒绝了 AI/玩家的动作：不能当作成功继续，否则同一个非法动作会被反复提交
+    // （真实对局里表现为「卡在某个相位」且日志刷屏）。直接抛出，让调用方看见。
+    const rejected = result.events.find((event) => event.type === 'REJECTED');
+    if (rejected !== undefined) {
+      const payload = rejected.payload as { code?: string; message?: string };
+      throw new Error(`动作被拒绝：${payload.code ?? 'REJECTED'}（${payload.message ?? ''}）`);
+    }
+
     record = result.record;
 
     // 推理落盘（RFC-014 AC-3）：只写结构化 `reason`，供复盘逐条比对。

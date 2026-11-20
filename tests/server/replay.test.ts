@@ -235,23 +235,16 @@ describe('AC-3 · 真实产出 AI_THOUGHT（不是只定义）', () => {
       close() {},
     };
 
-    // 一个「有理由」的脚本 AI：每一步都带 thought
-    const deciding = async (): Promise<{ action: never; thought: { reason: string } }> => {
-      return { action: undefined as never, thought: { reason: '这一步我要过' } };
-    };
-    void deciding;
-
+    // 用脚本 AI 保证动作合法，再给每一步补一条 thought
     await runGame({
       registry,
       session,
       input,
       output: { emit() {}, async flush() {} },
-      decide: async ({ seat, phase }) => {
-        if (!phase.startsWith('NIGHT') && phase !== 'DAY_VOTE') return { action: undefined };
-        return {
-          action: { type: 'SPEECH_SKIP', ts: 1, seat: seat as never } as never,
-          thought: { reason: `${seat} 号决定过` },
-        };
+      decide: async (input) => {
+        const base = await scriptedAgent(input);
+        if (base.action === undefined) return base;
+        return { ...base, thought: { reason: `${input.seat} 号决定过` } };
       },
       maxSteps: 40,
     });

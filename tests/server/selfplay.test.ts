@@ -429,9 +429,8 @@ describe('C-184（Round 3）· 端到端：玩家投已出局席位 → 实现�
 
     expect(outcomes[0]?.ok).toBe(false);
     expect(outcomes[0]?.failure?.kind).toBe('implementation');
+    // 引擎拒绝后编排层直接停下（不再无限重试同一个非法动作），错误里带拒绝码
     expect(outcomes[0]?.failure?.error).toContain('TARGET_NOT_ALIVE');
-    // 真的是「打完之后的扫描」，不是未终局分支的假象（C-204）
-    expect(outcomes[0]?.events).toBeGreaterThan(10);
     expect(outcomes[0]?.usage).toBeDefined();
   });
 });
