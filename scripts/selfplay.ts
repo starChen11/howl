@@ -12,6 +12,7 @@ import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { createLlmAgent, scriptedAgent } from '../src/server/ai/agent';
+import { loadLlmConfig } from '../src/server/llm/config';
 import { resetUsage } from '../src/server/llm/usage';
 import { summarize } from '../src/server/selfplay/report';
 import { runSelfplay } from '../src/server/selfplay/runner';
@@ -54,6 +55,14 @@ async function main(): Promise<void> {
 
   // 有 key 走真实模型；`HOWL_FAKE_AI=1` 用脚本替身（零费用，用于冒烟）。
   const fake = process.env['HOWL_FAKE_AI'] === '1';
+  if (!fake) {
+    try {
+      loadLlmConfig(process.env);
+    } catch {
+      console.error('缺少模型 API key。接真实模型请先设置它；只想冒烟就加 HOWL_FAKE_AI=1。');
+      process.exit(1);
+    }
+  }
 
   const outcomes = await runSelfplay({
     games: args.games,

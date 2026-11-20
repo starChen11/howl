@@ -7,6 +7,7 @@ import { buildApp } from './app';
 import { ChannelRegistry } from './channels/session';
 import { GameLoop } from './game-loop';
 import { agentFor } from './ai/agent';
+import { API_KEY_ENV, loadLlmConfig } from './llm/config';
 import { GameRegistry } from './store/game-registry';
 import { InMemoryMetaStore } from './store/meta-store';
 import { StreamBus } from './stream/bus';
@@ -29,6 +30,25 @@ const bus = new StreamBus();
 const channels = new ChannelRegistry(bus);
 const registry = new GameRegistry(store);
 const agentKind = process.env.HOWL_FAKE_AI === '1' ? 'scripted' : 'llm';
+
+// 没有 key 时不要「起得来但打不了」：第一轮 AI 动作会抛错、对局卡住，而原因只在日志里。
+if (agentKind === 'llm') {
+  try {
+    loadLlmConfig(process.env);
+  } catch {
+    console.error(
+      [
+        `缺少 ${API_KEY_ENV} —— 现在可以用两种方式启动：`,
+        '',
+        `  1) 接真实模型：  ${API_KEY_ENV}=sk-... pnpm dev`,
+        '  2) 先随便玩玩：  HOWL_FAKE_AI=1 pnpm dev   （AI 由脚本代替，不花钱）',
+        '',
+        '真实模型会产生 API 费用；脚本替身只跑固定台词，不会推理。',
+      ].join('\n'),
+    );
+    process.exit(1);
+  }
+}
 
 const loop = new GameLoop({
   registry,

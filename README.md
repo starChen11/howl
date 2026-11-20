@@ -18,6 +18,22 @@ pnpm dev        # http://localhost:5173
 pnpm test       # 771 个用例，含五条命令与覆盖率门禁
 ```
 
+### 两种 AI 模式
+
+| 模式 | 启动方式 | 用的是什么 |
+|---|---|---|
+| **真实模型**（默认） | `cp .env.example .env`，填入 `DEEPSEEK_API_KEY`，再 `pnpm dev` | DeepSeek API，每个 AI 都在真推理；会产生费用 |
+| **脚本替身** | `HOWL_FAKE_AI=1 pnpm dev` | 固定台词与规则动作，不花钱，适合先看界面 |
+
+`.env` 会在启动时自动读取（`dev` 与 `start` 都带 `--env-file-if-exists`）。
+没有 key 且没有开替身时，服务端会**直接退出并给出上面两种启动方式**，而不是起来后卡在对局中。
+
+批量跑真实模型（会产生费用，先看清局数）：
+
+```bash
+DEEPSEEK_API_KEY=sk-... pnpm selfplay --games=10 --seed=42 --out=./reports
+```
+
 ## 怎么参与开发
 
 本项目由人和 AI agent 在 DeepSeek Harness（DSH）里协作完成，流程与工具已固定在仓库内，不依赖个人环境。

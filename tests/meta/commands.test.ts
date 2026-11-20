@@ -41,7 +41,8 @@ describe('AC-1 · 五条命令', () => {
   });
 
   it('pnpm start 起得来、能响应健康检查、能被关掉', async () => {
-    const server = pnpmBackground(['start'], { PORT: START_PORT });
+    // 生产入口默认接真实模型：启动时会校验 key 是否存在（不联网），所以给一个假 key。
+    const server = pnpmBackground(['start'], { PORT: START_PORT, DEEPSEEK_API_KEY: 'test-key' });
 
     try {
       const response = await waitForHttp(START_HEALTH, 30_000);

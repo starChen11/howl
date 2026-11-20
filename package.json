@@ -9,9 +9,9 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "concurrently -n web,api -c cyan,magenta \"vite\" \"tsx watch src/server/index.ts\"",
+    "dev": "concurrently -n web,api -c cyan,magenta \"vite\" \"tsx watch --env-file-if-exists=.env src/server/index.ts\"",
     "build": "vite build && vite build --config vite.server.config.ts",
-    "start": "node dist/server/index.js",
+    "start": "node --env-file-if-exists=.env dist/server/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "lint": "eslint .",
     "format:check": "prettier --check .",

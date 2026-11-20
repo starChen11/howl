@@ -41,8 +41,11 @@ function readInt(env: NodeJS.ProcessEnv, name: string, fallback: number): number
  *
  * 缺 key 时抛错而不是给空串：给空串会让第一次真实调用才失败，而那时已经在对局中。
  */
+/** 密钥环境变量的名字：只在本文件出现，其他模块要用就 import 它。 */
+export const API_KEY_ENV = 'DEEPSEEK_API_KEY';
+
 export function loadLlmConfig(env: NodeJS.ProcessEnv = process.env): LlmConfig {
-  const apiKey = env['DEEPSEEK_API_KEY'];
+  const apiKey = env[API_KEY_ENV];
   if (apiKey === undefined || apiKey === '') {
     throw new Error('缺少 DEEPSEEK_API_KEY');
   }

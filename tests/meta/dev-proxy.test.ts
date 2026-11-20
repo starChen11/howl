@@ -20,7 +20,12 @@ const API_VIA_PROXY = 'http://localhost:5173/api/health';
 
 describe('AC-12 · Vite 开发代理', () => {
   it('直连 3000 与经 5173 代理都返回 200 与 {"ok":true}', async () => {
-    const dev = pnpmBackground(['dev'], { PORT: '3000', VITE_PORT: '5173' });
+    // dev 也默认接真实模型：给一个假 key 通过启动校验（不联网）。
+    const dev = pnpmBackground(['dev'], {
+      PORT: '3000',
+      VITE_PORT: '5173',
+      DEEPSEEK_API_KEY: 'test-key',
+    });
 
     try {
       const direct = await waitForHttp(API_DIRECT, 60_000);
