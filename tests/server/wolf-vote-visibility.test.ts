@@ -59,6 +59,8 @@ describe('RUL-13 · 狼队投票的可见性', () => {
       phase: 'NIGHT_WOLF_RUNOFF' as const,
       wolfRunoff: [2, 3] as never,
     };
+    expect(open.wolfVoteOpen).toBe(true);
+
     const runoff = project({
       state: runoffState,
       events: [],

@@ -308,6 +308,9 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
                   ? 'wolf-vote'
                   : (ctx.pending as 'chat' | 'kill' | 'check' | 'witch')
             }
+            hasVoted={currentWolfVotes(ctx.privateEvents).some(
+              (vote) => vote.seat === ctx.self.seat,
+            )}
             waiting={
               ctx.wolfVoteOpen === true &&
               ctx.pending !== 'wolf-vote' &&

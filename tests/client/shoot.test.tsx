@@ -256,12 +256,120 @@ describe('RUL-13 · 狼队投票界面', () => {
 
   it('自己投完后保留面板并显示「等待队友」，按钮不可点', async () => {
     render(
-      <App gameId="g" client={clientFor(wolfVoteView({ pending: null, legalTargets: [] }))} />,
+      <App
+        gameId="g"
+        client={clientFor(
+          wolfVoteView({
+            pending: null,
+            legalTargets: [],
+            privateEvents: [
+              {
+                gameId: 'g',
+                seq: 2,
+                ts: 0,
+                type: 'WOLF_VOTE_CAST',
+                visibleTo: 'wolves',
+                payload: { seat: 1, target: 2 },
+              },
+            ],
+          }),
+        )}
+      />,
     );
 
-    await screen.findByText(/等待队友/);
+    await screen.findByText(/你已投票，等待队友/);
     expect((screen.getByRole('button', { name: '投 2 号' }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+});
+
+describe('RUL-13 · 还没轮到自己投票时不能显示「已投票」', () => {
+  it('后置狼等待时文案是「等队友先投」', async () => {
+    const view = {
+      ...hunterView(),
+      self: { seat: 1, role: 'wolf', alive: true, personaId: null },
+      phase: 'NIGHT',
+      pending: null,
+      legalTargets: [],
+      wolfVoteOpen: true,
+      wolfCandidates: [2, 3],
+      privateEvents: [
+        {
+          gameId: 'g',
+          seq: 2,
+          ts: 0,
+          type: 'WOLF_VOTE_CAST',
+          visibleTo: 'wolves',
+          payload: { seat: 4, target: 2 },
+        },
+      ],
+    };
+    const client = {
+      game: async () => ({ version: 3, view }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async () => ({ ok: true as const }),
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByText(/等队友先投/);
+    expect(screen.queryByText(/你已投票/)).toBeNull();
+  });
+});
+
+describe('RUL-13 · 票型只显示当前一轮', () => {
+  it('唱票（REVEALED）之后旧票不再显示', async () => {
+    const view = {
+      ...hunterView(),
+      self: { seat: 1, role: 'wolf', alive: true, personaId: null },
+      phase: 'NIGHT',
+      pending: 'wolf-vote',
+      legalTargets: [2, 3],
+      wolfVoteOpen: true,
+      wolfCandidates: [2, 3],
+      privateEvents: [
+        {
+          gameId: 'g',
+          seq: 1,
+          ts: 0,
+          type: 'WOLF_VOTE_CAST',
+          visibleTo: 'wolves',
+          payload: { seat: 1, target: 5 },
+        },
+        {
+          gameId: 'g',
+          seq: 2,
+          ts: 0,
+          type: 'WOLF_VOTE_REVEALED',
+          visibleTo: 'wolves',
+          payload: { votes: [], tied: [2, 3] },
+        },
+        {
+          gameId: 'g',
+          seq: 3,
+          ts: 0,
+          type: 'WOLF_VOTE_CAST',
+          visibleTo: 'wolves',
+          payload: { seat: 4, target: 2 },
+        },
+      ],
+    };
+    const client = {
+      game: async () => ({ version: 4, view }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async () => ({ ok: true as const }),
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByText(/4 号投 2 号/);
+    expect(screen.queryByText(/1 号投 5 号/)).toBeNull();
   });
 });

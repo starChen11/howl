@@ -42,6 +42,7 @@ describe('RUL-13 · 狼队投票', () => {
 
     const chosen = third.events.find((event) => event.type === 'WOLF_KILL_CHOSEN');
     expect(chosen?.payload).toEqual({ target: target1 });
+    expect(chosen?.visibleTo).toBe('wolves');
     expect(third.state.phase).not.toBe('NIGHT_WOLVES');
   });
 

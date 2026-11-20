@@ -14,6 +14,7 @@ export function NightAction({
   wolfChats,
   wolfVotes,
   waiting = false,
+  hasVoted = false,
   onChat,
   onTarget,
   onWitch,
@@ -27,8 +28,10 @@ export function NightAction({
   wolfChats: { seat: number; text: string }[];
   /** 狼队当前票型（只有狼看得到）。 */
   wolfVotes: { seat: number; target: number }[];
-  /** 自己已投票、等队友：面板保留但只读。 */
+  /** 狼队投票进行中、但还轮不到自己（或自己已投）：面板保留但只读。 */
   waiting?: boolean;
+  /** 自己这一票是否已经投出（用于区分错误文案）。 */
+  hasVoted?: boolean;
   onChat: (text: string) => void;
   onTarget: (target: number) => void;
   onWitch: (choice: 'none' | `heal:${number}` | `poison:${number}`) => void;
@@ -129,7 +132,11 @@ export function NightAction({
             ))}
           </ul>
         )}
-        {waiting ? <p className="night__hint">你已投票，等待队友…</p> : null}
+        {waiting ? (
+          <p className="night__hint">
+            {hasVoted ? '你已投票，等待队友…' : '等队友先投，轮到你时按钮会启用。'}
+          </p>
+        ) : null}
         <div className="night__buttons">
           {targets.map((seat) => (
             <button
