@@ -18,7 +18,7 @@ export interface LlmConfig {
 }
 
 export const DEFAULT_LLM_CONFIG = {
-  model: 'deepseek-chat',
+  model: 'deepseek-flash',
   thinking: true,
   temperature: 0.8,
   maxOutputTokens: 800,

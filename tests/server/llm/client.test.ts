@@ -16,7 +16,7 @@ import { CallMetaLog } from '@server/llm/meta';
 
 const CONFIG: LlmConfig = {
   apiKey: 'test-key',
-  model: 'deepseek-chat',
+  model: 'deepseek-flash',
   thinking: true,
   temperature: 0.8,
   maxOutputTokens: 800,
@@ -199,7 +199,7 @@ describe('AC-4 · 配置与环境变量', () => {
 
     expect(config.timeoutMs).toBe(DEFAULT_LLM_CONFIG.timeoutMs);
     expect(config.maxRetries).toBe(DEFAULT_LLM_CONFIG.maxRetries);
-    expect(config.model).toBe('deepseek-chat');
+    expect(config.model).toBe('deepseek-flash');
   });
 
   it('环境变量可以覆盖 timeout 与 maxRetries', () => {

@@ -46,8 +46,8 @@ describe('AC-2 · 密钥只被 config.ts 读取', () => {
 });
 
 describe('AC-13 · 模型名只在配置里', () => {
-  it('deepseek-chat 字面量只出现在 config.ts 与提示词无关的文件', () => {
-    const hits = findFilesContaining(files(), 'deepseek-chat');
+  it('deepseek-flash 字面量只出现在 config.ts 与提示词无关的文件', () => {
+    const hits = findFilesContaining(files(), 'deepseek-flash');
 
     expect(hits).toEqual(['server/llm/config.ts']);
   });
