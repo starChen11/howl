@@ -45,6 +45,7 @@ describe('AC-9 · 声明与实现一致', () => {
       'NIGHT_HUNTER_SHOOT',
       'DAY_SPEECH',
       'DAY_VOTE',
+      'DAY_PK_SPEECH',
       'DAY_VOTE_RUNOFF',
       'DAY_HUNTER_SHOOT',
     ]);

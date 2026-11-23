@@ -35,13 +35,15 @@ export const DEFAULT_TRANSITIONS: TransitionTable = {
   DAY_ANNOUNCE: [],
   DAY_SPEECH: ['SPEECH', 'SPEECH_SKIP', 'SELF_EXPOSE'],
   DAY_VOTE: ['VOTE', 'SELF_EXPOSE'],
+  // 平票后的 PK 发言：只有并列者能说，说完再重投。
+  DAY_PK_SPEECH: ['SPEECH', 'SPEECH_SKIP', 'SELF_EXPOSE'],
   DAY_VOTE_RUNOFF: ['VOTE'],
   // DAY_LYNCH 是自动阶段（放逐在 VOTE_REVEALED 之后由 step 的自动循环执行）
   DAY_LYNCH: [],
   DAY_HUNTER_SHOOT: ['HUNTER_SHOOT'],
 };
 
-/** 表必须覆盖全部 14 个 phase。构造时检查，避免漏一个阶段变成运行时 `undefined`。 */
+/** 表必须覆盖全部 16 个 phase。构造时检查，避免漏一个阶段变成运行时 `undefined`。 */
 export function assertCompleteTransitionTable(table: TransitionTable): void {
   for (const phase of PHASES) {
     if (!Array.isArray(table[phase])) {

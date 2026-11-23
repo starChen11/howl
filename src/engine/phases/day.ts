@@ -87,7 +87,18 @@ export function speechOrder(state: GameState): SeatId[] {
   const speech = state.speech;
   if (speech === undefined) return [];
 
-  const ordered = [...aliveSeats(state)].sort((a, b) => a.seat - b.seat).map((seat) => seat.seat);
+  // PK 发言只有并列者参与，不是全场。
+  const base =
+    state.phase === 'DAY_PK_SPEECH' && state.runoff !== undefined
+      ? aliveSeats(state)
+          .filter((seat) => (state.runoff ?? []).includes(seat.seat))
+          .sort((a, b) => a.seat - b.seat)
+          .map((seat) => seat.seat)
+      : aliveSeats(state)
+          .sort((a, b) => a.seat - b.seat)
+          .map((seat) => seat.seat);
+
+  const ordered = base;
   const pivot = ordered.findIndex((seat) => seat >= speech.startSeat);
   const rotated = pivot === -1 ? ordered : [...ordered.slice(pivot), ...ordered.slice(0, pivot)];
 
@@ -117,7 +128,10 @@ function speakerRejection(state: GameState, action: Action, seat: SeatId) {
 /** 所有人的发言/跳过都结束后推进到投票。 */
 function advanceIfDone(state: GameState, spokenAfter: readonly SeatId[]): EventDraft[] {
   const remaining = speechOrder(state).filter((seat) => !spokenAfter.includes(seat));
-  return remaining.length === 0 ? [phaseChangedDraft('DAY_SPEECH', 'DAY_VOTE')] : [];
+  if (remaining.length > 0) return [];
+  return state.phase === 'DAY_PK_SPEECH'
+    ? [phaseChangedDraft('DAY_PK_SPEECH', 'DAY_VOTE_RUNOFF')]
+    : [phaseChangedDraft('DAY_SPEECH', 'DAY_VOTE')];
 }
 
 /** `SPEECH`（`DAY_SPEECH`）。 */

@@ -456,7 +456,9 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         ) : null}
         {ctx.self.alive &&
         ctx.self.role === 'wolf' &&
-        (ctx.phase === 'DAY_SPEECH' || ctx.phase === 'DAY_VOTE') ? (
+        (ctx.phase === 'DAY_SPEECH' ||
+          ctx.phase === 'DAY_PK_SPEECH' ||
+          ctx.phase === 'DAY_VOTE') ? (
           <SelfExposeButton onExpose={() => void expose()} />
         ) : null}
         <p className="app__hint">轮到你时可以说说你的怀疑；不认识的词可以在下方的说明里查。</p>

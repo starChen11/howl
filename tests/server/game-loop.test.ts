@@ -75,6 +75,27 @@ describe('AC-15 · 一局能从开局跑到 FINISHED', () => {
         return;
       }
 
+      if (state.phase === 'DAY_PK_SPEECH') {
+        const runoff = state.runoff ?? [];
+        const spoken = new Set(state.speech?.spoken ?? []);
+        const speaker = state.seats
+          .filter((seat) => seat.alive && runoff.includes(seat.seat) && !spoken.has(seat.seat))
+          .map((seat) => seat.seat)
+          .find((seat) => state.seats.find((s) => s.seat === seat)?.isPlayer);
+        if (speaker !== undefined) {
+          await app.inject({
+            method: 'POST',
+            url: `/api/games/${gameId}/actions`,
+            headers: { cookie },
+            payload: {
+              action: { type: 'SPEECH_SKIP', ts: Date.now(), seat: speaker },
+              expectedVersion: record.events.length,
+            },
+          });
+        }
+        return;
+      }
+
       if (state.phase !== 'DAY_SPEECH') return;
       const speaker = state.speech;
       if (speaker === undefined) return;

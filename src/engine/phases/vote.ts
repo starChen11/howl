@@ -110,7 +110,8 @@ function settle(from: Phase, state: GameState, votes: Ballot): EventDraft[] {
     return drafts;
   }
 
-  drafts.push(phaseChangedDraft(from, 'DAY_VOTE_RUNOFF'));
+  // 首轮平票：并列者先做一轮 PK 发言，再重投（真实规则）。
+  drafts.push(phaseChangedDraft(from, 'DAY_PK_SPEECH'));
   return drafts;
 }
 

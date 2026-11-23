@@ -149,6 +149,15 @@ function applyPhaseChanged(state: GameState, payload: { from: Phase; to: Phase }
 
   const next: GameState = { ...state, phase: payload.to };
 
+  if (payload.to === 'DAY_PK_SPEECH') {
+    const tied = [...(state.runoff ?? [])]
+      .filter((seat) => state.seats.some((entry) => entry.seat === seat && entry.alive))
+      .sort((a, b) => a - b);
+    if (tied.length > 0) {
+      next.speech = { startSeat: tied[0] as never, spoken: [] };
+    }
+  }
+
   if (payload.to === 'NIGHT_WOLF_CHAT') {
     // 进入新的一夜：本夜暂存与「昨夜死者」都清空，`day` 递增（夜 N 开启第 N 天）。
     // 首个夜晚由 `GAME_STARTED` 直接设定，不经过这条转移，所以 `day` 仍从 1 开始。

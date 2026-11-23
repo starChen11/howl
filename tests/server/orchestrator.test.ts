@@ -685,7 +685,25 @@ describe('C-127 · 平票重投时玩家亲自投票', () => {
       current = r.record;
     }
 
-    // 夹具必须真的造出平票；否则这条用例会静默通过（评审 M-R6-P2）。
+    // 平票后先进入 PK 发言；让并列者各说一句，再重投。
+    expect(stateOf().phase).toBe('DAY_PK_SPEECH');
+    for (let guard = 0; guard < 10 && stateOf().phase === 'DAY_PK_SPEECH'; guard += 1) {
+      const state = stateOf();
+      const runoff = state.runoff ?? [];
+      const spoken = new Set(state.speech?.spoken ?? []);
+      const speaker = state.seats
+        .filter((seat) => seat.alive && runoff.includes(seat.seat) && !spoken.has(seat.seat))
+        .map((seat) => seat.seat)[0];
+      if (speaker === undefined) break;
+      const r = await registry.submit(
+        session,
+        current,
+        { type: 'SPEECH_SKIP', ts: 1, seat: speaker } as never,
+        state.seq,
+      );
+      if (!r.ok) break;
+      current = r.record;
+    }
     expect(stateOf().phase).toBe('DAY_VOTE_RUNOFF');
 
     const kinds: string[] = [];

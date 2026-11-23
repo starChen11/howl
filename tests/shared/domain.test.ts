@@ -23,6 +23,7 @@ const EXPECTED_PHASES = [
   'DAY_ANNOUNCE',
   'DAY_SPEECH',
   'DAY_VOTE',
+  'DAY_PK_SPEECH',
   'DAY_VOTE_RUNOFF',
   'DAY_LYNCH',
   'DAY_HUNTER_SHOOT',
@@ -30,10 +31,10 @@ const EXPECTED_PHASES = [
 ] as const;
 
 describe('AC-5 · Phase 的取值集合', () => {
-  it('恰好 15 个取值，且与 RFC 列出的取值逐项一致', () => {
-    expect(PHASES).toHaveLength(15);
+  it('恰好 16 个取值，且与 RFC 列出的取值逐项一致', () => {
+    expect(PHASES).toHaveLength(16);
     expect([...PHASES]).toEqual([...EXPECTED_PHASES]);
-    expect(new Set(PHASES).size).toBe(15);
+    expect(new Set(PHASES).size).toBe(16);
   });
 
   it('是封闭联合：列表外的取值无法赋给 Phase', () => {

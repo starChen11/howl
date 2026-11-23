@@ -27,6 +27,8 @@ export function phaseLabel(phase: string): string {
       return `${ROLE_LABELS.hunter}开枪`;
     case 'DAY_ANNOUNCE':
       return '天亮公布';
+    case 'DAY_PK_SPEECH':
+      return 'PK 发言';
     case 'DAY_SPEECH':
       return '轮流发言';
     case 'DAY_VOTE':

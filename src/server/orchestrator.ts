@@ -134,6 +134,7 @@ export function pendingForPhase(phase: string): PendingDecision | null {
     case 'NIGHT_WITCH':
       return 'witch';
     case 'DAY_SPEECH':
+    case 'DAY_PK_SPEECH':
       return 'speak';
     case 'DAY_VOTE':
     case 'DAY_VOTE_RUNOFF':
@@ -154,6 +155,7 @@ export function pendingForPhase(phase: string): PendingDecision | null {
 export function isPlayerPhase(phase: string): boolean {
   return (
     phase === 'DAY_SPEECH' ||
+    phase === 'DAY_PK_SPEECH' ||
     phase === 'DAY_VOTE' ||
     phase === 'DAY_VOTE_RUNOFF' ||
     // 夜间行动也属于玩家：狼要讨论与刀人、神职要查验与用药。
@@ -174,10 +176,19 @@ export function seatToSpeak(state: {
   phase: string;
   speech?: { startSeat: number; spoken: number[] };
   seats: { seat: number; alive: boolean }[];
+  runoff?: number[];
 }): number | undefined {
-  if (state.phase !== 'DAY_SPEECH' || state.speech === undefined) return undefined;
+  if (
+    (state.phase !== 'DAY_SPEECH' && state.phase !== 'DAY_PK_SPEECH') ||
+    state.speech === undefined
+  ) {
+    return undefined;
+  }
 
-  const alive = state.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+  const alive = state.seats
+    .filter((seat) => seat.alive)
+    .filter((seat) => state.phase !== 'DAY_PK_SPEECH' || (state.runoff ?? []).includes(seat.seat))
+    .map((seat) => seat.seat);
   const spoken = new Set(state.speech.spoken);
   // 从起点开始按存活顺序找第一个还没说的人（发言顺序由引擎的 startSeat 决定）。
   const ordered = [
@@ -283,7 +294,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
 
     const playerPhase = isPlayerPhase(state.phase);
     const isAi = seat !== record.playerSeat;
-    if (isAi && state.phase === 'DAY_SPEECH') {
+    if (isAi && (state.phase === 'DAY_SPEECH' || state.phase === 'DAY_PK_SPEECH')) {
       deps.output.thinking?.(seat as never, (record.events?.length ?? 0) + 1);
     }
     let degraded = false;
@@ -296,7 +307,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
           seat,
           ctx: ctxFor(seat),
           phase: state.phase,
-          ...(state.phase === 'DAY_SPEECH'
+          ...(state.phase === 'DAY_SPEECH' || state.phase === 'DAY_PK_SPEECH'
             ? {
                 onSpeechDelta: (text: string) =>
                   deps.output.emit({
@@ -309,7 +320,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
             : {}),
         });
       } catch {
-        if (state.phase === 'DAY_SPEECH') {
+        if (state.phase === 'DAY_SPEECH' || state.phase === 'DAY_PK_SPEECH') {
           degraded = true;
           action = {
             action: {
@@ -416,7 +427,11 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     }
 
     record = result.record;
-    if (isAi && state.phase === 'DAY_SPEECH' && action.action?.type === 'SPEECH') {
+    if (
+      isAi &&
+      (state.phase === 'DAY_SPEECH' || state.phase === 'DAY_PK_SPEECH') &&
+      action.action?.type === 'SPEECH'
+    ) {
       const speechEvent = result.events.find((event) => event.type === 'SPEECH');
       if (speechEvent !== undefined) {
         deps.output.emit({

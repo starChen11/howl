@@ -129,6 +129,10 @@ export const scriptedAgent: Decider = async ({ seat, ctx, phase }) => {
 
     case 'DAY_SPEECH':
       return { action: { type: 'SPEECH', ts, seat: seat as never, text: '我先过，听后面的。' } };
+    case 'DAY_PK_SPEECH':
+      return {
+        action: { type: 'SPEECH', ts, seat: seat as never, text: '我不是狼，请别投我。' },
+      };
     case 'DAY_VOTE':
       return target === undefined || target === 'abstain'
         ? { action: { type: 'VOTE', ts, seat: seat as never, target: 'abstain' } }

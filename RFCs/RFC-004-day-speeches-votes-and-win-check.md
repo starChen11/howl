@@ -283,3 +283,7 @@ Round 2 复核了 Round 1 的修复，结论仍是 **Changes requested**，但�
 **提交归属更正（Round 3 再次纠正）**：C-31 的**代码**修复（`src/engine/phases/day.ts` 的排序与最小死者起点）实际落在 `eeceb96`（`docs(process): 固化 subagent 评审的调用方式与等待策略`）——那次提交用了 `git add -A`，把当时工作树里的代码改动一并带了进去。`4693649` 只包含 `schemas.ts` 与测试文件。
 
 这条写反了两次（先错指 `4693649`，再"更正"成同一个错误结论），根因是**用提交信息的内容去回忆提交内容**，而没有跑 `git show --name-only`。流程上的教训：涉及「改动在哪个提交」的断言，必须查 `git show`，不能凭记忆。
+
+### 8.10 Spec changed（CHANGE-REQUEST-014 / RFC-020）
+
+放逐首轮平票不再直接重投：并列者先做一轮 PK 发言，再重投；重投仍平票则入夜。

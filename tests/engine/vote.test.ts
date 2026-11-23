@@ -17,6 +17,23 @@ function atVote(state: ReturnType<typeof reachDay>['state']) {
   return speakAll(state);
 }
 
+/** 平票后先让并列者各说一句，再进入重投。 */
+function finishPk(state: ReturnType<typeof step>['state']) {
+  let current = state;
+  let guard = 0;
+  while (current.phase === 'DAY_PK_SPEECH' && guard < 10) {
+    const runoff = current.runoff ?? [];
+    const spoken = new Set(current.speech?.spoken ?? []);
+    const speaker = current.seats
+      .filter((seat) => seat.alive && runoff.includes(seat.seat) && !spoken.has(seat.seat))
+      .map((seat) => seat.seat)[0];
+    if (speaker === undefined) break;
+    current = step(current, { type: 'SPEECH', ts: 21, seat: speaker, text: '我不是狼' }).state;
+    guard += 1;
+  }
+  return current;
+}
+
 describe('AC-5 · 投票是暗投：结算前他人看不到你的票', () => {
   it('VOTE_CAST 的可见性是投票者本人', () => {
     const day = reachDay();
@@ -117,7 +134,7 @@ describe('AC-7 · 唯一最高票者被放逐', () => {
 });
 
 describe('AC-8 / RUL-2 · 平票重投的选项集只有并列者', () => {
-  it('并列 → 进入 DAY_VOTE_RUNOFF，runoff 恰为并列者', () => {
+  it('并列 → 先 PK 发言，再进入 DAY_VOTE_RUNOFF', () => {
     const day = reachDay();
     const voting = atVote(day.state);
     const alive = voting.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
@@ -133,6 +150,8 @@ describe('AC-8 / RUL-2 · 平票重投的选项集只有并列者', () => {
       }).state;
     }
 
+    expect(current.phase).toBe('DAY_PK_SPEECH');
+    current = finishPk(current);
     expect(current.phase).toBe('DAY_VOTE_RUNOFF');
     expect(current.runoff).toEqual([a, b].sort((x, y) => x - y));
   });
@@ -152,6 +171,7 @@ describe('AC-8 / RUL-2 · 平票重投的选项集只有并列者', () => {
         target: index % 2 === 0 ? a : b,
       }).state;
     }
+    current = finishPk(current);
     expect(current.phase).toBe('DAY_VOTE_RUNOFF');
 
     for (const badTarget of [outsider, 'abstain' as const]) {
@@ -182,6 +202,7 @@ describe('AC-8 / RUL-2 · 平票重投的选项集只有并列者', () => {
         target: index % 2 === 0 ? a : b,
       }).state;
     }
+    current = finishPk(current);
     expect(current.phase).toBe('DAY_VOTE_RUNOFF');
 
     let events: ReturnType<typeof step>['events'] = [];
@@ -236,5 +257,37 @@ describe('票型统计（单元）', () => {
 
   it('无人得票 → none', () => {
     expect(outcomeOf([{ seat: 1 as SeatId, target: 'abstain' }])).toEqual({ kind: 'none' });
+  });
+});
+
+describe('RUL-16 · 平票后的 PK 发言', () => {
+  it('只有并列者能发言；说完后进入重投，非并列者发言被拒', () => {
+    const day = reachDay();
+    const voting = atVote(day.state);
+    const alive = voting.seats.filter((seat) => seat.alive).map((seat) => seat.seat);
+    const [a, b, outsider] = alive as [SeatId, SeatId, SeatId];
+
+    let current = voting;
+    for (const [index, seat] of alive.entries()) {
+      current = step(current, {
+        type: 'VOTE',
+        ts: 20,
+        seat,
+        target: index % 2 === 0 ? a : b,
+      }).state;
+    }
+    expect(current.phase).toBe('DAY_PK_SPEECH');
+    expect(current.runoff).toEqual([a, b].sort((x, y) => x - y));
+
+    const rejected = step(current, {
+      type: 'SPEECH',
+      ts: 21,
+      seat: outsider,
+      text: '我又没平票',
+    });
+    expect((rejected.events[0]?.payload as { code: string }).code).toBe('NOT_YOUR_TURN');
+
+    current = finishPk(current);
+    expect(current.phase).toBe('DAY_VOTE_RUNOFF');
   });
 });

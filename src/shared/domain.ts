@@ -38,7 +38,7 @@ export const FACTION_OF = {
 } as const satisfies Record<Role, Faction>;
 
 /**
- * 对局阶段，共 15 个取值：
+ * 对局阶段，共 16 个取值：
  * `LOBBY`、7 个 `NIGHT_*`、`DAY_ANNOUNCE` / `DAY_SPEECH` / `DAY_VOTE` /
  * `DAY_VOTE_RUNOFF` / `DAY_LYNCH` / `DAY_HUNTER_SHOOT`、`FINISHED`。
  */
@@ -54,6 +54,7 @@ export const PHASES = [
   'DAY_ANNOUNCE',
   'DAY_SPEECH',
   'DAY_VOTE',
+  'DAY_PK_SPEECH',
   'DAY_VOTE_RUNOFF',
   'DAY_LYNCH',
   'DAY_HUNTER_SHOOT',
