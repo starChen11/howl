@@ -59,10 +59,21 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       return base;
     case 'PHASE_CHANGED':
       return applyPhaseChanged(base, event.payload);
-    case 'WOLF_VOTE_CAST':
+    case 'WOLF_VOTE_CAST': {
+      const votes = base.wolfVotes ?? [];
+      const index = votes.findIndex((vote) => vote.seat === event.payload.seat);
+      const next =
+        index < 0
+          ? [...votes, event.payload]
+          : votes.map((vote, i) => (i === index ? event.payload : vote));
+      return { ...base, wolfVotes: next };
+    }
+    case 'WOLF_VOTE_CONFIRMED':
       return {
         ...base,
-        wolfVotes: [...(base.wolfVotes ?? []), event.payload],
+        wolfVotes: (base.wolfVotes ?? []).map((vote) =>
+          vote.seat === event.payload.seat ? { ...vote, confirmed: true } : vote,
+        ),
       };
     case 'WOLF_VOTE_REVEALED':
       // 唱票后清空本轮票；`tied` 非空则进入重投。

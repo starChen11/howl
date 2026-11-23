@@ -253,7 +253,7 @@ test.describe('复盘（RFC-014）', () => {
       });
     };
 
-    for (let step = 0; step < 600; step += 1) {
+    for (let step = 0; step < 4000; step += 1) {
       const res = await page.request.get(`/api/games/${gameId}`);
       const body = (await res.json()) as {
         version: number;
@@ -285,7 +285,7 @@ test.describe('复盘（RFC-014）', () => {
           });
           break;
         case 'chat':
-          await act(body.version, { type: 'WOLF_CHAT', ts, seat, text: '' });
+          await act(body.version, { type: 'WOLF_CHAT', ts, seat, text: '过' });
           break;
         case 'wolf-vote':
         case 'wolf-runoff':

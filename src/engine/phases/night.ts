@@ -145,17 +145,14 @@ const wolfKill: ActionHandlerFor<'WOLF_KILL'> = (state, action) => {
   ];
 };
 
-/** 狼队投票的唱票结果（RUL-13）。 */
+/** 狼队投票的唱票结果（RUL-13 / RUL-15）：只统计已确认的票。 */
 function tallyWolfVotes(
   state: GameState,
-  cast: { seat: SeatId; target: SeatId | 'abstain' },
+  votes: readonly { seat: SeatId; target: SeatId | 'abstain'; confirmed?: boolean }[],
 ): { winner?: SeatId; tied?: SeatId[]; allAbstain?: boolean } {
-  const wolves = aliveSeats(state).filter((seat) => seat.role === 'wolf');
-  const votes = [...(state.wolfVotes ?? []), cast];
-  if (votes.length < wolves.length) return {};
-
   const counts = new Map<SeatId, number>();
   for (const vote of votes) {
+    if (vote.confirmed === false) continue;
     if (vote.target === 'abstain') continue;
     counts.set(vote.target, (counts.get(vote.target) ?? 0) + 1);
   }
@@ -172,7 +169,6 @@ function tallyWolfVotes(
   if (tied.length === 1 && only !== undefined) return { winner: only };
 
   // 僵局兜底：重投仍未收缩（每人各投一票）时，取并列者里席位最小的那个。
-  // 没有这条，三狼各执一词会永远投下去（RUL-13 的兜底条款）。
   const candidates = state.wolfRunoff;
   if (
     state.phase === 'NIGHT_WOLF_RUNOFF' &&
@@ -186,7 +182,110 @@ function tallyWolfVotes(
   return { tied };
 }
 
-/** `WOLF_VOTE`（`NIGHT_WOLVES` / `NIGHT_WOLF_RUNOFF`）：狼队投票决定今晚刀谁。 */
+/** 所有存活狼都确认了吗？ */
+function allWolvesConfirmed(
+  state: GameState,
+  votes: readonly { seat: SeatId; confirmed?: boolean }[],
+): boolean {
+  const wolves = aliveSeats(state).filter((seat) => seat.role === 'wolf');
+  return wolves.every((wolf) =>
+    votes.some((vote) => vote.seat === wolf.seat && vote.confirmed !== false),
+  );
+}
+
+function upsertVote(
+  votes: readonly { seat: SeatId; target: SeatId | 'abstain'; confirmed?: boolean }[],
+  vote: { seat: SeatId; target: SeatId | 'abstain'; confirmed: boolean },
+) {
+  const index = votes.findIndex((entry) => entry.seat === vote.seat);
+  if (index < 0) return [...votes, vote];
+  return votes.map((entry, i) => (i === index ? vote : entry));
+}
+
+/** 全员确认后的结算事件；还没齐就不产出。 */
+function voteResolution(
+  state: GameState,
+  votes: readonly { seat: SeatId; target: SeatId | 'abstain'; confirmed?: boolean }[],
+): EventDraft[] {
+  if (!allWolvesConfirmed(state, votes)) return [];
+
+  const revealed: EventDraft = {
+    type: 'WOLF_VOTE_REVEALED',
+    visibleTo: 'wolves',
+    payload: { votes: [...votes] },
+  };
+  const outcome = tallyWolfVotes(state, votes);
+
+  if (outcome.allAbstain === true) {
+    return [revealed, phaseChangedDraft(state.phase, nextAfterWolves(state))];
+  }
+  if (outcome.tied !== undefined && outcome.winner === undefined) {
+    return [
+      {
+        type: 'WOLF_VOTE_REVEALED',
+        visibleTo: 'wolves',
+        payload: { votes: [...votes], tied: outcome.tied },
+      },
+      phaseChangedDraft(state.phase, 'NIGHT_WOLF_RUNOFF'),
+    ];
+  }
+  const winner = outcome.winner;
+  if (winner === undefined) return [revealed];
+  return [
+    revealed,
+    { type: 'WOLF_KILL_CHOSEN', visibleTo: 'wolves', payload: { target: winner } },
+    phaseChangedDraft(state.phase, nextAfterWolves(state)),
+  ];
+}
+
+/** 校验一条狼票的目标（不含「谁投的」）。 */
+function wolfVoteTargetProblem(
+  state: GameState,
+  action: Parameters<ActionHandlerFor<'WOLF_VOTE'>>[1],
+): EventDraft | undefined {
+  if (action.target === 'abstain') {
+    if (state.phase === 'NIGHT_WOLF_RUNOFF') {
+      return rejectionDraft({
+        action,
+        code: 'INVALID_RUNOFF_TARGET',
+        message: '重投不能弃权，只能投并列者',
+        seat: action.seat,
+      });
+    }
+    return undefined;
+  }
+  if (!isAlive(state, action.target)) {
+    return rejectionDraft({
+      action,
+      code: 'TARGET_NOT_ALIVE',
+      message: `座位 ${action.target} 已出局，不能作为刀口`,
+      seat: action.seat,
+    });
+  }
+  if (seatAt(state, action.target).role === 'wolf') {
+    return rejectionDraft({
+      action,
+      code: 'WOLF_KILL_WOLF',
+      message: `座位 ${action.target} 是狼队友，不能刀`,
+      seat: action.seat,
+    });
+  }
+  if (
+    state.phase === 'NIGHT_WOLF_RUNOFF' &&
+    state.wolfRunoff !== undefined &&
+    !state.wolfRunoff.includes(action.target)
+  ) {
+    return rejectionDraft({
+      action,
+      code: 'INVALID_RUNOFF_TARGET',
+      message: `重投只能投并列者（${state.wolfRunoff.join(', ')}），收到 ${String(action.target)}`,
+      seat: action.seat,
+    });
+  }
+  return undefined;
+}
+
+/** `WOLF_VOTE`（`NIGHT_WOLVES` / `NIGHT_WOLF_RUNOFF`）：选择刀口；确认后锁定。 */
 const wolfVote: ActionHandlerFor<'WOLF_VOTE'> = (state, action) => {
   const actor = seatAt(state, action.seat);
   if (!actor.alive || actor.role !== 'wolf') {
@@ -200,141 +299,84 @@ const wolfVote: ActionHandlerFor<'WOLF_VOTE'> = (state, action) => {
     ];
   }
 
-  if ((state.wolfVotes ?? []).some((vote) => vote.seat === action.seat)) {
+  const existing = (state.wolfVotes ?? []).find((vote) => vote.seat === action.seat);
+  if (existing !== undefined && existing.confirmed !== false) {
     return [
       rejectionDraft({
         action,
-        code: 'WOLF_VOTE_DUPLICATE',
-        message: `座位 ${action.seat} 本轮已经投过票`,
+        code: 'WOLF_VOTE_LOCKED',
+        message: `座位 ${action.seat} 已确认投票，不能再改`,
         seat: action.seat,
       }),
     ];
   }
 
-  if (action.target === 'abstain') {
-    if (state.phase === 'NIGHT_WOLF_RUNOFF') {
-      return [
-        rejectionDraft({
-          action,
-          code: 'INVALID_RUNOFF_TARGET',
-          message: '重投不能弃权，只能投并列者',
-          seat: action.seat,
-        }),
-      ];
-    }
-    const castAbstain = { seat: action.seat, target: 'abstain' as const };
-    const outcome = tallyWolfVotes(state, castAbstain);
-    const drafts: EventDraft[] = [
-      { type: 'WOLF_VOTE_CAST', visibleTo: 'wolves', payload: castAbstain },
-    ];
-    if (outcome.winner !== undefined) {
-      drafts.push(
-        {
-          type: 'WOLF_VOTE_REVEALED',
-          visibleTo: 'wolves',
-          payload: { votes: [...(state.wolfVotes ?? []), castAbstain] },
-        },
-        { type: 'WOLF_KILL_CHOSEN', visibleTo: 'wolves', payload: { target: outcome.winner } },
-        phaseChangedDraft(state.phase, nextAfterWolves(state)),
-      );
-      return drafts;
-    }
-    if (outcome.tied === undefined && outcome.winner === undefined && outcome.allAbstain === true) {
-      // 全员弃权：这一夜没有刀口，直接进入下一相位。
-      drafts.push(
-        {
-          type: 'WOLF_VOTE_REVEALED',
-          visibleTo: 'wolves',
-          payload: { votes: [...(state.wolfVotes ?? []), castAbstain] },
-        },
-        phaseChangedDraft(state.phase, nextAfterWolves(state)),
-      );
-      return drafts;
-    }
-    if (outcome.tied !== undefined) {
-      drafts.push(
-        {
-          type: 'WOLF_VOTE_REVEALED',
-          visibleTo: 'wolves',
-          payload: {
-            votes: [...(state.wolfVotes ?? []), castAbstain],
-            tied: outcome.tied,
-          },
-        },
-        phaseChangedDraft(state.phase, 'NIGHT_WOLF_RUNOFF'),
-      );
-    }
-    return drafts;
-  }
+  const problem = wolfVoteTargetProblem(state, action);
+  if (problem !== undefined) return [problem];
 
-  if (!isAlive(state, action.target)) {
-    return [
-      rejectionDraft({
-        action,
-        code: 'TARGET_NOT_ALIVE',
-        message: `座位 ${action.target} 已出局，不能作为刀口`,
-        seat: action.seat,
-      }),
-    ];
-  }
-  if (seatAt(state, action.target).role === 'wolf') {
-    return [
-      rejectionDraft({
-        action,
-        code: 'WOLF_KILL_WOLF',
-        message: `座位 ${action.target} 是狼队友，不能刀`,
-        seat: action.seat,
-      }),
-    ];
-  }
+  const confirmed = action.confirmed !== false;
+  const vote = { seat: action.seat, target: action.target as SeatId | 'abstain', confirmed };
+  const votes = upsertVote(state.wolfVotes ?? [], vote);
 
-  if (
-    state.phase === 'NIGHT_WOLF_RUNOFF' &&
-    state.wolfRunoff !== undefined &&
-    !state.wolfRunoff.includes(action.target)
-  ) {
-    return [
-      rejectionDraft({
-        action,
-        code: 'INVALID_RUNOFF_TARGET',
-        message: `重投只能投并列者（${state.wolfRunoff.join(', ')}），收到 ${String(action.target)}`,
-        seat: action.seat,
-      }),
-    ];
-  }
-
-  const cast = { seat: action.seat, target: action.target as SeatId | 'abstain' };
-  const outcome = tallyWolfVotes(state, cast);
-  const drafts: EventDraft[] = [{ type: 'WOLF_VOTE_CAST', visibleTo: 'wolves', payload: cast }];
-
-  if (outcome.tied !== undefined && outcome.winner === undefined) {
-    drafts.push(
-      {
-        type: 'WOLF_VOTE_REVEALED',
-        visibleTo: 'wolves',
-        payload: {
-          votes: [...(state.wolfVotes ?? []), cast],
-          tied: outcome.tied,
-        },
-      },
-      phaseChangedDraft(state.phase, 'NIGHT_WOLF_RUNOFF'),
-    );
-    return drafts;
-  }
-
-  const winner = outcome.winner;
-  if (winner === undefined) return drafts;
-
-  drafts.push(
+  const drafts: EventDraft[] = [
     {
-      type: 'WOLF_VOTE_REVEALED',
+      type: 'WOLF_VOTE_CAST',
       visibleTo: 'wolves',
-      payload: { votes: [...(state.wolfVotes ?? []), cast] },
+      payload: { seat: vote.seat, target: vote.target, confirmed },
     },
-    { type: 'WOLF_KILL_CHOSEN', visibleTo: 'wolves', payload: { target: winner } },
-    phaseChangedDraft(state.phase, nextAfterWolves(state)),
-  );
+  ];
+  if (confirmed) {
+    drafts.push(...voteResolution(state, votes));
+  }
   return drafts;
+};
+
+/** `WOLF_VOTE_CONFIRM`：锁定当前选择。 */
+const wolfVoteConfirm: ActionHandlerFor<'WOLF_VOTE_CONFIRM'> = (state, action) => {
+  const actor = seatAt(state, action.seat);
+  if (!actor.alive || actor.role !== 'wolf') {
+    return [
+      rejectionDraft({
+        action,
+        code: 'NOT_YOUR_TURN',
+        message: `座位 ${action.seat} 不是存活的 wolf，不能参与狼队投票`,
+        seat: action.seat,
+      }),
+    ];
+  }
+
+  const existing = (state.wolfVotes ?? []).find((vote) => vote.seat === action.seat);
+  if (existing === undefined) {
+    return [
+      rejectionDraft({
+        action,
+        code: 'NO_WOLF_VOTE',
+        message: `座位 ${action.seat} 还没有选择刀口`,
+        seat: action.seat,
+      }),
+    ];
+  }
+  if (existing.confirmed !== false) {
+    return [
+      rejectionDraft({
+        action,
+        code: 'WOLF_VOTE_LOCKED',
+        message: `座位 ${action.seat} 已经确认过`,
+        seat: action.seat,
+      }),
+    ];
+  }
+
+  const votes = upsertVote(state.wolfVotes ?? [], {
+    seat: action.seat,
+    target: existing.target,
+    confirmed: true,
+  });
+
+  return [
+    { type: 'WOLF_VOTE_CONFIRMED', visibleTo: 'wolves', payload: { seat: action.seat } },
+    ...voteResolution(state, votes),
+  ];
 };
 
 /** `SEER_CHECK`（`NIGHT_SEER`）。 */
@@ -535,6 +577,7 @@ const hunterShoot: ActionHandlerFor<'HUNTER_SHOOT'> = (state, action, context) =
 export const NIGHT_HANDLERS = {
   WOLF_KILL: wolfKill,
   WOLF_VOTE: wolfVote,
+  WOLF_VOTE_CONFIRM: wolfVoteConfirm,
   SEER_CHECK: seerCheck,
   WITCH_ACT: witchAct,
   HUNTER_SHOOT: hunterShoot,

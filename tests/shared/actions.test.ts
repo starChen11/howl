@@ -17,6 +17,7 @@ const VALID_ACTIONS = [
   { type: 'START', ts: 0, seed: 42, mode: 'slaughter-side', playerSeat: 3 },
   { type: 'WOLF_CHAT', ts: 0, seat: 1, text: '今夜刀 2 号' },
   { type: 'WOLF_VOTE', ts: 0, seat: 1, target: 2 },
+  { type: 'WOLF_VOTE_CONFIRM', ts: 0, seat: 1 },
   { type: 'WOLF_READY', ts: 0, seat: 1 },
   { type: 'WITCH_ACT', ts: 0, seat: 6, potion: 'heal', target: 2 },
   { type: 'SEER_CHECK', ts: 0, seat: 4, target: 5 },
@@ -32,8 +33,8 @@ const VALID_ACTIONS = [
 describe('ACTION_TYPES 与 Action 的类型集合一致（评审 N2）', () => {
   it('双向精确相等：多一个少一个都编译失败', () => {
     expectTypeOf<Action['type']>().toEqualTypeOf<(typeof ACTION_TYPES)[number]>();
-    expect(ACTION_TYPES).toHaveLength(12);
-    expect(new Set(ACTION_TYPES).size).toBe(12);
+    expect(ACTION_TYPES).toHaveLength(13);
+    expect(new Set(ACTION_TYPES).size).toBe(13);
   });
 });
 

@@ -21,7 +21,12 @@ export const TruthViewSchema = z.object({
   wolfVotes: z.array(
     z.object({
       day: z.number().int().min(1),
-      votes: z.array(z.object({ seat: z.number().int(), target: z.number().int() })),
+      votes: z.array(
+        z.object({
+          seat: z.number().int(),
+          target: z.union([z.number().int(), z.literal('abstain')]),
+        }),
+      ),
       tied: z.array(z.number().int()).optional(),
     }),
   ),

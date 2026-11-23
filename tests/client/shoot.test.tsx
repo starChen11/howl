@@ -229,7 +229,7 @@ describe('RUL-13 · 狼队投票界面', () => {
           ts: 0,
           type: 'WOLF_VOTE_CAST',
           visibleTo: 'wolves',
-          payload: { seat: 4, target: 2 },
+          payload: { seat: 4, target: 2, confirmed: false },
         },
       ],
       ...partial,
@@ -250,9 +250,10 @@ describe('RUL-13 · 狼队投票界面', () => {
   it('显示实时票型与候选，没有弃权', async () => {
     render(<App gameId="g" client={clientFor(wolfVoteView())} />);
 
-    await screen.findByText(/4 号投 2 号/);
-    expect(screen.getByRole('button', { name: '投 2 号' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '投 3 号' })).toBeTruthy();
+    await screen.findByText(/4 号想投 2 号（未确认）/);
+    expect(screen.getByRole('button', { name: '选 2 号' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '选 3 号' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '确认' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '弃权' })).toBeNull();
   });
 
@@ -271,7 +272,7 @@ describe('RUL-13 · 狼队投票界面', () => {
                 ts: 0,
                 type: 'WOLF_VOTE_CAST',
                 visibleTo: 'wolves',
-                payload: { seat: 1, target: 2 },
+                payload: { seat: 1, target: 2, confirmed: true },
               },
             ],
           }),
@@ -279,15 +280,14 @@ describe('RUL-13 · 狼队投票界面', () => {
       />,
     );
 
-    await screen.findByText(/你已投票，等待队友/);
-    expect((screen.getByRole('button', { name: '投 2 号' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    await screen.findByText(/你已确认投 2 号/);
+    expect(screen.queryByRole('button', { name: '选 2 号' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '确认' })).toBeNull();
   });
 });
 
 describe('RUL-13 · 还没轮到自己投票时不能显示「已投票」', () => {
-  it('后置狼等待时文案是「等队友先投」', async () => {
+  it('没轮到自己也能先选目标，确认前可改', async () => {
     const view = {
       ...hunterView(),
       self: { seat: 1, role: 'wolf', alive: true, personaId: null },
@@ -303,7 +303,7 @@ describe('RUL-13 · 还没轮到自己投票时不能显示「已投票」', () 
           ts: 0,
           type: 'WOLF_VOTE_CAST',
           visibleTo: 'wolves',
-          payload: { seat: 4, target: 2 },
+          payload: { seat: 4, target: 2, confirmed: false },
         },
       ],
     };
@@ -318,11 +318,9 @@ describe('RUL-13 · 还没轮到自己投票时不能显示「已投票」', () 
 
     render(<App gameId="g" client={client} />);
 
-    await screen.findByText(/等队友先投/);
-    expect(screen.queryByText(/你已投票/)).toBeNull();
-    // 待投票的狼能看到已投的票与票数
-    await screen.findByText(/4 号投 2 号/);
-    expect(document.body.textContent).toMatch(/已投 1\/\d+/);
+    await screen.findByText(/4 号想投 2 号（未确认）/);
+    expect(screen.getByRole('button', { name: '选 3 号' })).toBeTruthy();
+    expect(document.body.textContent).toMatch(/已确认 0\/\d+ 票/);
   });
 });
 
@@ -359,7 +357,7 @@ describe('RUL-13 · 票型只显示当前一轮', () => {
           ts: 0,
           type: 'WOLF_VOTE_CAST',
           visibleTo: 'wolves',
-          payload: { seat: 4, target: 2 },
+          payload: { seat: 4, target: 2, confirmed: false },
         },
       ],
     };
@@ -374,8 +372,8 @@ describe('RUL-13 · 票型只显示当前一轮', () => {
 
     render(<App gameId="g" client={client} />);
 
-    await screen.findByText(/4 号投 2 号/);
-    expect(screen.queryByText(/1 号投 5 号/)).toBeNull();
+    await screen.findByText(/4 号想投 2 号（未确认）/);
+    expect(screen.queryByText(/1 号想投 5 号/)).toBeNull();
   });
 });
 
@@ -635,5 +633,50 @@ describe('白天投票不显示已出局席位', () => {
     await screen.findByRole('button', { name: '投 3 号' });
     expect(screen.queryByRole('button', { name: '投 2 号' })).toBeNull();
     expect(screen.getByRole('button', { name: '弃权' })).toBeTruthy();
+  });
+});
+
+describe('RUL-15 · 选择后确认', () => {
+  it('有未确认选择时「确认」可点；已确认后锁定', async () => {
+    const user = userEvent.setup();
+    let confirmed = 0;
+    const { unmount } = render(
+      <NightAction
+        pending="wolf-vote"
+        targets={[2, 3]}
+        potions={{ heal: 'available', poison: 'available' }}
+        killTarget={null}
+        wolfChats={[]}
+        wolfVotes={[{ seat: 1, target: 2, confirmed: false }]}
+        selfSeat={1}
+        wolfCount={3}
+        onChat={() => undefined}
+        onTarget={() => undefined}
+        onWitch={() => undefined}
+        onConfirmVote={() => (confirmed += 1)}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: '确认' }));
+    expect(confirmed).toBe(1);
+    unmount();
+
+    render(
+      <NightAction
+        pending="wolf-vote"
+        targets={[2, 3]}
+        potions={{ heal: 'available', poison: 'available' }}
+        killTarget={null}
+        wolfChats={[]}
+        wolfVotes={[{ seat: 1, target: 2, confirmed: true }]}
+        selfSeat={1}
+        selfConfirmed
+        wolfCount={3}
+        onChat={() => undefined}
+        onTarget={() => undefined}
+        onWitch={() => undefined}
+        onConfirmVote={() => undefined}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: '确认' })).toBeNull();
   });
 });

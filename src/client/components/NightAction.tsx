@@ -15,8 +15,9 @@ export function NightAction({
   killTarget,
   wolfChats,
   wolfVotes,
-  waiting = false,
-  hasVoted = false,
+  selfConfirmed = false,
+  selfSeat = 0,
+  onConfirmVote,
   chatSeconds = 50,
   readyAfterSeconds = 30,
   readySeats = [],
@@ -35,11 +36,15 @@ export function NightAction({
   /** 狼队频道：自己和队友说过的话（只有狼看得到）。 */
   wolfChats: { seat: number; text: string }[];
   /** 狼队当前票型（只有狼看得到）。 */
-  wolfVotes: { seat: number; target: number }[];
+  wolfVotes: { seat: number; target: number; confirmed: boolean }[];
   /** 狼队投票进行中、但还轮不到自己（或自己已投）：面板保留但只读。 */
   waiting?: boolean;
   /** 自己这一票是否已经投出（用于区分错误文案）。 */
   hasVoted?: boolean;
+  /** 自己的狼票是否已确认。 */
+  selfConfirmed?: boolean;
+  selfSeat?: number;
+  onConfirmVote?: () => void;
   /** 讨论总时长（秒）。 */
   chatSeconds?: number;
   /** 多少秒后才允许点「准备完成」。 */
@@ -150,13 +155,15 @@ export function NightAction({
 
   if (pending === 'wolf-vote' || pending === 'wolf-runoff') {
     const isRunoff = pending === 'wolf-runoff';
+    const ownVote = wolfVotes.find((vote) => vote.seat === selfSeat);
+
     return (
       <section className="night" aria-label={`${ROLE_LABELS.wolf}队投票`}>
         <p className="night__hint">
           {isRunoff
             ? '平票了，只能投并列者（且不能弃权）。'
             : '狼队投票决定今晚刀谁；票型只有狼看得到。'}
-          {waiting ? '' : ` 还剩 ${Math.max(0, 10 - elapsed)} 秒。`}
+          {selfConfirmed ? '' : ` 还剩 ${Math.max(0, 10 - elapsed)} 秒。`}
         </p>
         {wolfChats.length === 0 ? null : (
           <ul className="night__chat-log" aria-label="狼队消息">
@@ -169,36 +176,50 @@ export function NightAction({
         )}
         {wolfVotes.length === 0 ? null : (
           <p className="night__hint" aria-live="polite">
-            已投 {wolfVotes.length}/{wolfCount} 票
+            已确认 {wolfVotes.filter((vote) => vote.confirmed).length}/{wolfCount} 票
           </p>
         )}
         {wolfVotes.length === 0 ? null : (
           <ul className="night__chat-log" aria-label="当前票型">
             {wolfVotes.map((vote, index) => (
               <li key={`${vote.seat}-${index}`}>
-                {vote.seat} 号投 {vote.target} 号
+                {vote.seat} 号
+                {vote.confirmed ? `已确认投 ${vote.target} 号` : `想投 ${vote.target} 号（未确认）`}
               </li>
             ))}
           </ul>
         )}
-        {waiting ? (
-          <p className="night__hint">
-            {hasVoted ? '你已投票，等待队友…' : '等队友先投，轮到你时按钮会启用。'}
-          </p>
-        ) : null}
-        <div className="night__buttons">
-          {targets.map((seat) => (
+        {selfConfirmed ? (
+          <p className="night__hint">你已确认投 {ownVote?.target ?? '?'} 号，不能再改。</p>
+        ) : (
+          <>
+            <p className="night__hint">
+              {ownVote === undefined
+                ? '先选一个目标；确认前可以改。'
+                : `当前选择：${ownVote.target} 号（未确认）`}
+            </p>
+            <div className="night__buttons">
+              {targets.map((seat) => (
+                <button
+                  key={seat}
+                  type="button"
+                  className={`button${ownVote?.target === seat ? ' button--selected' : ''}`}
+                  onClick={() => onTarget(seat)}
+                >
+                  选 {seat} 号
+                </button>
+              ))}
+            </div>
             <button
-              key={seat}
               type="button"
-              className="button"
-              disabled={waiting}
-              onClick={() => onTarget(seat)}
+              className="button button--primary"
+              disabled={ownVote === undefined}
+              onClick={() => onConfirmVote?.()}
             >
-              投 {seat} 号
+              确认
             </button>
-          ))}
-        </div>
+          </>
+        )}
       </section>
     );
   }

@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.160 · 来源 `PRD.md` v0.5 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-21
+> 版本 v2.161 · 来源 `PRD.md` v0.5 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-21
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -53,8 +53,9 @@
 | [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Reviewed |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Reviewed |
-| [RFC-017](RFCs/RFC-017-wolf-team-vote.md) | 狼队投票决定刀谁 | F3, F9, F10 | Medium | Reviewed |
+| [RFC-017](RFCs/RFC-017-wolf-team-vote.md) | 狼队投票决定刀谁 | F3, F9, F10 | Medium | Spec changed |
 | [RFC-018](RFCs/RFC-018-wolf-night-chat-room.md) | 狼队夜间讨论改为限时聊天室 | F9, F10, F26 | Large | Reviewed |
+| [RFC-019](RFCs/RFC-019-free-wolf-vote.md) | 狼队自由投票与确认 | F9, F10 | Large | Implemented |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
 
@@ -82,6 +83,7 @@
 | RFC-016 | 012 | — |
 | RFC-017 | 003, 005 | — |
 | RFC-018 | 005, 011 | — |
+| RFC-019 | 017, 018 | — |
 
 **可并行分支**（顺序实现时无意义，多人协作有用）：
 
@@ -1315,6 +1317,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-23 | v2.161 | CHANGE-REQUEST-013 / RFC-019：RUL-15 狼队自由投票 + 确认（只计确认票、超时自动确认）。RFC-017 → Spec changed；新增 RFC-019（Implemented） |
 | 2026-11-21 | v2.160 | RFC-018 Round 4 窄复核（**B3 闭合，Status → `Reviewed`**）：空 `WOLF_CHAT` 校验前移到 `registry.submit` 之前，`strengthen.test.ts` 断言事件流不新增；`readyAfterSeconds` 只由 `__HOWL_FAKE_AI__` 决定，首页不再传 `?fast=1`。C-238 关闭；C-235 / C-237 仍 Open。详见 [`reviews/REVIEW-RFC-018.md`](reviews/REVIEW-RFC-018.md) Round 4 |
 | 2026-11-21 | v2.159 | RFC-018 Round 2 复核（只查 B1–B4，Status 保持 `Changes requested`）：定向单测 2 files / 13 tests、client 1 file / 16 tests、typecheck / lint / format 全 0（build / e2e / perf / meta 未按 lead 指令复跑）。**B2 闭合**（`chatFromAi` 每次重投影 + 现有上下文用例）；**B4 闭合**（`currentNightWolfEvents` 按夜截断、`wolfCount` 只数存活狼、第二夜用例通过）；**B1 未闭合**——显式弃权已被拒（`INVALID_RUNOFF_TARGET`）且有引擎用例，但 `orchestrator.ts:369-379` 的 `timeout` 分支在重投仍提交 `abstain`，被引擎拒绝后 `runGame` 抛错，「重投超时投并列者」只靠空输入→`skip`→`legalTargets[0]` 旁路，无重投超时用例；**B3 未闭合**——UI 的「跳过」与空提交已去掉、`__HOWL_FAKE_AI__` 可切 5/30 秒，但空 `WOLF_CHAT` 经路由仍被 `normalizeInput('')` 翻成 `skip` 并 `markReady`，且 `?fast=1` 仍可在真实模型局降门槛。详见 [`reviews/REVIEW-RFC-018.md`](reviews/REVIEW-RFC-018.md) Round 2 |
 | 2026-11-20 | v2.158 | RFC-018 Round 1 评审（Status → `Changes requested`）：单元 87 files / 789 tests、typecheck / lint / format / build 全 0；meta 子进程门禁本机两次挂起（非行为回归，N-8）。阻塞 **B1** 重投接受弃权（实测进入 `NIGHT_SEER` 且无刀）、**B2** AI 投影冻结看不到玩家消息（实测 `chats: []`）、**B3** 30 秒门槛被「跳过」绕过 + 5 秒例外只认 `?fast=1`、**B4** 第二夜复用整局 `WOLF_READY_MARKED` / `WOLF_CHAT_POSTED` 且 `wolfCount` 含死狼；新增冲突 **C-235 ~ C-238**。探针临时文件已删除、工作树无 `src/` 改动、无 commit。详见 [`reviews/REVIEW-RFC-018.md`](reviews/REVIEW-RFC-018.md) |

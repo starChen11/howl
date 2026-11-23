@@ -104,8 +104,15 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       const playerIsWolf =
         state.seats.find((seat) => seat.isPlayer)?.role === 'wolf' &&
         state.seats.find((seat) => seat.isPlayer)?.alive === true;
+      const playerVoteConfirmed = (state.wolfVotes ?? []).some(
+        (vote) => vote.seat === record.playerSeat && vote.confirmed !== false,
+      );
+      const wolfVoting =
+        (state.phase === 'NIGHT_WOLVES' || state.phase === 'NIGHT_WOLF_RUNOFF') &&
+        playerIsWolf &&
+        !playerVoteConfirmed;
       const actor =
-        state.phase === 'NIGHT_WOLF_CHAT' && playerIsWolf
+        (state.phase === 'NIGHT_WOLF_CHAT' || wolfVoting) && playerIsWolf
           ? record.playerSeat
           : (seatToSpeak(state) ?? nextActor(state));
       const defaultPending = actor === record.playerSeat ? pendingForPhase(state.phase) : null;

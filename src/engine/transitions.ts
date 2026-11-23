@@ -23,8 +23,8 @@ export const DEFAULT_TRANSITIONS: TransitionTable = {
   // 自动结算阶段，所以它的允许集为空——任何 action 在那里都是 PHASE_MISMATCH。
   NIGHT_WOLF_CHAT: ['WOLF_CHAT', 'WOLF_READY'],
   // 狼刀由狼队投票决定（RUL-13）；`WOLF_KILL` 保留为兼容旧客户端/回放的直接下刀。
-  NIGHT_WOLVES: ['WOLF_VOTE', 'WOLF_KILL'],
-  NIGHT_WOLF_RUNOFF: ['WOLF_VOTE'],
+  NIGHT_WOLVES: ['WOLF_VOTE', 'WOLF_VOTE_CONFIRM', 'WOLF_KILL'],
+  NIGHT_WOLF_RUNOFF: ['WOLF_VOTE', 'WOLF_VOTE_CONFIRM'],
   NIGHT_SEER: ['SEER_CHECK'],
   NIGHT_WITCH: ['WITCH_ACT'],
   NIGHT_RESOLVE: [],

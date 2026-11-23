@@ -138,7 +138,7 @@ export interface GameState {
   /** 已表态「准备完成」的狼（RUL-14）。 */
   wolfReady?: SeatId[];
   /** 狼队这一轮的票（RUL-13）。 */
-  wolfVotes?: { seat: SeatId; target: SeatId | 'abstain' }[];
+  wolfVotes?: { seat: SeatId; target: SeatId | 'abstain'; confirmed?: boolean }[];
   /** 重投时的候选（并存席位）；空/未定义表示不在重投。 */
   wolfRunoff?: SeatId[];
   /** 已被放逐的席位（`VOTE_REVEALED` 唯一最高票时写入，`DAY_LYNCH` 的自动推进读它）。 */

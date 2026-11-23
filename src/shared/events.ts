@@ -108,7 +108,8 @@ export interface GameEventMap {
   REJECTED: { actionType: Action['type']; code: string; message: string };
   WOLF_KILL_CHOSEN: { target: SeatId };
   /** 狼队内部投票（RUL-13）：每人一票，票型只有狼看得到。 */
-  WOLF_VOTE_CAST: { seat: SeatId; target: SeatId | 'abstain' };
+  WOLF_VOTE_CAST: { seat: SeatId; target: SeatId | 'abstain'; confirmed: boolean };
+  WOLF_VOTE_CONFIRMED: { seat: SeatId };
   /** 唱票结果：`tied` 非空表示进入重投。 */
   WOLF_VOTE_REVEALED: {
     votes: { seat: SeatId; target: SeatId | 'abstain' }[];
@@ -157,6 +158,7 @@ export const GAME_EVENT_TYPES = [
   'REJECTED',
   'WOLF_KILL_CHOSEN',
   'WOLF_VOTE_CAST',
+  'WOLF_VOTE_CONFIRMED',
   'WOLF_VOTE_REVEALED',
   'SEER_CHECKED',
   'WITCH_POTION_USED',

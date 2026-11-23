@@ -513,3 +513,16 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 6 | `tests/engine/wolf-vote.test.ts` + `tests/server/wolf-chat-room.test.ts`：弃权票不计；全员弃权不产生刀口 | unit | existing | Must |
 | 7 | `tests/engine/wolf-vote.test.ts`：重投阶段弃权被拒 | unit | existing | Must |
 | 8 | `tests/server/wolf-chat-room.test.ts`：AI 在讨论阶段能推进/回应（脚本路径） | integration | existing | Must |
+
+## RFC-019: 狼队自由投票与确认
+
+| AC | 计划测试 | 层级 | Exists? | 优先级 |
+|---|---|---|---|---|
+| 1 | `tests/engine/wolf-vote.test.ts`：未确认可改，其他人可见 | unit | existing | Must |
+| 2 | 同上：确认后锁定，再改被拒 | unit | existing | Must |
+| 3 | 同上：只计确认票；全员确认立即结算 | unit | existing | Must |
+| 4 | 编排/引擎：10 秒到自动确认（由服务端超时逻辑覆盖） | integration | partial | Must |
+| 5 | `tests/engine/wolf-vote.test.ts`：重投不能弃权 | unit | existing | Must |
+| 6 | `tests/client/shoot.test.tsx`：选择→确认两步；票型区分确认状态 | unit(jsdom) | existing | Must |
+| 7 | `tests/server/orchestrator.test.ts`：玩家确认后不再被询问 | integration | existing | Must |
+| 8 | `tests/server/wolf-chat-room.test.ts`：AI 能看到最新狼发言并回应 | integration | existing | Must |

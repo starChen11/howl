@@ -67,7 +67,7 @@ export function nextActor(state: {
   day?: number;
   seats: { seat: number; alive: boolean; role: string }[];
   wolfChat?: { seat: number }[];
-  wolfVotes?: { seat: number }[];
+  wolfVotes?: { seat: number; confirmed?: boolean }[];
   votes?: { seat: number }[];
 }): number | undefined {
   const alive = state.seats.filter((seat) => seat.alive);
@@ -81,7 +81,9 @@ export function nextActor(state: {
     case 'NIGHT_WOLF_RUNOFF': {
       // 投票：还没投的狼依次表态。**先手每夜轮换**，否则 1 号狼永远第一个投，
       // 其他狼没有「跟票」的体验（用户反馈）。
-      const voted = new Set((state.wolfVotes ?? []).map((vote) => vote.seat));
+      const voted = new Set(
+        (state.wolfVotes ?? []).filter((vote) => vote.confirmed !== false).map((vote) => vote.seat),
+      );
       const wolves = alive.filter((seat) => seat.role === 'wolf');
       if (wolves.length === 0) return undefined;
       const start = Math.max(0, state.day ?? 0) % wolves.length;
@@ -238,12 +240,12 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
 
     // 玩家触发点：白天发言（AC-11）与白天投票（AC-11 的「发言 → 投票」）。
     // 夜间的目标选择仍是另一套输入，先用注入的 `decide` 代劳。
-    // RUL-13 的「实时票型」：AI 狼不要在同一瞬间把票全投完，否则待投票的狼
-    // 只能看到最终结果。每条票之间留一点间隔（生产默认 1.2 秒，测试 0）。
+    // 自由投票下，AI 的票之间留间隔，让玩家能看到票型逐条出现（RUL-15）。
     if (
       (state.phase === 'NIGHT_WOLVES' || state.phase === 'NIGHT_WOLF_RUNOFF') &&
       seat !== record.playerSeat &&
-      (deps.wolfVoteDelayMs ?? 0) > 0
+      (deps.wolfVoteDelayMs ?? 0) > 0 &&
+      (state.wolfVotes ?? []).some((vote) => vote.seat !== seat)
     ) {
       await new Promise((resolve) => setTimeout(resolve, deps.wolfVoteDelayMs));
     }
@@ -386,7 +388,26 @@ async function playerAction(
 
   if (phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF' || phase === 'NIGHT_SEER') {
     // 狼队投票 10 秒超时：普通轮按弃权；重投不能弃权，自动投第一个并列者。
-    if ((phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF') && input.kind === 'timeout') {
+    if (
+      (phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF') &&
+      (input.kind === 'timeout' || input.kind === 'skip')
+    ) {
+      // 只看「本夜」的票：上一夜的 WOLF_VOTE_CAST 还在 privateEvents 里。
+      let nightStart = 0;
+      ctx.privateEvents.forEach((event, index) => {
+        if (event.type === 'WOLF_VOTE_REVEALED' || event.type === 'WOLF_KILL_CHOSEN') {
+          nightStart = index + 1;
+        }
+      });
+      const own = ctx.privateEvents
+        .slice(nightStart)
+        .find(
+          (event) =>
+            event.type === 'WOLF_VOTE_CAST' && (event.payload as { seat: number }).seat === seat,
+        );
+      if (own !== undefined) {
+        return { action: { type: 'WOLF_VOTE_CONFIRM', ts: now(), seat: seat as never } };
+      }
       const fallback =
         phase === 'NIGHT_WOLF_RUNOFF'
           ? (ctx.legalTargets.find((target) => typeof target === 'number') ?? 'abstain')
@@ -397,6 +418,22 @@ async function playerAction(
           ts: now(),
           seat: seat as never,
           target: fallback as never,
+          confirmed: true,
+        },
+      };
+    }
+    if (
+      (phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF') &&
+      input.kind === 'speak' &&
+      Number.isInteger(Number(input.text.trim()))
+    ) {
+      return {
+        action: {
+          type: 'WOLF_VOTE',
+          ts: now(),
+          seat: seat as never,
+          target: Number(input.text.trim()) as never,
+          confirmed: true,
         },
       };
     }
@@ -537,8 +574,6 @@ async function driveWolfChat(deps: OrchestratorDeps, initial: GameRecord): Promi
   };
 
   const markReady = async (seat: number): Promise<void> => {
-    const state = registry.stateOf(record);
-    if ((state.wolfReady ?? []).includes(seat as never)) return;
     await submit(seat, { type: 'WOLF_READY', ts: (deps.now ?? Date.now)(), seat: seat as never });
   };
 
@@ -559,20 +594,64 @@ async function driveWolfChat(deps: OrchestratorDeps, initial: GameRecord): Promi
     for (const seat of aiWolves()) await markReady(seat);
   }
 
-  let repliedTo = 0;
+  // 真实模型：每当有狼发言就重新思考；同一结论不重复刷屏（每个 AI 最多 3 条）。
+  const lastSpeech: Record<number, string> = {};
+  for (const entry of registry.stateOf(record).wolfChat ?? []) {
+    lastSpeech[entry.seat] = entry.text;
+  }
+  const aiMessages: Record<number, number> = {};
+  let lastChatSeq = Math.max(0, ...(record.events ?? []).map((event) => event.seq));
+
+  const reconsider = async (seat: number, author: number): Promise<void> => {
+    if (author === seat) return;
+    if ((aiMessages[seat] ?? 0) >= 3 && author !== playerSeat) return;
+    const current = registry.stateOf(record);
+    const decision = await deps.decide({
+      seat,
+      ctx: project({
+        state: current,
+        events: record.events ?? [],
+        observer: seat as never,
+        pending: 'chat',
+      }),
+      phase: 'NIGHT_WOLF_CHAT',
+    });
+    if (decision.action?.type === 'WOLF_READY') {
+      await submit(seat, decision.action);
+      return;
+    }
+    if (decision.action?.type !== 'WOLF_CHAT') return;
+    const text = decision.action.text.trim();
+    if (text === '' || text === lastSpeech[seat]) return;
+    lastSpeech[seat] = text;
+    aiMessages[seat] = (aiMessages[seat] ?? 0) + 1;
+    await submit(seat, decision.action);
+  };
+
   try {
     for (;;) {
       record = (await registry.getGame(record.gameId)) ?? record;
       const state = registry.stateOf(record);
       if (state.phase !== 'NIGHT_WOLF_CHAT') break;
 
+      for (const event of record.events ?? []) {
+        if (event.seq <= lastChatSeq) continue;
+        if (event.type !== 'WOLF_CHAT_POSTED') continue;
+        lastChatSeq = event.seq;
+        const author = (event.payload as { seat: number }).seat;
+        for (const seat of aiWolves()) await reconsider(seat, author);
+        record = (await registry.getGame(record.gameId)) ?? record;
+        if (registry.stateOf(record).phase !== 'NIGHT_WOLF_CHAT') break;
+      }
+      if (registry.stateOf(record).phase !== 'NIGHT_WOLF_CHAT') break;
+      if (lastChatSeq === 0) {
+        lastChatSeq = Math.max(0, ...(record.events ?? []).map((event) => event.seq));
+      }
+
       const elapsed = (deps.now ?? Date.now)() - startedAt;
       if (!playerIsWolf) {
-        // 玩家不是狼：狼队讨论是 AI 之间的事，不能让玩家干等 50 秒。
-        // 脚本队友会自动准备；真实模型若还没准备，每 5 秒再问一次。
-        if (Math.floor(elapsed / 5_000) !== Math.floor((elapsed - 1) / 5_000)) {
-          for (const seat of aiWolves()) await chatFromAi(seat);
-        }
+        // 玩家不是狼：狼队讨论是 AI 之间的事，不让玩家干等；
+        // AI 之间的互相回应由上面的 chat 扫描处理。
         if (elapsed >= chatMs) {
           for (const seat of registry
             .stateOf(record)
@@ -605,14 +684,15 @@ async function driveWolfChat(deps: OrchestratorDeps, initial: GameRecord): Promi
 
       const input = await deps.input.read({
         seat: playerSeat as never,
-        timeoutMs: Math.max(1, chatMs - elapsed),
+        timeoutMs: 200,
         kind: 'action',
       });
 
       record = (await registry.getGame(record.gameId)) ?? record;
       if (registry.stateOf(record).phase !== 'NIGHT_WOLF_CHAT') break;
 
-      if (input.kind === 'timeout' || input.kind === 'skip') {
+      if (input.kind === 'timeout') continue;
+      if (input.kind === 'skip') {
         if (playerSeat !== undefined) await markReady(playerSeat);
         continue;
       }
@@ -633,16 +713,6 @@ async function driveWolfChat(deps: OrchestratorDeps, initial: GameRecord): Promi
           seat: playerSeat as never,
           text: input.text,
         });
-      }
-
-      const chats = (record.events ?? []).filter(
-        (event) =>
-          event.type === 'WOLF_CHAT_POSTED' &&
-          (event.payload as { seat: number }).seat === playerSeat,
-      ).length;
-      if (chats > repliedTo) {
-        repliedTo = chats;
-        for (const seat of aiWolves()) await chatFromAi(seat);
       }
     }
   } finally {

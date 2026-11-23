@@ -17,7 +17,7 @@ export async function passNight(page: Page): Promise<boolean> {
       continue;
     }
 
-    const target = page.getByRole('button', { name: /^(刀|验 \/ 查验|查验) \d+ 号$/ });
+    const target = page.getByRole('button', { name: /^(刀|验 \/ 查验|查验|选) \d+ 号$/ });
     if ((await target.count()) > 0) {
       await target
         .first()
@@ -27,12 +27,15 @@ export async function passNight(page: Page): Promise<boolean> {
     }
 
     // 狼队投票（RUL-13）：点第一个候选
-    const wolfVote = page.getByRole('button', { name: /^投 \d+ 号$/ });
+    // 狼队自由投票：选目标 → 确认
+    const wolfVote = page.getByRole('button', { name: /^选 \d+ 号$/ });
     if ((await wolfVote.count()) > 0) {
       await wolfVote
         .first()
         .click({ timeout: 2_000 })
         .catch(() => undefined);
+      const confirm = page.getByRole('button', { name: '确认' });
+      await confirm.click({ timeout: 2_000 }).catch(() => undefined);
       continue;
     }
 
@@ -70,12 +73,14 @@ export async function waitForMyTurn(page: Page, timeoutMs = 45_000): Promise<voi
         .catch(() => undefined);
       continue;
     }
-    const vote = page.getByRole('button', { name: /^投 \d+ 号$/ });
+    const vote = page.getByRole('button', { name: /^(投|选) \d+ 号$/ });
     if ((await vote.count()) > 0) {
       await vote
         .first()
         .click({ timeout: 2_000 })
         .catch(() => undefined);
+      const confirm = page.getByRole('button', { name: '确认' });
+      await confirm.click({ timeout: 2_000 }).catch(() => undefined);
       continue;
     }
 

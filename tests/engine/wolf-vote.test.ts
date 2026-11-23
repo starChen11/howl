@@ -23,7 +23,7 @@ describe('RUL-13 · 狼队投票', () => {
   it('2:1 → 票型只给狼看，胜出者成为刀口并推进相位', () => {
     const state = nightStart();
     const pack = wolves(state);
-    const [a, b, c] = pack as [number, number, number];
+    const [a, b, c] = pack as [never, never, never];
     const target1 = goodTarget(state);
     const target2 = state.seats.find(
       (seat) => seat.alive && seat.role !== 'wolf' && seat.seat !== target1,
@@ -49,7 +49,7 @@ describe('RUL-13 · 狼队投票', () => {
   it('三票各投不同 → 平票，进入重投且候选只有并列者', () => {
     const state = nightStart();
     const pack = wolves(state);
-    const [a, b, c] = pack as [number, number, number];
+    const [a, b, c] = pack as [never, never, never];
     const goods = state.seats
       .filter((seat) => seat.alive && seat.role !== 'wolf')
       .map((seat) => seat.seat)
@@ -135,7 +135,8 @@ describe('RUL-13 · 狼队投票', () => {
 
     const ok = vote(s, w[0] as number, goodTarget(s));
     const duplicate = vote(ok.state, w[0] as number, goodTarget(s));
-    expect((duplicate.events[0]?.payload as { code: string }).code).toBe('WOLF_VOTE_DUPLICATE');
+    // 旧调用不带 confirmed → 视为已确认；已确认后不能再改。
+    expect((duplicate.events[0]?.payload as { code: string }).code).toBe('WOLF_VOTE_LOCKED');
 
     const villager = s.seats.find((seat) => seat.alive && seat.role === 'villager')?.seat as number;
     const outsider = vote(s, villager, goodTarget(s));
@@ -199,5 +200,96 @@ describe('RUL-13 · 事件的可见性与跨夜清理', () => {
 
     expect(applied.wolfVotes).toBeUndefined();
     expect(applied.wolfRunoff).toBeUndefined();
+  });
+});
+
+describe('RUL-15 · 自由投票与确认', () => {
+  it('未确认的选择不结算，可以改；确认后才锁定', () => {
+    const state = nightStart();
+    const pack = wolves(state);
+    const [a, b] = pack as [never, never];
+    const target = goodTarget(state);
+    const other = state.seats.find(
+      (seat) => seat.alive && seat.role !== 'wolf' && seat.seat !== target,
+    )?.seat as number;
+
+    const first = run(state, {
+      type: 'WOLF_VOTE',
+      ts: 1,
+      seat: a,
+      target,
+      confirmed: false,
+    });
+    expect(first.state.phase).toBe('NIGHT_WOLVES');
+    expect(first.state.wolfVotes?.[0]?.confirmed).toBe(false);
+
+    const changed = run(first.state, {
+      type: 'WOLF_VOTE',
+      ts: 2,
+      seat: a,
+      target: other as never,
+      confirmed: false,
+    });
+    expect(changed.state.wolfVotes?.[0]?.target).toBe(other);
+
+    const confirmed = run(changed.state, {
+      type: 'WOLF_VOTE_CONFIRM',
+      ts: 3,
+      seat: a,
+    });
+    expect(confirmed.state.wolfVotes?.[0]?.confirmed).toBe(true);
+
+    const locked = run(confirmed.state, {
+      type: 'WOLF_VOTE',
+      ts: 4,
+      seat: a,
+      target,
+    });
+    expect((locked.events[0]?.payload as { code: string }).code).toBe('WOLF_VOTE_LOCKED');
+
+    // 另一只狼确认后才结算
+    const second = run(
+      run(confirmed.state, { type: 'WOLF_VOTE', ts: 5, seat: b, target, confirmed: false }).state,
+      { type: 'WOLF_VOTE_CONFIRM', ts: 6, seat: b },
+    );
+    expect(second.state.phase).toBe('NIGHT_WOLVES');
+    const third = run(second.state, { type: 'WOLF_VOTE', ts: 7, seat: pack[2] as never, target });
+    expect(third.events.some((event) => event.type === 'WOLF_KILL_CHOSEN')).toBe(true);
+  });
+
+  it('只统计确认票：未确认的票不算', () => {
+    const state = nightStart();
+    const pack = wolves(state);
+    const [a, b, c] = pack as [never, never, never];
+    const target = goodTarget(state);
+    const other = state.seats.find(
+      (seat) => seat.alive && seat.role !== 'wolf' && seat.seat !== target,
+    )?.seat as number;
+
+    let current = run(state, {
+      type: 'WOLF_VOTE',
+      ts: 1,
+      seat: a,
+      target: target as never,
+      confirmed: false,
+    }).state;
+    current = run(current, { type: 'WOLF_VOTE_CONFIRM', ts: 2, seat: a }).state;
+    current = run(current, {
+      type: 'WOLF_VOTE',
+      ts: 3,
+      seat: b,
+      target: other as never,
+    }).state;
+    const last = run(current, {
+      type: 'WOLF_VOTE',
+      ts: 4,
+      seat: c,
+      target: other as never,
+    });
+    // a 投 1 票、b/c 都投 other → other 胜出；未确认阶段不参与统计
+    expect(last.events.find((event) => event.type === 'WOLF_KILL_CHOSEN')?.payload).toEqual({
+      target: other,
+    });
+    expect(last.state.phase).not.toBe('NIGHT_WOLVES');
   });
 });

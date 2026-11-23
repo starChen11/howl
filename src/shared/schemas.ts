@@ -72,6 +72,12 @@ export const ActionSchema = z.discriminatedUnion('type', [
     ts: timestampSchema,
     seat: seatIdSchema,
     target: z.union([seatIdSchema, z.literal('abstain')]),
+    confirmed: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('WOLF_VOTE_CONFIRM'),
+    ts: timestampSchema,
+    seat: seatIdSchema,
   }),
   z.object({
     type: z.literal('SEER_CHECK'),
@@ -258,12 +264,21 @@ export const WolfReadyMarkedPayloadSchema = z.object({
 
 export const WolfVoteCastPayloadSchema = z.object({
   seat: z.number().int().min(1).max(9),
-  target: z.number().int().min(1).max(9),
+  target: z.union([z.number().int().min(1).max(9), z.literal('abstain')]),
+  confirmed: z.boolean(),
+});
+
+export const WolfVoteConfirmedPayloadSchema = z.object({
+  seat: z.number().int().min(1).max(9),
 });
 
 export const WolfVoteRevealedPayloadSchema = z.object({
   votes: z.array(
-    z.object({ seat: z.number().int().min(1).max(9), target: z.number().int().min(1).max(9) }),
+    z.object({
+      seat: z.number().int().min(1).max(9),
+      target: z.union([z.number().int().min(1).max(9), z.literal('abstain')]),
+      confirmed: z.boolean().optional(),
+    }),
   ),
   tied: z.array(z.number().int().min(1).max(9)).optional(),
 });
@@ -289,6 +304,7 @@ export const PAYLOAD_SCHEMAS = {
   AI_THOUGHT: AiThoughtPayloadSchema,
   DEGRADED: DegradedPayloadSchema,
   WOLF_READY_MARKED: WolfReadyMarkedPayloadSchema,
+  WOLF_VOTE_CONFIRMED: WolfVoteConfirmedPayloadSchema,
   WOLF_VOTE_CAST: WolfVoteCastPayloadSchema,
   WOLF_VOTE_REVEALED: WolfVoteRevealedPayloadSchema,
 } as const;

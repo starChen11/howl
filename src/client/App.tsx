@@ -200,6 +200,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
     target?: number;
     text?: string;
     potion?: string;
+    confirmed?: boolean;
   }) => {
     const result = await api.submit(gameId, {
       action: { ...action, ts: Date.now(), seat: ctx.self.seat } as never,
@@ -371,6 +372,11 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
                 .map((target) => Number(target))
             }
             wolfVotes={currentWolfVotes(ctx.privateEvents)}
+            selfSeat={ctx.self.seat}
+            selfConfirmed={currentWolfVotes(ctx.privateEvents).some(
+              (vote) => vote.seat === ctx.self.seat && vote.confirmed,
+            )}
+            onConfirmVote={() => void nightAction({ type: 'WOLF_VOTE_CONFIRM' })}
             wolfChats={currentNightWolfEvents(ctx.privateEvents)
               .filter((event) => event.type === 'WOLF_CHAT_POSTED')
               .map((event) => ({
@@ -383,7 +389,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
             onTarget={(target) =>
               void nightAction(
                 ctx.pending === 'wolf-vote' || ctx.pending === 'wolf-runoff'
-                  ? { type: 'WOLF_VOTE', target }
+                  ? { type: 'WOLF_VOTE', target, confirmed: false }
                   : {
                       type: ctx.pending === 'kill' ? 'WOLF_KILL' : 'SEER_CHECK',
                       target,
@@ -463,11 +469,18 @@ function currentNightWolfEvents(events: { type: string; payload: unknown }[]) {
 
 function currentWolfVotes(
   events: { type: string; payload: unknown }[],
-): { seat: number; target: number }[] {
-  return currentNightWolfEvents(events)
-    .filter((event) => event.type === 'WOLF_VOTE_CAST')
-    .map((event) => {
-      const payload = event.payload as { seat: number; target: number };
-      return { seat: payload.seat, target: payload.target };
-    });
+): { seat: number; target: number; confirmed: boolean }[] {
+  const votes = new Map<number, { seat: number; target: number; confirmed: boolean }>();
+  for (const event of currentNightWolfEvents(events)) {
+    if (event.type === 'WOLF_VOTE_CAST') {
+      const payload = event.payload as { seat: number; target: number; confirmed: boolean };
+      votes.set(payload.seat, payload);
+    }
+    if (event.type === 'WOLF_VOTE_CONFIRMED') {
+      const payload = event.payload as { seat: number };
+      const existing = votes.get(payload.seat);
+      if (existing !== undefined) votes.set(payload.seat, { ...existing, confirmed: true });
+    }
+  }
+  return [...votes.values()];
 }

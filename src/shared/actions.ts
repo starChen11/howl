@@ -19,6 +19,7 @@ export const ACTION_TYPES = [
   'WOLF_READY',
   'WOLF_KILL',
   'WOLF_VOTE',
+  'WOLF_VOTE_CONFIRM',
   'SEER_CHECK',
   'WITCH_ACT',
   'HUNTER_SHOOT',
@@ -45,7 +46,8 @@ export type Action =
   | { type: 'WOLF_CHAT'; ts: number; seat: SeatId; text: string }
   | { type: 'WOLF_READY'; ts: number; seat: SeatId }
   | { type: 'WOLF_KILL'; ts: number; seat: SeatId; target: SeatId }
-  | { type: 'WOLF_VOTE'; ts: number; seat: SeatId; target: SeatId | 'abstain' }
+  | { type: 'WOLF_VOTE'; ts: number; seat: SeatId; target: SeatId | 'abstain'; confirmed?: boolean }
+  | { type: 'WOLF_VOTE_CONFIRM'; ts: number; seat: SeatId }
   | { type: 'SEER_CHECK'; ts: number; seat: SeatId; target: SeatId }
   | { type: 'WITCH_ACT'; ts: number; seat: SeatId; potion: TargetedWitchPotion; target: SeatId }
   | { type: 'WITCH_ACT'; ts: number; seat: SeatId; potion: 'none' }

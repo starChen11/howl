@@ -386,7 +386,7 @@ describe('真相视图包含每一夜的狼队票型（RUL-13）', () => {
     for (const round of truth.wolfVotes) {
       for (const vote of round.votes) {
         expect(vote.seat).toBeGreaterThanOrEqual(1);
-        expect(vote.target).toBeGreaterThanOrEqual(1);
+        if (vote.target !== 'abstain') expect(vote.target).toBeGreaterThanOrEqual(1);
       }
     }
   });
