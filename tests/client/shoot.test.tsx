@@ -606,3 +606,31 @@ describe('RUL-14 · 聊天室只显示本夜数据', () => {
     expect(document.body.textContent).toContain('已准备 0/');
   });
 });
+
+describe('白天投票不显示已出局席位', () => {
+  it('即使 legalTargets 里混进了死者，客户端也会按 aliveSeats 过滤', async () => {
+    const view = {
+      ...hunterView(),
+      self: { seat: 1, role: 'villager', alive: true, personaId: null },
+      phase: 'DAY_VOTE',
+      aliveSeats: [1, 3, 4],
+      deadSeats: [2],
+      pending: 'vote',
+      legalTargets: [2, 3, 4, 'abstain'],
+    };
+    const client = {
+      game: async () => ({ version: 3, view }),
+      openStream: () => () => undefined,
+      draft: async () => undefined,
+      submit: async () => ({ ok: true as const }),
+      truth: async () => null,
+      replay: async () => null,
+    } as unknown as ApiClient;
+
+    render(<App gameId="g" client={client} />);
+
+    await screen.findByRole('button', { name: '投 3 号' });
+    expect(screen.queryByRole('button', { name: '投 2 号' })).toBeNull();
+    expect(screen.getByRole('button', { name: '弃权' })).toBeTruthy();
+  });
+});

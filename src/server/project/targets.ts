@@ -23,10 +23,19 @@ export function legalTargetsOf(
     case null:
       return [];
 
-    case 'vote':
-      // 首轮：所有存活席位都可以被投，外加弃权（RUL-7）。
-      // 重投阶段（`DAY_VOTE_RUNOFF`）只能投并列者，且**不能弃权**（RUL-2）。
-      return state.phase === 'DAY_VOTE_RUNOFF' ? [...(state.runoff ?? [])] : [...alive, 'abstain'];
+    case 'vote': {
+      // 白天投票时死亡已经公布，直接用**引擎真值**再挡一层：即使投影的
+      // 「已知存活」晚了一步，也绝不会把已出局的人列进投票按钮。
+      const engineAlive = state.seats
+        .filter((seat) => seat.alive && seat.seat !== observer)
+        .map((seat) => seat.seat);
+      if (state.phase === 'DAY_VOTE_RUNOFF') {
+        return (state.runoff ?? []).filter((seat) =>
+          state.seats.some((entry) => entry.seat === seat && entry.alive),
+        );
+      }
+      return [...engineAlive, 'abstain'];
+    }
 
     case 'kill':
       // 狼不能刀自己人——但投影层面不替引擎做决定，只给存活者；引擎会拒绝刀狼。

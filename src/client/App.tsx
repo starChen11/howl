@@ -409,7 +409,13 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         {ctx.self.alive && (ctx.phase === 'DAY_VOTE' || ctx.phase === 'DAY_VOTE_RUNOFF') ? (
           <VoteInput
             targets={ctx.legalTargets
-              .filter((target) => typeof target === 'number' && target !== ctx.self.seat)
+              .filter(
+                (target) =>
+                  typeof target === 'number' &&
+                  target !== ctx.self.seat &&
+                  // 第二道防线：即使服务端清单晚了一拍，客户端也不显示已知出局的人。
+                  ctx.aliveSeats.includes(target),
+              )
               .map((target) => Number(target))}
             allowAbstain={ctx.phase === 'DAY_VOTE'}
             onVote={vote}

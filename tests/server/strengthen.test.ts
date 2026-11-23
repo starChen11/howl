@@ -379,6 +379,26 @@ describe('C-133 · 夜间默认 pending 只给当前行动者', () => {
   });
 });
 
+describe('死亡席位不能出现在白天投票里', () => {
+  it('投影的 aliveSeats 滞后时，legalTargets 仍用引擎真值过滤掉死者', async () => {
+    const { legalTargetsOf } = await import('@server/project/targets');
+
+    const state = {
+      phase: 'DAY_VOTE',
+      seats: [
+        { seat: 1, alive: true, role: 'villager' },
+        { seat: 2, alive: false, role: 'villager' },
+        { seat: 3, alive: true, role: 'villager' },
+      ],
+      runoff: undefined,
+    } as never;
+
+    // 故意传入「2 号还活着」的旧清单，模拟投影晚一拍
+    const targets = legalTargetsOf(state, 'vote', [1, 2, 3] as never, 1 as never);
+    expect(targets).toEqual([3, 'abstain']);
+  });
+});
+
 describe('C-127 · 重投的合法目标只有并列者', () => {
   it('RUNOFF 的 legalTargets 不含非并列者，也不含弃权', async () => {
     const { legalTargetsOf } = await import('@server/project/targets');
