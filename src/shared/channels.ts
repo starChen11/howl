@@ -37,6 +37,8 @@ export interface SpeechChunk {
 }
 
 export interface OutputChannel {
+  /** 开始思考（模型调用还没返回）。 */
+  thinking?(seat: SeatId, id: number): void;
   /** 以增量方式输出一段 AI 发言。 */
   emit(chunk: SpeechChunk): void;
   flush(): Promise<void>;

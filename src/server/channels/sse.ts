@@ -17,6 +17,10 @@ export class SseOutputChannel implements OutputChannel {
     this.gameId = gameId;
   }
 
+  thinking(seat: number, id: number): void {
+    this.bus.publish(this.gameId, { type: 'thinking', id, seat: seat as never });
+  }
+
   emit(chunk: SpeechChunk): void {
     if (chunk.final) {
       this.bus.publish(this.gameId, {

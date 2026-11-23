@@ -3,6 +3,8 @@ import type { InputChannel, OutputChannel } from '@shared/channels';
 import type { EventEnvelope } from '@shared/events';
 import type { PendingDecision, ProjectedContext } from '@shared/project';
 
+import { degradeSentence } from './llm/degrade';
+import { chunkText } from './llm/speak';
 import { project } from './project';
 import type { GameRecord, GameRegistry, SessionRecord } from './store/game-registry';
 
@@ -23,6 +25,7 @@ export interface AgentDecision {
   speech?: string;
   /** 这一轮的推理；落成 `AI_THOUGHT` 事件供复盘展示（RFC-014）。 */
   thought?: { reason: string; claim?: unknown } | undefined;
+  degraded?: boolean;
 }
 
 export interface OrchestratorDeps {
@@ -33,7 +36,13 @@ export interface OrchestratorDeps {
   input: InputChannel;
   output: OutputChannel;
   /** AI 的决策来源；测试注入脚本。`phase` 是引擎真实相位（投影把夜间折叠了）。 */
-  decide: (input: { seat: number; ctx: ProjectedContext; phase: string }) => Promise<AgentDecision>;
+  decide: (input: {
+    seat: number;
+    ctx: ProjectedContext;
+    phase: string;
+    feedback?: string;
+    instruction?: string;
+  }) => Promise<AgentDecision>;
   /** 提前结束（测试用）。 */
   maxSteps?: number;
   /** 狼队讨论时长（毫秒，RUL-14）。默认 50 秒。 */
@@ -273,10 +282,33 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     }
 
     const playerPhase = isPlayerPhase(state.phase);
-    const action =
-      seat === record.playerSeat && playerPhase
-        ? await playerAction(seat, state.phase, deps, ctxFor(seat), record.gameId)
-        : await decide({ seat, ctx: ctxFor(seat), phase: state.phase });
+    const isAi = seat !== record.playerSeat;
+    if (isAi && state.phase === 'DAY_SPEECH') {
+      deps.output.thinking?.(seat as never, (record.events?.length ?? 0) + 1);
+    }
+    let degraded = false;
+    let action: AgentDecision;
+    if (!isAi && playerPhase) {
+      action = await playerAction(seat, state.phase, deps, ctxFor(seat), record.gameId);
+    } else {
+      try {
+        action = await decide({ seat, ctx: ctxFor(seat), phase: state.phase });
+      } catch {
+        if (state.phase === 'DAY_SPEECH') {
+          degraded = true;
+          action = {
+            action: {
+              type: 'SPEECH',
+              ts: Date.now(),
+              seat: seat as never,
+              text: degradeSentence(Date.now() % 4),
+            },
+          };
+        } else {
+          action = { action: undefined };
+        }
+      }
+    }
     if (action.action === undefined) {
       // 玩家已被路由抢先确认/投票：重读后继续，不要停在旧回合上。
       if (state.phase === 'NIGHT_WOLVES' || state.phase === 'NIGHT_WOLF_RUNOFF') {
@@ -298,6 +330,13 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
         continue;
       }
       break;
+    }
+
+    if (isAi && state.phase === 'DAY_SPEECH' && action.action?.type === 'SPEECH') {
+      const id = (record.events?.length ?? 0) + 1;
+      for (const piece of chunkText(action.action.text)) {
+        deps.output.emit({ seat: seat as never, id, text: piece, final: false });
+      }
     }
 
     // **提交前再读一次**：等玩家输入的那段时间里，路由可能已经写入了别的动作
@@ -333,10 +372,54 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     const rejected = result.events.find((event) => event.type === 'REJECTED');
     if (rejected !== undefined) {
       const payload = rejected.payload as { code?: string; message?: string };
-      throw new Error(`动作被拒绝：${payload.code ?? 'REJECTED'}（${payload.message ?? ''}）`);
+      const detail = `${payload.code ?? 'REJECTED'}：${payload.message ?? ''}`;
+      // AI 的动作被引擎拒绝：把原因回喂一次，让它换一个合法动作，而不是整局停住。
+      if (seat !== record.playerSeat) {
+        const retryState = registry.stateOf(result.record);
+        const retryCtx = project({
+          state: retryState,
+          events: result.record.events ?? [],
+          observer: seat as never,
+          pending: pendingForPhase(state.phase),
+        });
+        const retry = await decide({
+          seat,
+          ctx: retryCtx,
+          phase: state.phase,
+          feedback: detail,
+        });
+        if (retry.action !== undefined) {
+          const retryResult = await registry.submit(
+            session,
+            result.record,
+            retry.action,
+            retryState.seq,
+          );
+          const retryRejected =
+            retryResult.ok && retryResult.events.some((event) => event.type === 'REJECTED');
+          if (retryResult.ok && !retryRejected) {
+            record = retryResult.record;
+            steps += 1;
+            continue;
+          }
+        }
+      }
+      throw new Error(`动作被拒绝：${detail}`);
     }
 
     record = result.record;
+    if (degraded || action.degraded === true) {
+      record = await registry.appendEvents(record, [
+        {
+          gameId: record.gameId,
+          seq: record.events.length + 1,
+          ts: Date.now(),
+          type: 'DEGRADED',
+          visibleTo: 'public',
+          payload: { seat },
+        },
+      ]);
+    }
 
     // 推理落盘（RFC-014 AC-3）：只写结构化 `reason`，供复盘逐条比对。
     if (action.thought !== undefined) {
@@ -582,6 +665,7 @@ async function driveWolfChat(deps: OrchestratorDeps, initial: GameRecord): Promi
   const chatMs = deps.wolfChatMs ?? 50_000;
   const readyMs = deps.wolfReadyMs ?? 0;
   const aiReady = deps.wolfAiReady ?? 'auto';
+  let readyNudged = false;
   const startedAt = (deps.now ?? Date.now)();
   let record = initial;
 
@@ -712,6 +796,31 @@ async function driveWolfChat(deps: OrchestratorDeps, initial: GameRecord): Promi
         }
         await new Promise((resolve) => setTimeout(resolve, 100));
         continue;
+      }
+
+      // 真实模型的明确准备点：讨论过半时问一次「还有新意见吗？没有就 ready」。
+      if (aiReady === 'model' && !readyNudged && elapsed >= Math.min(8_000, chatMs / 2)) {
+        readyNudged = true;
+        for (const seat of aiWolves()) {
+          const current = registry.stateOf(record);
+          if ((current.wolfReady ?? []).includes(seat as never)) continue;
+          const decision = await deps.decide({
+            seat,
+            ctx: project({
+              state: current,
+              events: record.events ?? [],
+              observer: seat as never,
+              pending: 'chat',
+            }),
+            phase: 'NIGHT_WOLF_CHAT',
+            instruction:
+              '讨论时间已过半。现在明确表态：如果还有新的意见，输出 action=chat 并在 speech 里说明；否则输出 action=ready 表示准备完成。',
+          });
+          if (decision.action?.type === 'WOLF_CHAT') await submit(seat, decision.action);
+          await markReady(seat);
+        }
+        record = (await registry.getGame(record.gameId)) ?? record;
+        if (registry.stateOf(record).phase !== 'NIGHT_WOLF_CHAT') break;
       }
 
       if (elapsed >= chatMs) {

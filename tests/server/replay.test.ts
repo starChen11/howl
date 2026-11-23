@@ -431,7 +431,7 @@ describe('C-157 · 生产接线真的把 metaLog 传给了 decide', () => {
         } as never);
 
         return {
-          decision: { action: 'SPEECH_SKIP', reason: '测试' },
+          decision: { action: 'skip', reason: '测试' },
           meta: {
             gameId: 'wired',
             seat: 1,

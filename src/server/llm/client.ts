@@ -54,6 +54,12 @@ export interface DecideInput {
   personaId?: string | null;
   /** 对局模式决定胜利条件的措辞，不能写死。 */
   mode: 'slaughter-side' | 'slaughter-all';
+  /** 上一次动作被拒绝的原因，回喂给模型重试。 */
+  feedback?: string;
+  /** 额外指令（例如「现在明确回答是否准备」）。 */
+  instruction?: string;
+  /** 外部取消信号：新的调用会取消同一席位尚未完成的旧调用。 */
+  signal?: AbortSignal;
 }
 
 export interface DecideResult {
@@ -101,6 +107,15 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
     },
     { role: 'user', content: buildUserMessage(input.ctx) },
   ];
+  if (input.instruction !== undefined) {
+    messages.push({ role: 'user', content: input.instruction });
+  }
+  if (input.feedback !== undefined) {
+    messages.push({
+      role: 'user',
+      content: `你上一次的 action 被拒绝：${input.feedback}。请换一个合法动作，仍然只返回 JSON。`,
+    });
+  }
 
   let lastError: LlmError | undefined;
 
@@ -127,7 +142,12 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
           // 但不改变超时阈值——超时是网络问题，与性格无关。
           max_tokens: maxTokensFor(config, input.personaId ?? null),
         },
-        { signal: AbortSignal.timeout(config.timeoutMs) },
+        {
+          signal:
+            input.signal === undefined
+              ? AbortSignal.timeout(config.timeoutMs)
+              : AbortSignal.any([AbortSignal.timeout(config.timeoutMs), input.signal]),
+        },
       );
 
       const content = response.choices[0]?.message.content ?? '';

@@ -17,6 +17,8 @@ export interface AgentDecision {
   speech?: string;
   /** 这一轮的推理（只来自结构化 `reason`，AI-5）。 */
   thought?: { reason: string; claim?: unknown } | undefined;
+  /** 模型失败后用了脚本兜底，复盘要标成降级。 */
+  degraded?: boolean;
 }
 
 export type Decider = (input: {
@@ -24,6 +26,10 @@ export type Decider = (input: {
   ctx: ProjectedContext;
   /** 引擎的真实相位——投影把夜间折成 `'NIGHT'`，AI 不能靠它选动作。 */
   phase: string;
+  /** 上一次动作被拒绝的原因。 */
+  feedback?: string;
+  /** 额外指令（例如明确要求回答 ready）。 */
+  instruction?: string;
 }) => Promise<AgentDecision>;
 
 export type AgentKind = 'llm' | 'scripted';
@@ -163,39 +169,70 @@ export function createLlmAgent(input: {
   /** 测试缝：生产不传，走真实 `decide`。 */
   decideFn?: typeof decide;
 }): Decider {
-  return async ({ seat, ctx, phase }) => {
+  // 同一席位同时只保留一条在途调用：新触发到来时取消旧的，避免多路结果互相覆盖。
+  const controllers: Record<number, AbortController> = {};
+
+  return async ({ seat, ctx, phase, feedback, instruction }) => {
+    controllers[seat]?.abort();
+    const controller = new AbortController();
+    controllers[seat] = controller;
+
     const { loadLlmConfig } = await import('../llm/config');
     const config = loadLlmConfig(process.env);
     const personaId = ctx.self.personaId ?? null;
-
     const runDecide = input.decideFn ?? decide;
-    const outcome = await runDecide(
-      { config, metaLog: usageMetaLog as never },
-      { gameId: input.gameId, seq: input.seq(), ctx, mode: input.mode, personaId },
-    );
 
-    if ('duplicate' in outcome) return { action: undefined };
+    let lastFeedback = feedback;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const outcome = await runDecide(
+          { config, metaLog: usageMetaLog as never },
+          {
+            gameId: input.gameId,
+            seq: input.seq(),
+            ctx,
+            mode: input.mode,
+            personaId,
+            ...(lastFeedback === undefined ? {} : { feedback: lastFeedback }),
+            ...(instruction === undefined ? {} : { instruction }),
+            signal: controller.signal,
+          },
+        );
 
-    const translated = toAction(
-      outcome.decision,
-      {
-        seat: seat as never,
-        phase: phase as never,
-        day: ctx.day,
-        legalTargets: ctx.legalTargets,
-      },
-      Date.now(),
-    );
+        if ('duplicate' in outcome) return { action: undefined };
 
-    const thought: { reason: string; claim?: unknown } = {
-      reason: outcome.decision.reason,
-    };
-    if (outcome.decision.claim !== undefined) thought.claim = outcome.decision.claim;
+        const translated = toAction(
+          outcome.decision,
+          {
+            seat: seat as never,
+            phase: phase as never,
+            day: ctx.day,
+            legalTargets: ctx.legalTargets,
+          },
+          Date.now(),
+        );
 
-    if ('reject' in translated) {
-      return { action: undefined, speech: outcome.decision.reason, thought };
+        const thought: { reason: string; claim?: unknown } = {
+          reason: outcome.decision.reason,
+        };
+        if (outcome.decision.claim !== undefined) thought.claim = outcome.decision.claim;
+
+        if (!('reject' in translated)) return { action: translated.action, thought };
+        lastFeedback = translated.reject;
+      } catch (error) {
+        if (controller.signal.aborted) return { action: undefined };
+        // 真实调用彻底失败：退回脚本动作，保证对局不冻结（发言降级由编排层处理）。
+        try {
+          return { ...(await scriptedAgent({ seat, ctx, phase })), degraded: true };
+        } catch {
+          void error;
+          return { action: undefined };
+        }
+      }
     }
-    return { action: translated.action, thought };
+
+    // 两次都被拒：退回脚本动作，至少让对局能继续。
+    return { ...(await scriptedAgent({ seat, ctx, phase })), degraded: true };
   };
 }
 
