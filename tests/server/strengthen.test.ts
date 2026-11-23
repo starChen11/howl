@@ -482,3 +482,23 @@ describe('RFC-018 · 空狼队消息不能当准备', () => {
     expect(after?.events.length).toBe(created.json<{ version: number }>().version);
   });
 });
+
+describe('狼队投票的先手每夜轮换', () => {
+  it('同一组狼，day 变化时第一个被问的席位也跟着轮换', async () => {
+    const { nextActor } = await import('@server/orchestrator');
+    const base = {
+      phase: 'NIGHT_WOLVES',
+      seats: [
+        { seat: 1, alive: true, role: 'wolf' },
+        { seat: 2, alive: true, role: 'villager' },
+        { seat: 7, alive: true, role: 'wolf' },
+        { seat: 8, alive: true, role: 'wolf' },
+      ],
+      wolfVotes: [],
+    } as never;
+
+    const firsts = [1, 2, 3].map((day) => nextActor({ ...(base as object), day } as never));
+    expect(new Set(firsts).size).toBe(3);
+    expect(firsts).not.toEqual([1, 1, 1]);
+  });
+});

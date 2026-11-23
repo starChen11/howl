@@ -64,6 +64,7 @@ export interface OrchestratorResult {
  */
 export function nextActor(state: {
   phase: string;
+  day?: number;
   seats: { seat: number; alive: boolean; role: string }[];
   wolfChat?: { seat: number }[];
   wolfVotes?: { seat: number }[];
@@ -78,9 +79,14 @@ export function nextActor(state: {
     }
     case 'NIGHT_WOLVES':
     case 'NIGHT_WOLF_RUNOFF': {
-      // 投票：还没投的狼依次表态
+      // 投票：还没投的狼依次表态。**先手每夜轮换**，否则 1 号狼永远第一个投，
+      // 其他狼没有「跟票」的体验（用户反馈）。
       const voted = new Set((state.wolfVotes ?? []).map((vote) => vote.seat));
-      return alive.find((seat) => seat.role === 'wolf' && !voted.has(seat.seat))?.seat;
+      const wolves = alive.filter((seat) => seat.role === 'wolf');
+      if (wolves.length === 0) return undefined;
+      const start = Math.max(0, state.day ?? 0) % wolves.length;
+      const ordered = [...wolves.slice(start), ...wolves.slice(0, start)];
+      return ordered.find((seat) => !voted.has(seat.seat))?.seat;
     }
     case 'NIGHT_SEER':
       return alive.find((seat) => seat.role === 'seer')?.seat;
