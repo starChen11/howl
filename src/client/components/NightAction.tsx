@@ -36,7 +36,7 @@ export function NightAction({
   /** 狼队频道：自己和队友说过的话（只有狼看得到）。 */
   wolfChats: { seat: number; text: string }[];
   /** 狼队当前票型（只有狼看得到）。 */
-  wolfVotes: { seat: number; target: number; confirmed: boolean }[];
+  wolfVotes: { seat: number; target: number | 'abstain'; confirmed: boolean }[];
   /** 狼队投票进行中、但还轮不到自己（或自己已投）：面板保留但只读。 */
   waiting?: boolean;
   /** 自己这一票是否已经投出（用于区分错误文案）。 */
@@ -184,19 +184,31 @@ export function NightAction({
             {wolfVotes.map((vote, index) => (
               <li key={`${vote.seat}-${index}`}>
                 {vote.seat} 号
-                {vote.confirmed ? `已确认投 ${vote.target} 号` : `想投 ${vote.target} 号（未确认）`}
+                {vote.confirmed
+                  ? vote.target === 'abstain'
+                    ? '已确认弃权'
+                    : `已确认投 ${vote.target} 号`
+                  : vote.target === 'abstain'
+                    ? '想弃权（未确认）'
+                    : `想投 ${vote.target} 号（未确认）`}
               </li>
             ))}
           </ul>
         )}
         {selfConfirmed ? (
-          <p className="night__hint">你已确认投 {ownVote?.target ?? '?'} 号，不能再改。</p>
+          <p className="night__hint">
+            你已确认
+            {ownVote?.target === 'abstain' ? '弃权' : `投 ${ownVote?.target ?? '?'} 号`}
+            ，不能再改。
+          </p>
         ) : (
           <>
             <p className="night__hint">
               {ownVote === undefined
                 ? '先选一个目标；确认前可以改。'
-                : `当前选择：${ownVote.target} 号（未确认）`}
+                : ownVote.target === 'abstain'
+                  ? '当前选择：弃权（未确认）'
+                  : `当前选择：${ownVote.target} 号（未确认）`}
             </p>
             <div className="night__buttons">
               {targets.map((seat) => (

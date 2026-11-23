@@ -299,7 +299,11 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
               {truthData.wolfVotes.map((round, index) => (
                 <li key={`wolf-${round.day}-${index}`}>
                   第 {round.day} 夜：
-                  {round.votes.map((vote) => `${vote.seat}→${vote.target}`).join('、')}
+                  {round.votes
+                    .map(
+                      (vote) => `${vote.seat}→${vote.target === 'abstain' ? '弃权' : vote.target}`,
+                    )
+                    .join('、')}
                   {round.tied === undefined ? '' : `（平票：${round.tied.join('、')}）`}
                 </li>
               ))}
@@ -469,11 +473,15 @@ function currentNightWolfEvents(events: { type: string; payload: unknown }[]) {
 
 function currentWolfVotes(
   events: { type: string; payload: unknown }[],
-): { seat: number; target: number; confirmed: boolean }[] {
-  const votes = new Map<number, { seat: number; target: number; confirmed: boolean }>();
+): { seat: number; target: number | 'abstain'; confirmed: boolean }[] {
+  const votes = new Map<number, { seat: number; target: number | 'abstain'; confirmed: boolean }>();
   for (const event of currentNightWolfEvents(events)) {
     if (event.type === 'WOLF_VOTE_CAST') {
-      const payload = event.payload as { seat: number; target: number; confirmed: boolean };
+      const payload = event.payload as {
+        seat: number;
+        target: number | 'abstain';
+        confirmed: boolean;
+      };
       votes.set(payload.seat, payload);
     }
     if (event.type === 'WOLF_VOTE_CONFIRMED') {

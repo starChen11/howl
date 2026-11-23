@@ -680,3 +680,27 @@ describe('RUL-15 · 选择后确认', () => {
     expect(screen.queryByRole('button', { name: '确认' })).toBeNull();
   });
 });
+
+describe('RUL-15 · 弃权票显示', () => {
+  it('票型里的 abstain 显示为「弃权」', async () => {
+    render(
+      <NightAction
+        pending="wolf-vote"
+        targets={[2, 3]}
+        potions={{ heal: 'available', poison: 'available' }}
+        killTarget={null}
+        wolfChats={[]}
+        wolfVotes={[{ seat: 1, target: 'abstain', confirmed: true }]}
+        selfSeat={1}
+        selfConfirmed
+        wolfCount={3}
+        onChat={() => undefined}
+        onTarget={() => undefined}
+        onWitch={() => undefined}
+        onConfirmVote={() => undefined}
+      />,
+    );
+    expect(document.body.textContent).toContain('已确认弃权');
+    expect(document.body.textContent).not.toContain('abstain');
+  });
+});

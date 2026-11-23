@@ -80,18 +80,25 @@ export function buildTimeline(state: GameState, events: readonly EventEnvelope[]
         });
         break;
       }
-      case 'WOLF_VOTE_CAST':
+      case 'WOLF_VOTE_CAST': {
         if (day === 0) day = 1;
+        const target = payload['target'];
         entries.push({
           seq: event.seq,
           day,
           phase,
-          text: `${String(payload['seat'])} 号投 ${String(payload['target'])} 号（狼队）`,
+          text:
+            target === 'abstain'
+              ? `${String(payload['seat'])} 号弃权（狼队）`
+              : `${String(payload['seat'])} 号投 ${String(target)} 号（狼队）`,
         });
         break;
+      }
       case 'WOLF_VOTE_REVEALED': {
-        const votes = payload['votes'] as { seat: number; target: number }[];
-        const tally = votes.map((vote) => `${vote.seat}→${vote.target}`).join('、');
+        const votes = payload['votes'] as { seat: number; target: number | 'abstain' }[];
+        const tally = votes
+          .map((vote) => `${vote.seat}→${vote.target === 'abstain' ? '弃权' : vote.target}`)
+          .join('、');
         const tied = payload['tied'] as number[] | undefined;
         entries.push({
           seq: event.seq,

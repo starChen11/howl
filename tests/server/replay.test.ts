@@ -536,3 +536,38 @@ describe('复盘时间线包含狼队投票（RUL-13）', () => {
     void registry;
   });
 });
+
+describe('RUL-15 · 弃权票的复盘用中文显示', () => {
+  it('WOLF_VOTE_CAST target=abstain 显示「弃权」而不是 abstain', async () => {
+    const { buildReplaySnapshot } = await import('@server/replay/snapshot');
+    const { nightStart } = await import('../fixtures/night');
+    const state = nightStart();
+    const events = [
+      {
+        gameId: state.gameId,
+        seq: 1,
+        ts: 0,
+        type: 'PHASE_CHANGED',
+        visibleTo: 'server',
+        payload: { from: 'NIGHT_WOLF_CHAT', to: 'NIGHT_WOLVES' },
+      },
+      {
+        gameId: state.gameId,
+        seq: 2,
+        ts: 0,
+        type: 'WOLF_VOTE_CAST',
+        visibleTo: 'wolves',
+        payload: { seat: 1, target: 'abstain', confirmed: true },
+      },
+    ] as never;
+
+    const snapshot = buildReplaySnapshot(state, events, {
+      gameId: state.gameId,
+      seed: state.seed,
+      finishedAt: 0,
+    });
+    const text = snapshot.timeline.map((entry) => entry.text).join('\n');
+    expect(text).toContain('1 号弃权（狼队）');
+    expect(text).not.toContain('abstain');
+  });
+});
