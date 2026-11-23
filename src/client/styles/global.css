@@ -650,8 +650,11 @@ body {
   width: min(26rem, 100%);
   padding: 1.5rem;
   border-radius: 0.9rem;
+  /* 弹窗是浅色卡片；必须显式设深色文字，否则会继承 body 的近白色，变成白底白字。 */
   background: #fffdf8;
-  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 35%);
+  color: #1f2933;
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 55%);
+  border: 1px solid #d8cbb6;
   border-top: 0.35rem solid #8a6a3b;
 }
 
@@ -665,10 +668,19 @@ body {
 
 .result-modal__title {
   margin: 0 0 0.5rem;
-  font-size: 1.35rem;
+  font-size: 1.5rem;
+  color: #111827;
 }
 
 .result-modal__body {
   margin: 0 0 1.25rem;
-  line-height: 1.6;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: #334155;
+}
+
+.result-modal .button {
+  background: #1f2933;
+  border-color: #1f2933;
+  color: #fffdf8;
 }
