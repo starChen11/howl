@@ -86,6 +86,11 @@ export function buildBoard(ctx: ProjectedContext): BoardView {
 }
 
 /** 倒计时文案（AC-14：文字表达，不只靠颜色）。 */
+export function clockText(remaining: number): string {
+  const safe = Math.max(0, remaining);
+  return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
+}
+
 export function countdownText(remaining: number): string {
   if (remaining <= 0) return '时间到';
   if (remaining <= 10) return `最后 ${remaining} 秒`;

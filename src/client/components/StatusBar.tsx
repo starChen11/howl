@@ -1,5 +1,3 @@
-import { useEffect, useState } from 'react';
-
 import { dayLabel, phaseLabel } from '@shared/phase-labels';
 
 import { countdownText } from '../game-state';
@@ -7,8 +5,8 @@ import { countdownText } from '../game-state';
 /**
  * 顶部状态条（RFC-012 §2.1 / AC-1 / AC-14）。
  *
- * 倒计时用 `aria-live="polite"`，但**不每秒播报**：每 10 秒或最后 10 秒才更新，
- * 否则读屏会被读秒刷屏。
+ * 倒计时视觉上每秒更新（醒目），但读屏不每秒播报：`aria-live` 关闭，
+ * 由 App 的阶段播报负责。
  */
 export function StatusBar({
   day,
@@ -23,15 +21,6 @@ export function StatusBar({
   remaining: number;
   speakingSeat: number | null;
 }) {
-  const [announced, setAnnounced] = useState(remaining);
-
-  useEffect(() => {
-    // 只在「整十秒」与「最后十秒」更新播报文本
-    if (remaining <= 10 || announced - remaining >= 10 || remaining > announced) {
-      setAnnounced(remaining);
-    }
-  }, [remaining, announced]);
-
   return (
     <header className="status" aria-label="对局状态">
       <h1 className="status__title">Howl</h1>
@@ -53,8 +42,8 @@ export function StatusBar({
           <dd>{speakingSeat === null ? '等待' : `${speakingSeat} 号发言`}</dd>
         </div>
       </dl>
-      <p className="status__timer" role="timer" aria-live="polite">
-        {countdownText(announced)}
+      <p className="status__timer" role="timer" aria-live="off">
+        {countdownText(remaining)}
       </p>
     </header>
   );

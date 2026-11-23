@@ -17,6 +17,7 @@ const ReplayPage = lazy(() =>
 );
 import type { ReplaySnapshot } from '@shared/replay';
 import { dayLabel } from '@shared/phase-labels';
+import { ROLE_LABELS } from '@shared/terms';
 import type { TruthView } from '@shared/truth';
 import { SeatGrid } from './components/SeatGrid';
 import { SpeechFeed, type SpeechLine } from './components/SpeechFeed';
@@ -24,6 +25,7 @@ import { SpeechInput } from './components/SpeechInput';
 import { StatusBar } from './components/StatusBar';
 import { OnboardingHints } from './components/OnboardingHints';
 import { ResultModal } from './components/ResultModal';
+import { PhaseClock } from './components/PhaseClock';
 import { latestKeyResult } from './key-result';
 import { streamReducer, initialStreamState, type StreamState } from './use-stream';
 
@@ -155,12 +157,24 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
       .map((event) => {
         const payload = event.payload as { seat: number; text: string };
         return { id: event.seq, seat: payload.seat, text: payload.text };
+      })
+      // 同一个人连续两条完全相同的正文只保留一条（引擎正常不会产生；
+      // 这里兜住流式/重连造成的重复渲染）。
+      .filter((line, index, list) => {
+        const previous = list[index - 1];
+        return previous === undefined || previous.seat !== line.seat || previous.text !== line.text;
       });
     const live =
       stream.phase === 'speaking' || stream.phase === 'done'
         ? [{ id: 1_000_000, seat: stream.seat ?? 0, text: stream.text }]
         : [];
-    return [...committed, ...live];
+    // 流式发言结束后，引擎的同一条 SPEECH 也会进入 committed；两者文本相同就
+    // 不要再显示第二遍（真实模型流式接入后出现的「同一人连发两条」）。
+    const liveLine = live[0];
+    const duplicated =
+      liveLine !== undefined &&
+      committed.some((line) => line.seat === liveLine.seat && line.text === liveLine.text);
+    return duplicated ? committed : [...committed, ...live];
   }, [view, stream]);
 
   if (view === null || board === null) {
@@ -188,7 +202,17 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
   }
 
   const ctx = view.view;
-  const keyResult = latestKeyResult(ctx.publicEvents);
+  const keyResult =
+    latestKeyResult(ctx.publicEvents, ctx.day) ??
+    // 第一夜由 GAME_STARTED 直接进入，没有 PHASE_CHANGED 事件；这里补一条。
+    ((ctx.phase === 'NIGHT' || ctx.phase === 'NIGHT_WOLF_CHAT') && ctx.day === 1
+      ? {
+          seq: 1,
+          title: dayLabel(ctx.day, ctx.phase),
+          body: `天黑请闭眼，${ROLE_LABELS.wolf}开始行动。`,
+          tone: 'info' as const,
+        }
+      : null);
   const speaking = speakingSeat(ctx);
   const myTurn = speaking === ctx.self.seat;
 
@@ -284,6 +308,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         {announcement}
       </p>
       <footer className="app__footer">
+        {ctx.phase === 'FINISHED' ? null : <PhaseClock remaining={remaining} />}
         {ctx.self.alive || ctx.pending !== null ? null : (
           <SpectatorBar truthEnabled={truth.enabled} onToggleTruth={() => void onToggleTruth()} />
         )}

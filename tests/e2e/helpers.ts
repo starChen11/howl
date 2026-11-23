@@ -8,12 +8,16 @@ import type { Page } from '@playwright/test';
  */
 /** 关键结果弹窗会盖住页面；测试里一律点「知道了」关掉。 */
 export async function dismissResultModal(page: Page): Promise<void> {
-  const button = page.getByRole('button', { name: '知道了' });
-  if ((await button.count()) > 0) {
+  // 轮询/自动收起都可能让弹窗在下一刻才出现：多试几轮，直到真的没有遮罩。
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const button = page.getByRole('button', { name: '知道了' });
+    if ((await button.count()) === 0) return;
     await button
       .first()
-      .click({ timeout: 2_000 })
+      .click({ timeout: 1_000 })
       .catch(() => undefined);
+    if ((await page.locator('[role="alertdialog"]').count()) === 0) return;
+    await page.waitForTimeout(100);
   }
 }
 

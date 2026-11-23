@@ -85,6 +85,19 @@ describe('关键结果弹窗', () => {
     expect(latestKeyResult([GAME_OVER])?.body).toContain('好人阵营胜利');
   });
 
+  it('入夜时弹出「第 N 夜」提示', () => {
+    const night = {
+      gameId: 'g',
+      seq: 5,
+      ts: 0,
+      type: 'PHASE_CHANGED',
+      visibleTo: 'public',
+      payload: { from: 'DAY_LYNCH', to: 'NIGHT_WOLF_CHAT' },
+    } as never;
+    expect(latestKeyResult([night], 2)?.title).toBe('第 2 夜');
+    expect(latestKeyResult([night], 2)?.body).toContain('天黑请闭眼');
+  });
+
   it('没有关键事件时不弹窗', () => {
     expect(latestKeyResult([])).toBeNull();
   });

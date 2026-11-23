@@ -1,5 +1,5 @@
 import type { ProjectedContext } from '@shared/project';
-import { conditionLabel } from '@shared/phase-labels';
+import { conditionLabel, dayLabel } from '@shared/phase-labels';
 import { ROLE_LABELS } from '@shared/terms';
 
 export interface KeyResult {
@@ -14,7 +14,10 @@ export interface KeyResult {
  *
  * 只读 `publicEvents`：夜间死亡、查验、狼队投票都不会进公开区，不会提前泄漏。
  */
-export function latestKeyResult(events: ProjectedContext['publicEvents']): KeyResult | null {
+export function latestKeyResult(
+  events: ProjectedContext['publicEvents'],
+  day = 1,
+): KeyResult | null {
   let latest: KeyResult | null = null;
 
   for (const event of events) {
@@ -50,6 +53,17 @@ export function latestKeyResult(events: ProjectedContext['publicEvents']): KeyRe
         title: `${ROLE_LABELS.wolf}自曝`,
         body: `${seat} 号自曝是${ROLE_LABELS.wolf}，白天立即结束。`,
         tone: 'danger',
+      };
+    }
+    if (
+      event.type === 'PHASE_CHANGED' &&
+      (event.payload as { to?: string }).to === 'NIGHT_WOLF_CHAT'
+    ) {
+      latest = {
+        seq,
+        title: dayLabel(day, 'NIGHT_WOLF_CHAT'),
+        body: `天黑请闭眼，${ROLE_LABELS.wolf}开始行动。`,
+        tone: 'info',
       };
     }
     if (event.type === 'GAME_ENDED') {

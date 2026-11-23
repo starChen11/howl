@@ -684,3 +684,38 @@ body {
   border-color: #1f2933;
   color: #fffdf8;
 }
+
+/* 本阶段大号倒计时：固定在操作区顶部，滚动时不消失。 */
+.phase-clock {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--surface);
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+}
+
+.phase-clock__label,
+.phase-clock__hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.phase-clock__value {
+  margin-left: auto;
+  font-size: 1.8rem;
+  letter-spacing: 0.04em;
+}
+
+.phase-clock--urgent {
+  border-color: var(--danger);
+}
+
+.phase-clock--urgent .phase-clock__value {
+  color: var(--danger);
+}

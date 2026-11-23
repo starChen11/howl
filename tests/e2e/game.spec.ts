@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { waitForMyTurn } from './helpers';
+import { dismissResultModal, waitForMyTurn } from './helpers';
 
 /**
  * RFC-012 §5 AC-1 / AC-8 / AC-9 / AC-10 / AC-11。
@@ -55,6 +55,7 @@ test.describe('整局界面', () => {
 
     // 等到输入区真的出现（玩家轮）
     await waitForMyTurn(page);
+    await dismissResultModal(page);
     const box = page.getByLabel('你的发言');
 
     // 三段式布局：状态条 / 主区 / 底部，互不重叠。
@@ -123,14 +124,20 @@ test.describe('整局界面', () => {
     await page.setViewportSize({ width: 1100, height: 800 });
     await page.goto('/?seed=13');
     await expect(page.locator('.app')).toBeVisible();
+    await dismissResultModal(page);
 
-    await page.keyboard.press('Tab');
-    const outline = await page.evaluate(() => {
-      const element = document.activeElement;
-      if (element === null) return null;
-      const style = getComputedStyle(element);
-      return { width: style.outlineWidth, style: style.outlineStyle };
-    });
+    // 弹窗关闭后焦点可能落在 body 或禁用控件上；连续 Tab，直到落到可聚焦元素。
+    let outline: { width: string; style: string } | null = null;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await page.keyboard.press('Tab');
+      outline = await page.evaluate(() => {
+        const element = document.activeElement;
+        if (element === null || element === document.body) return null;
+        const style = getComputedStyle(element);
+        return { width: style.outlineWidth, style: style.outlineStyle };
+      });
+      if (outline !== null && Number.parseFloat(outline.width) > 0) break;
+    }
 
     expect(outline).not.toBeNull();
     expect(Number.parseFloat(outline?.width ?? '0')).toBeGreaterThan(0);
@@ -359,6 +366,7 @@ test.describe('猎人出局（回归：曾经卡死）', () => {
     // seed=2：1 号固定是猎人，并在第一夜被刀。
     await page.goto('/?seed=2');
     await expect(page.locator('.app')).toBeVisible();
+    await dismissResultModal(page);
 
     // 出局后出现开枪选择（不是只剩「打开真相视图」）
     await expect(page.getByRole('button', { name: '不开枪' })).toBeVisible({ timeout: 30_000 });

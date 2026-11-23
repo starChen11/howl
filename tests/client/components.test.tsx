@@ -36,11 +36,12 @@ describe('AC-1 · 状态条', () => {
     expect(screen.queryByText('第 1 天')).toBeNull();
   });
 
-  it('倒计时用 role=timer 且 aria-live=polite', () => {
+  it('倒计时用 role=timer 且不逐秒播报', () => {
     render(<StatusBar day={1} phase="DAY_SPEECH" aliveCount={9} remaining={30} speakingSeat={1} />);
 
     const timer = screen.getByRole('timer');
-    expect(timer.getAttribute('aria-live')).toBe('polite');
+    expect(timer.getAttribute('aria-live')).toBe('off');
+    expect(timer.textContent).toContain('30');
   });
 });
 

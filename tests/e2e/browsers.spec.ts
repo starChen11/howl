@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { waitForMyTurn } from './helpers';
+import { dismissResultModal, waitForMyTurn } from './helpers';
 
 /**
  * RFC-016 §5 AC-1 / AC-2 / AC-3 / AC-8：跨浏览器主路径、能力兜底与首屏请求。
@@ -31,6 +31,7 @@ test('主路径：开始一局 → 发言 → 投票', async ({ page }) => {
   await box.press('Enter');
 
   // 进入投票后投一票
+  await dismissResultModal(page);
   const voteButton = page.getByRole('button', { name: /投 \d+ 号/ }).first();
   await expect(voteButton).toBeVisible({ timeout: 30_000 });
   await voteButton.click();

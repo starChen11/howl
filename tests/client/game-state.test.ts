@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { ProjectedContext } from '@shared/project';
 
-import { boardAnnouncement, buildBoard, countdownText, spokenSeats } from '@client/game-state';
+import {
+  boardAnnouncement,
+  buildBoard,
+  clockText,
+  countdownText,
+  spokenSeats,
+} from '@client/game-state';
 
 /**
  * RFC-012 §5 AC-6 / AC-7 / AC-14：界面推导的状态必须与事件流一致。
@@ -88,6 +94,8 @@ describe('AC-14 · 文字表达', () => {
     expect(countdownText(0)).toBe('时间到');
     expect(countdownText(7)).toContain('最后');
     expect(countdownText(42)).toContain('42');
+    expect(clockText(42)).toBe('00:42');
+    expect(clockText(0)).toBe('00:00');
   });
 
   it('读屏能读出身份、阶段与轮到谁', () => {
