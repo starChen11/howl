@@ -4,7 +4,6 @@ import type { EventEnvelope } from '@shared/events';
 import type { PendingDecision, ProjectedContext } from '@shared/project';
 
 import { degradeSentence } from './llm/degrade';
-import { chunkText } from './llm/speak';
 import { project } from './project';
 import type { GameRecord, GameRegistry, SessionRecord } from './store/game-registry';
 
@@ -42,6 +41,7 @@ export interface OrchestratorDeps {
     phase: string;
     feedback?: string;
     instruction?: string;
+    onSpeechDelta?: (text: string) => void;
   }) => Promise<AgentDecision>;
   /** 提前结束（测试用）。 */
   maxSteps?: number;
@@ -292,7 +292,22 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
       action = await playerAction(seat, state.phase, deps, ctxFor(seat), record.gameId);
     } else {
       try {
-        action = await decide({ seat, ctx: ctxFor(seat), phase: state.phase });
+        action = await decide({
+          seat,
+          ctx: ctxFor(seat),
+          phase: state.phase,
+          ...(state.phase === 'DAY_SPEECH'
+            ? {
+                onSpeechDelta: (text: string) =>
+                  deps.output.emit({
+                    seat: seat as never,
+                    id: (record.events?.length ?? 0) + 1,
+                    text,
+                    final: false,
+                  }),
+              }
+            : {}),
+        });
       } catch {
         if (state.phase === 'DAY_SPEECH') {
           degraded = true;
@@ -330,13 +345,6 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
         continue;
       }
       break;
-    }
-
-    if (isAi && state.phase === 'DAY_SPEECH' && action.action?.type === 'SPEECH') {
-      const id = (record.events?.length ?? 0) + 1;
-      for (const piece of chunkText(action.action.text)) {
-        deps.output.emit({ seat: seat as never, id, text: piece, final: false });
-      }
     }
 
     // **提交前再读一次**：等玩家输入的那段时间里，路由可能已经写入了别的动作
@@ -408,6 +416,17 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     }
 
     record = result.record;
+    if (isAi && state.phase === 'DAY_SPEECH' && action.action?.type === 'SPEECH') {
+      const speechEvent = result.events.find((event) => event.type === 'SPEECH');
+      if (speechEvent !== undefined) {
+        deps.output.emit({
+          seat: seat as never,
+          id: speechEvent.seq,
+          text: action.action.text,
+          final: true,
+        });
+      }
+    }
     if (degraded || action.degraded === true) {
       record = await registry.appendEvents(record, [
         {

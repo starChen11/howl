@@ -60,6 +60,8 @@ export interface DecideInput {
   instruction?: string;
   /** 外部取消信号：新的调用会取消同一席位尚未完成的旧调用。 */
   signal?: AbortSignal;
+  /** 白天发言：每收到一段 speech 文本就回调一次（token 级流式）。 */
+  onDelta?: (text: string) => void;
 }
 
 export interface DecideResult {
@@ -133,24 +135,57 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
     };
 
     try {
-      const response = await client.chat.completions.create(
-        {
-          model: config.model,
-          messages,
-          temperature: config.temperature,
-          // RFC-009 §4：人格的 verbosity 影响输出上限（话多的人给更多 token），
-          // 但不改变超时阈值——超时是网络问题，与性格无关。
-          max_tokens: maxTokensFor(config, input.personaId ?? null),
-        },
-        {
-          signal:
-            input.signal === undefined
-              ? AbortSignal.timeout(config.timeoutMs)
-              : AbortSignal.any([AbortSignal.timeout(config.timeoutMs), input.signal]),
-        },
-      );
+      const signal =
+        input.signal === undefined
+          ? AbortSignal.timeout(config.timeoutMs)
+          : AbortSignal.any([AbortSignal.timeout(config.timeoutMs), input.signal]);
+      const streamThis = input.onDelta !== undefined && attempt === 1;
 
-      const content = response.choices[0]?.message.content ?? '';
+      let content = '';
+      let usage:
+        | {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            prompt_tokens_details?: { cached_tokens?: number };
+          }
+        | undefined;
+
+      if (streamThis) {
+        const stream = await client.chat.completions.create(
+          {
+            model: config.model,
+            messages,
+            temperature: config.temperature,
+            max_tokens: maxTokensFor(config, input.personaId ?? null),
+            stream: true,
+            stream_options: { include_usage: true },
+          },
+          { signal },
+        );
+        const tracker = { emitted: 0 };
+        for await (const chunk of stream) {
+          const piece = chunk.choices[0]?.delta?.content ?? '';
+          if (piece !== '') {
+            content += piece;
+            const addition = extractSpeechIncrement(content, tracker);
+            if (addition !== '') input.onDelta?.(addition);
+          }
+          if (chunk.usage !== undefined && chunk.usage !== null) usage = chunk.usage;
+        }
+      } else {
+        const response = await client.chat.completions.create(
+          {
+            model: config.model,
+            messages,
+            temperature: config.temperature,
+            max_tokens: maxTokensFor(config, input.personaId ?? null),
+          },
+          { signal },
+        );
+        content = response.choices[0]?.message.content ?? '';
+        usage = response.usage;
+      }
+
       const parsed = DecisionSchema.safeParse(safeJson(content));
 
       if (!parsed.success) {
@@ -161,9 +196,9 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
         deps.metaLog?.record({
           ...baseMeta,
           latencyMs: Date.now() - startedAt,
-          inputTokens: response.usage?.prompt_tokens ?? 0,
-          outputTokens: response.usage?.completion_tokens ?? 0,
-          cachedTokens: response.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+          inputTokens: usage?.prompt_tokens ?? 0,
+          outputTokens: usage?.completion_tokens ?? 0,
+          cachedTokens: usage?.prompt_tokens_details?.cached_tokens ?? 0,
           ok: false,
           errorCode: 'INVALID_OUTPUT',
         });
@@ -180,9 +215,9 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
       const meta: CallMeta = {
         ...baseMeta,
         latencyMs: Date.now() - startedAt,
-        inputTokens: response.usage?.prompt_tokens ?? 0,
-        outputTokens: response.usage?.completion_tokens ?? 0,
-        cachedTokens: response.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+        inputTokens: usage?.prompt_tokens ?? 0,
+        outputTokens: usage?.completion_tokens ?? 0,
+        cachedTokens: usage?.prompt_tokens_details?.cached_tokens ?? 0,
         ok: true,
       };
       deps.metaLog?.record(meta);
@@ -219,6 +254,59 @@ function maxTokensFor(config: LlmConfig, personaId: string | null): number {
   const style = styleOf(personaId);
   const factor = style.targetSentences / 2; // 1 档 → 0.5，2 档 → 1，3 档 → 1.5
   return Math.max(120, Math.round(config.maxOutputTokens * factor));
+}
+
+/**
+ * 从**尚未完成的 JSON**里提取 `speech` 字段的增量。
+ *
+ * 模型是一边生成 JSON、一边被消费的；`speech` 可能只写到一半。
+ * 这里只解码已经完整的转义序列，返回相对上次新增的文本。
+ */
+export function extractSpeechIncrement(content: string, state: { emitted: number }): string {
+  const key = content.indexOf('"speech"');
+  if (key < 0) return '';
+  const colon = content.indexOf(':', key + 8);
+  if (colon < 0) return '';
+  let start = colon + 1;
+  while (start < content.length && /\s/.test(content[start] ?? '')) start += 1;
+  if (content[start] !== '"') return '';
+  start += 1;
+
+  let raw = '';
+  let escaped = false;
+  for (let index = start; index < content.length; index += 1) {
+    const char = content[index] ?? '';
+    if (escaped) {
+      if (char === 'u') {
+        const hex = content.slice(index + 1, index + 5);
+        if (hex.length < 4 || !/^[0-9a-fA-F]{4}$/.test(hex)) break;
+        raw += `\\u${hex}`;
+        index += 4;
+        escaped = false;
+        continue;
+      }
+      raw += `\\${char}`;
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') break;
+    raw += char;
+  }
+
+  let decoded: string;
+  try {
+    decoded = JSON.parse(`"${raw}"`) as string;
+  } catch {
+    return '';
+  }
+  if (decoded.length <= state.emitted) return '';
+  const addition = decoded.slice(state.emitted);
+  state.emitted = decoded.length;
+  return addition;
 }
 
 /** 解析 JSON；解析失败当作格式错误（由 schema 再兜一层）。 */

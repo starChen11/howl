@@ -30,6 +30,8 @@ export type Decider = (input: {
   feedback?: string;
   /** 额外指令（例如明确要求回答 ready）。 */
   instruction?: string;
+  /** token 级流式发言的增量回调。 */
+  onSpeechDelta?: (text: string) => void;
 }) => Promise<AgentDecision>;
 
 export type AgentKind = 'llm' | 'scripted';
@@ -172,7 +174,7 @@ export function createLlmAgent(input: {
   // 同一席位同时只保留一条在途调用：新触发到来时取消旧的，避免多路结果互相覆盖。
   const controllers: Record<number, AbortController> = {};
 
-  return async ({ seat, ctx, phase, feedback, instruction }) => {
+  return async ({ seat, ctx, phase, feedback, instruction, onSpeechDelta }) => {
     controllers[seat]?.abort();
     const controller = new AbortController();
     controllers[seat] = controller;
@@ -196,6 +198,7 @@ export function createLlmAgent(input: {
             ...(lastFeedback === undefined ? {} : { feedback: lastFeedback }),
             ...(instruction === undefined ? {} : { instruction }),
             signal: controller.signal,
+            ...(onSpeechDelta === undefined ? {} : { onDelta: onSpeechDelta }),
           },
         );
 

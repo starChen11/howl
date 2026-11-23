@@ -304,8 +304,8 @@ $ pnpm test → 69 files / 587 tests
 
 ### 8.12 真实模型接线修复（2026-11-23）
 
-- AI 白天发言前推 `thinking`；决策返回后按片段推 `delta`（当前仍是**生成完成后分片**，
-  不是 token 级流式）。
+- AI 白天发言前推 `thinking`；模型调用改为 `stream: true`，从**未完成的 JSON** 里
+  增量提取 `speech` 字段并逐 token 推 `delta`；发言文本仍以引擎 `SPEECH` 事件为准。
 - 模型最终失败或两次动作被拒时退回脚本动作，并写 `DEGRADED`，对局不再冻结。
 - 动作被 `toAction` 或引擎拒绝时，把原因回喂模型重试一次。
 - 狼队讨论过半给真实模型一次明确的 `ready` 决策点。

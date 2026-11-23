@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ProjectedContext } from '@shared/project';
 
-import { decide, LlmError } from '@server/llm/client';
+import { decide, extractSpeechIncrement, LlmError } from '@server/llm/client';
 import { DEFAULT_LLM_CONFIG, loadLlmConfig, type LlmConfig } from '@server/llm/config';
 import { DecisionLog } from '@server/llm/decision-log';
 import { CallMetaLog } from '@server/llm/meta';
@@ -426,5 +426,71 @@ describe('C-77 · 人格的 verbosity 影响 maxOutputTokens', () => {
   it('超时不受人格影响', async () => {
     // 人格只改输出上限，不改 timeoutMs —— 超时是网络问题，与性格无关。
     expect(CONFIG.timeoutMs).toBe(50);
+  });
+});
+
+describe('token 级流式发言', () => {
+  it('extractSpeechIncrement 逐段解码 speech，不重复也不提前吐出未完成的转义', () => {
+    const state = { emitted: 0 };
+    expect(extractSpeechIncrement('{"action":"speak","speech":"你', state)).toBe('你');
+    expect(extractSpeechIncrement('{"action":"speak","speech":"你好', state)).toBe('好');
+    expect(extractSpeechIncrement('{"action":"speak","speech":"你好\\n世界', state)).toBe('\n世界');
+    expect(extractSpeechIncrement('{"action":"speak","speech":"你好\\n世界"', state)).toBe('');
+  });
+
+  it('decide 在提供 onDelta 时用 stream:true，并按 speech 字段回调', async () => {
+    const parts = ['{"action":"speak","reason":"测试","speech":"你', '好，世界"}'];
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        for (const part of parts) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                id: 'x',
+                object: 'chat.completion.chunk',
+                created: 1,
+                model: 'm',
+                choices: [{ index: 0, delta: { content: part }, finish_reason: null }],
+              })}\n\n`,
+            ),
+          );
+        }
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              id: 'x',
+              object: 'chat.completion.chunk',
+              created: 1,
+              model: 'm',
+              choices: [],
+              usage: { prompt_tokens: 9, completion_tokens: 4, total_tokens: 13 },
+            })}\n\n`,
+          ),
+        );
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.close();
+      },
+    });
+    const fetchImpl = (async () =>
+      new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })) as unknown as typeof fetch;
+
+    const deltas: string[] = [];
+    const result = await decide(
+      { config: CONFIG, fetchImpl },
+      {
+        gameId: 'g',
+        seq: 1,
+        ctx: CTX,
+        mode: 'slaughter-side',
+        onDelta: (text) => deltas.push(text),
+      },
+    );
+    if ('duplicate' in result) throw new Error('不应重复');
+    expect(deltas.join('')).toBe('你好，世界');
+    expect(result.decision).toEqual({ action: 'speak', reason: '测试', speech: '你好，世界' });
   });
 });
