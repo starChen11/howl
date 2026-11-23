@@ -47,6 +47,7 @@ export default defineConfig({
       HOWL_WOLF_CHAT_MS: '3000',
       HOWL_WOLF_VOTE_MS: '3000',
       HOWL_WOLF_READY_MS: '0',
+      HOWL_WOLF_VOTE_DELAY_MS: '0',
     },
   },
 });

@@ -67,6 +67,7 @@ export class GameLoop {
         wolfChatMs: Number(process.env['HOWL_WOLF_CHAT_MS'] ?? 50_000),
         wolfReadyMs: Number(process.env['HOWL_WOLF_READY_MS'] ?? 0),
         wolfVoteMs: Number(process.env['HOWL_WOLF_VOTE_MS'] ?? 10_000),
+        wolfVoteDelayMs: Number(process.env['HOWL_WOLF_VOTE_DELAY_MS'] ?? 0),
         wolfAiReady: process.env['HOWL_WOLF_AI_READY'] === 'model' ? 'model' : 'auto',
         ...(this.options.maxSteps === undefined ? {} : { maxSteps: this.options.maxSteps }),
       });

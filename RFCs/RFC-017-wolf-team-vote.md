@@ -131,3 +131,9 @@ pnpm test:e2e → 18 passed
 | **B-N1** | 重投相位被 `phaseAllows('kill')` 拦住，默认路径每局都会停在重投 | 放行 `NIGHT_WOLF_RUNOFF`；补「LLM 形状的决策在重投也能翻译并跑完」的编排级用例 |
 | **N-3** | `LEGACY_ACTION_DISABLED` 不在错误码里 | 已补 |
 | **N-5** | `isPlayerPhase` 清单漏重投 | 已补 |
+
+### 8.2 实时票型（2026-11-23）
+
+- 投票界面显示 `已投 x/y 票` 与每一条 `seat → target`，待投票的狼可以跟票。
+- AI 狼的票之间默认间隔 1.2 秒（`HOWL_WOLF_VOTE_DELAY_MS`），避免三票在同一瞬间
+  投完、玩家看不到过程；e2e 设为 0。

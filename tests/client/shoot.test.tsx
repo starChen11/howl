@@ -320,6 +320,9 @@ describe('RUL-13 · 还没轮到自己投票时不能显示「已投票」', () 
 
     await screen.findByText(/等队友先投/);
     expect(screen.queryByText(/你已投票/)).toBeNull();
+    // 待投票的狼能看到已投的票与票数
+    await screen.findByText(/4 号投 2 号/);
+    expect(document.body.textContent).toMatch(/已投 1\/\d+/);
   });
 });
 

@@ -44,6 +44,8 @@ export interface OrchestratorDeps {
   wolfVoteMs?: number;
   /** AI 狼如何准备：脚本固定延迟自动准备；真实模型自己输出 ready。 */
   wolfAiReady?: 'auto' | 'model';
+  /** AI 狼在夜间投票时每条票之间的间隔（毫秒），让待投票的狼看到实时票型。 */
+  wolfVoteDelayMs?: number;
   now?: () => number;
 }
 
@@ -230,6 +232,16 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
 
     // 玩家触发点：白天发言（AC-11）与白天投票（AC-11 的「发言 → 投票」）。
     // 夜间的目标选择仍是另一套输入，先用注入的 `decide` 代劳。
+    // RUL-13 的「实时票型」：AI 狼不要在同一瞬间把票全投完，否则待投票的狼
+    // 只能看到最终结果。每条票之间留一点间隔（生产默认 1.2 秒，测试 0）。
+    if (
+      (state.phase === 'NIGHT_WOLVES' || state.phase === 'NIGHT_WOLF_RUNOFF') &&
+      seat !== record.playerSeat &&
+      (deps.wolfVoteDelayMs ?? 0) > 0
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, deps.wolfVoteDelayMs));
+    }
+
     const playerPhase = isPlayerPhase(state.phase);
     const action =
       seat === record.playerSeat && playerPhase

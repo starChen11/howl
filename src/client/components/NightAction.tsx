@@ -168,6 +168,11 @@ export function NightAction({
           </ul>
         )}
         {wolfVotes.length === 0 ? null : (
+          <p className="night__hint" aria-live="polite">
+            已投 {wolfVotes.length}/{wolfCount} 票
+          </p>
+        )}
+        {wolfVotes.length === 0 ? null : (
           <ul className="night__chat-log" aria-label="当前票型">
             {wolfVotes.map((vote, index) => (
               <li key={`${vote.seat}-${index}`}>
