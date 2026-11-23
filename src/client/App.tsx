@@ -46,6 +46,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
   const [remaining, setRemaining] = useState(60);
   const [error, setError] = useState<string | null>(null);
   const [dismissedResultSeq, setDismissedResultSeq] = useState(0);
+  const [wolfTarget, setWolfTarget] = useState<number | null>(null);
   const [truth, setTruth] = useState(initialTruthState);
   const [truthData, setTruthData] = useState<TruthView | null>(null);
   const [highlight, setHighlight] = useState<number | null>(null);
@@ -382,10 +383,21 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
             }
             wolfVotes={currentWolfVotes(ctx.privateEvents)}
             selfSeat={ctx.self.seat}
+            localTarget={wolfTarget}
             selfConfirmed={currentWolfVotes(ctx.privateEvents).some(
               (vote) => vote.seat === ctx.self.seat && vote.confirmed,
             )}
-            onConfirmVote={() => void nightAction({ type: 'WOLF_VOTE_CONFIRM' })}
+            onConfirmVote={() => {
+              // 原子确认：直接带目标提交一条 confirmed 的票，避免「选择还没落库、
+              // 确认按钮已可点」的竞态。
+              const target =
+                wolfTarget ??
+                currentWolfVotes(ctx.privateEvents).find((vote) => vote.seat === ctx.self.seat)
+                  ?.target;
+              if (typeof target !== 'number') return;
+              setWolfTarget(null);
+              void nightAction({ type: 'WOLF_VOTE', target, confirmed: true });
+            }}
             wolfChats={currentNightWolfEvents(ctx.privateEvents)
               .filter((event) => event.type === 'WOLF_CHAT_POSTED')
               .map((event) => ({
@@ -398,7 +410,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
             onTarget={(target) =>
               void nightAction(
                 ctx.pending === 'wolf-vote' || ctx.pending === 'wolf-runoff'
-                  ? { type: 'WOLF_VOTE', target, confirmed: false }
+                  ? (setWolfTarget(target), { type: 'WOLF_VOTE', target, confirmed: false })
                   : {
                       type: ctx.pending === 'kill' ? 'WOLF_KILL' : 'SEER_CHECK',
                       target,

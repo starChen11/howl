@@ -17,6 +17,7 @@ export function NightAction({
   wolfVotes,
   selfConfirmed = false,
   selfSeat = 0,
+  localTarget = null,
   onConfirmVote,
   chatSeconds = 50,
   readyAfterSeconds = 30,
@@ -44,6 +45,8 @@ export function NightAction({
   /** 自己的狼票是否已确认。 */
   selfConfirmed?: boolean;
   selfSeat?: number;
+  /** 客户端刚点选、还没等到服务端事件回显的目标。 */
+  localTarget?: number | null;
   onConfirmVote?: () => void;
   /** 讨论总时长（秒）。 */
   chatSeconds?: number;
@@ -155,7 +158,12 @@ export function NightAction({
 
   if (pending === 'wolf-vote' || pending === 'wolf-runoff') {
     const isRunoff = pending === 'wolf-runoff';
-    const ownVote = wolfVotes.find((vote) => vote.seat === selfSeat);
+    const serverVote = wolfVotes.find((vote) => vote.seat === selfSeat);
+    const ownVote =
+      serverVote ??
+      (localTarget === null
+        ? undefined
+        : { seat: selfSeat, target: localTarget, confirmed: false });
 
     return (
       <section className="night" aria-label={`${ROLE_LABELS.wolf}队投票`}>

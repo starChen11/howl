@@ -275,9 +275,14 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     const playerPhase = isPlayerPhase(state.phase);
     const action =
       seat === record.playerSeat && playerPhase
-        ? await playerAction(seat, state.phase, deps, ctxFor(seat))
+        ? await playerAction(seat, state.phase, deps, ctxFor(seat), record.gameId)
         : await decide({ seat, ctx: ctxFor(seat), phase: state.phase });
     if (action.action === undefined) {
+      // 玩家已被路由抢先确认/投票：重读后继续，不要停在旧回合上。
+      if (state.phase === 'NIGHT_WOLVES' || state.phase === 'NIGHT_WOLF_RUNOFF') {
+        steps += 1;
+        continue;
+      }
       // 有行动者却没有动作：开枪阶段可以由我们替它放弃（规则允许）；
       // 其他相位说明 AI 没给出动作，不能静默停在这里。
       if (state.phase === 'NIGHT_HUNTER_SHOOT' || state.phase === 'DAY_HUNTER_SHOOT') {
@@ -368,19 +373,41 @@ async function playerAction(
   phase: string,
   deps: OrchestratorDeps,
   ctx: ProjectedContext,
+  gameId: string,
 ): Promise<AgentDecision> {
   const now = deps.now ?? Date.now;
   const isWolfVote = phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF';
-  const input = await deps.input.read({
-    seat: seat as never,
-    timeoutMs: isWolfVote ? (deps.wolfVoteMs ?? 10_000) : 60_000,
-    kind:
-      phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF'
-        ? 'vote'
-        : phase.startsWith('NIGHT')
-          ? 'action'
-          : 'speech',
-  });
+  // 玩家可能在「不是自己行动」的瞬间通过路由确认/投票；如果此时编排层正阻塞在
+  // 等输入上，会一直等到超时。这里同时轮询「是否已经轮不到我 / 相位是否已变」。
+  let settled = false;
+  const stale = (async (): Promise<{ kind: 'stale'; text: '' }> => {
+    while (!settled) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (settled) break;
+      const latest = await deps.registry.getGame(gameId);
+      if (latest === undefined) return { kind: 'stale', text: '' };
+      const latestState = deps.registry.stateOf(latest);
+      const actor = seatToSpeak(latestState) ?? nextActor(latestState);
+      if (latestState.phase !== phase || actor !== seat) return { kind: 'stale', text: '' };
+    }
+    return { kind: 'stale', text: '' };
+  })();
+
+  const input = await Promise.race([
+    deps.input.read({
+      seat: seat as never,
+      timeoutMs: isWolfVote ? (deps.wolfVoteMs ?? 10_000) : 60_000,
+      kind:
+        phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF'
+          ? 'vote'
+          : phase.startsWith('NIGHT')
+            ? 'action'
+            : 'speech',
+    }),
+    stale,
+  ]);
+  settled = true;
+  if (input.kind === 'stale') return { action: undefined };
 
   /** 夜间目标：取玩家给的座位；没有/不合法就退化到投影里的第一个合法目标。 */
   const nightTarget = (): number | undefined => {
