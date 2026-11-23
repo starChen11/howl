@@ -23,6 +23,8 @@ import { SpeechFeed, type SpeechLine } from './components/SpeechFeed';
 import { SpeechInput } from './components/SpeechInput';
 import { StatusBar } from './components/StatusBar';
 import { OnboardingHints } from './components/OnboardingHints';
+import { ResultModal } from './components/ResultModal';
+import { latestKeyResult } from './key-result';
 import { streamReducer, initialStreamState, type StreamState } from './use-stream';
 
 /**
@@ -43,6 +45,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
   const [stream, setStream] = useState<StreamState>(initialStreamState);
   const [remaining, setRemaining] = useState(60);
   const [error, setError] = useState<string | null>(null);
+  const [dismissedResultSeq, setDismissedResultSeq] = useState(0);
   const [truth, setTruth] = useState(initialTruthState);
   const [truthData, setTruthData] = useState<TruthView | null>(null);
   const [highlight, setHighlight] = useState<number | null>(null);
@@ -183,6 +186,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
   }
 
   const ctx = view.view;
+  const keyResult = latestKeyResult(ctx.publicEvents);
   const speaking = speakingSeat(ctx);
   const myTurn = speaking === ctx.self.seat;
 
@@ -450,6 +454,9 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
           {error}
         </p>
       )}
+      {keyResult !== null && keyResult.seq > dismissedResultSeq ? (
+        <ResultModal result={keyResult} onClose={() => setDismissedResultSeq(keyResult.seq)} />
+      ) : null}
     </div>
   );
 }

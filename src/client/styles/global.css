@@ -634,3 +634,41 @@ body {
   padding-left: 18px;
   color: var(--muted);
 }
+
+/* 关键结果弹窗：天亮、放逐、自曝、终局 */
+.result-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgb(0 0 0 / 55%);
+}
+
+.result-modal {
+  width: min(26rem, 100%);
+  padding: 1.5rem;
+  border-radius: 0.9rem;
+  background: #fffdf8;
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 35%);
+  border-top: 0.35rem solid #8a6a3b;
+}
+
+.result-modal--danger {
+  border-top-color: #a33a2b;
+}
+
+.result-modal--good {
+  border-top-color: #2f6f4f;
+}
+
+.result-modal__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+}
+
+.result-modal__body {
+  margin: 0 0 1.25rem;
+  line-height: 1.6;
+}

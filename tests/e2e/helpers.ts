@@ -6,7 +6,19 @@ import type { Page } from '@playwright/test';
  * 夜间现在也由玩家操作：狼要讨论与刀人、神职要查验或用药。测试只关心白天流程时，
  * 用这个把夜间推进过去。返回是否点到了东西。
  */
+/** 关键结果弹窗会盖住页面；测试里一律点「知道了」关掉。 */
+export async function dismissResultModal(page: Page): Promise<void> {
+  const button = page.getByRole('button', { name: '知道了' });
+  if ((await button.count()) > 0) {
+    await button
+      .first()
+      .click({ timeout: 2_000 })
+      .catch(() => undefined);
+  }
+}
+
 export async function passNight(page: Page): Promise<boolean> {
+  await dismissResultModal(page);
   for (let guard = 0; guard < 6; guard += 1) {
     const skipChat = page.getByRole('button', { name: '跳过' });
     if ((await skipChat.count()) > 0) {
@@ -59,6 +71,7 @@ export async function waitForMyTurn(page: Page, timeoutMs = 45_000): Promise<voi
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
+    await dismissResultModal(page);
     if ((await box.count()) > 0 && (await box.first().isVisible())) return;
     if (await page.getByRole('heading', { name: '复盘' }).count()) {
       throw new Error('对局已经结束，等不到发言输入框');
