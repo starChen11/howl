@@ -257,7 +257,19 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
       (deps.wolfVoteDelayMs ?? 0) > 0 &&
       (state.wolfVotes ?? []).some((vote) => vote.seat !== seat)
     ) {
-      await new Promise((resolve) => setTimeout(resolve, deps.wolfVoteDelayMs));
+      // 分段等待：玩家在这 1.2 秒内确认的话，立刻结束等待，不再等满。
+      const until = Date.now() + (deps.wolfVoteDelayMs ?? 0);
+      while (Date.now() < until) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const latest = await registry.getGame(record.gameId);
+        if (latest === undefined) break;
+        const latestState = registry.stateOf(latest);
+        if (latestState.phase !== state.phase) break;
+        const confirmed = (latestState.wolfVotes ?? []).some(
+          (vote) => vote.seat === record.playerSeat && vote.confirmed !== false,
+        );
+        if (confirmed) break;
+      }
     }
 
     const playerPhase = isPlayerPhase(state.phase);

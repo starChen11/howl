@@ -87,7 +87,8 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
     const close = api.openStream(gameId, (message) =>
       setStream((previous) => streamReducer(previous, message, Date.now())),
     );
-    const timer = setInterval(() => void refresh(), 1_000);
+    // 轮询快一点：夜间结算/天亮公告要尽快反映到界面（SSE 只承载发言流）。
+    const timer = setInterval(() => void refresh(), 150);
     return () => {
       close();
       clearInterval(timer);
