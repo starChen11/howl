@@ -365,7 +365,19 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     // 就不要再提交一次——否则会多出一条 `REJECTED / NOT_YOUR_TURN`（B-R7-1）。
     const latestState = registry.stateOf(latest);
     const stillTheirTurn = isStillTheirTurn(state.phase, latestState, seat);
-    if (!stillTheirTurn) {
+    // 除了「该谁行动」之外，再显式检查「这个人是不是已经行动过了」：
+    // 路由会先把玩家的票/发言写进事件流，再唤醒这里；只比 nextActor 在某些
+    // 并发时序下仍可能拿到旧回合，导致重复提交一条 ALREADY_VOTED 把对局停住。
+    const alreadyActed =
+      ((state.phase === 'DAY_VOTE' || state.phase === 'DAY_VOTE_RUNOFF') &&
+        (latestState.votes ?? []).some((vote) => vote.seat === seat)) ||
+      ((state.phase === 'DAY_SPEECH' || state.phase === 'DAY_PK_SPEECH') &&
+        (latestState.speech?.spoken ?? []).includes(seat as never)) ||
+      (state.phase === 'NIGHT_WOLVES' &&
+        (latestState.wolfVotes ?? []).some(
+          (vote) => vote.seat === seat && vote.confirmed !== false,
+        ));
+    if (!stillTheirTurn || alreadyActed) {
       steps += 1;
       continue;
     }
@@ -422,6 +434,18 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
             continue;
           }
         }
+      }
+      // 玩家重复投票/发言是并发时序的正常结果，不是致命错误；重读后继续，
+      // 让其余 AI 把这一轮走完。
+      if (
+        seat === record.playerSeat &&
+        ['ALREADY_VOTED', 'ALREADY_SPOKEN', 'NOT_YOUR_TURN', 'ALREADY_READY'].includes(
+          payload.code ?? '',
+        )
+      ) {
+        record = result.record;
+        steps += 1;
+        continue;
       }
       throw new Error(`动作被拒绝：${detail}`);
     }

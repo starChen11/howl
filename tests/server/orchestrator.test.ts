@@ -893,3 +893,54 @@ describe('RUL-13 · 重投不会让对局停住（默认模型路径的翻译层
     expect(registry.stateOf(result.record).phase).not.toBe('NIGHT_WOLF_RUNOFF');
   });
 });
+
+describe('玩家弃权后不会被重复投票卡住', () => {
+  it('路由先写入弃权票、再唤醒等待中的投票轮，对局继续而不是停住', async () => {
+    const registry = new GameRegistry(new InMemoryMetaStore());
+    const session = await registry.createSession();
+    const record = await registry.createGame(session, {
+      mode: 'slaughter-side',
+      seed: 1,
+      playerSeat: 1,
+    });
+    if (registry.stateOf(record).seats.find((seat) => seat.seat === 1)?.role !== 'villager') {
+      throw new Error('夹具需要玩家是村民');
+    }
+
+    let injected = false;
+    const result = await runGame({
+      registry,
+      session,
+      gameId: record.gameId,
+      input: {
+        async read(prompt) {
+          if (prompt.kind === 'vote' && !injected) {
+            injected = true;
+            const latest = await registry.getGame(record.gameId);
+            if (latest !== undefined) {
+              await registry.submit(
+                session,
+                latest,
+                { type: 'VOTE', ts: Date.now(), seat: 1, target: 'abstain' } as never,
+                registry.stateOf(latest).seq,
+              );
+            }
+            return { kind: 'skip' };
+          }
+          return { kind: 'skip' };
+        },
+        close() {},
+      },
+      output: { emit() {}, async flush() {} },
+      decide: scriptedAgent,
+      maxSteps: 400,
+      wolfReadyMs: 0,
+      wolfChatMs: 20,
+      wolfVoteMs: 50,
+      wolfVoteDelayMs: 0,
+    });
+
+    expect(injected).toBe(true);
+    expect(registry.stateOf(result.record).phase).not.toBe('DAY_VOTE');
+  });
+});
