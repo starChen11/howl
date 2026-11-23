@@ -508,7 +508,7 @@ describe('C-163 · 快照的身份 / 人格 / 结果与对局一致', () => {
 });
 
 describe('复盘时间线：天数与相位名要说人话', () => {
-  it('第一夜的记录是第 1 天、相位是中文、死因是中文', async () => {
+  it('第一夜的记录是第 1 夜、相位是中文、死因是中文', async () => {
     const { registry, record } = await finishedGame();
     const snapshot = record.snapshot as ReturnType<typeof buildReplaySnapshot>;
 

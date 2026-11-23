@@ -29,6 +29,13 @@ describe('AC-1 · 状态条', () => {
     expect(screen.getByText(/42 秒/)).toBeTruthy();
   });
 
+  it('夜间显示「第 N 夜」而不是「第 N 天」', () => {
+    render(<StatusBar day={1} phase="NIGHT" aliveCount={9} remaining={30} speakingSeat={null} />);
+
+    expect(screen.getByText('第 1 夜')).toBeTruthy();
+    expect(screen.queryByText('第 1 天')).toBeNull();
+  });
+
   it('倒计时用 role=timer 且 aria-live=polite', () => {
     render(<StatusBar day={1} phase="DAY_SPEECH" aliveCount={9} remaining={30} speakingSeat={1} />);
 

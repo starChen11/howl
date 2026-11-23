@@ -110,6 +110,21 @@ describe('AC-7 / AC-14 · 降级标注与再来一局', () => {
     expect(restarted).toBe(1);
   });
 
+  it('夜间条目显示「第 N 夜」，开局显示「开局」', () => {
+    render(
+      <Timeline
+        entries={[
+          { seq: 1, day: 0, phase: '开局', text: '身份分配完成' },
+          { seq: 2, day: 1, phase: 'NIGHT_WOLF_CHAT', text: '夜聊' },
+        ]}
+        degraded={[]}
+      />,
+    );
+
+    expect(screen.getByText('开局')).toBeTruthy();
+    expect(screen.getByText('第 1 夜')).toBeTruthy();
+  });
+
   it('时间线只渲染传入的条目，不自己补数据', () => {
     render(<Timeline entries={snapshot.timeline} degraded={snapshot.degraded} />);
     expect(screen.getAllByRole('listitem')).toHaveLength(3);

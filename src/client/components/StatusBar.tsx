@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { phaseLabel } from '@shared/phase-labels';
+import { dayLabel, phaseLabel } from '@shared/phase-labels';
 
 import { countdownText } from '../game-state';
 
@@ -37,8 +37,8 @@ export function StatusBar({
       <h1 className="status__title">Howl</h1>
       <dl className="status__facts">
         <div>
-          <dt>天数</dt>
-          <dd>第 {day} 天</dd>
+          <dt>进程</dt>
+          <dd>{dayLabel(day, phase)}</dd>
         </div>
         <div>
           <dt>阶段</dt>

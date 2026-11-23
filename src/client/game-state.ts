@@ -1,5 +1,5 @@
 import type { ProjectedContext } from '@shared/project';
-import { phaseLabel } from '@shared/phase-labels';
+import { dayLabel, phaseLabel } from '@shared/phase-labels';
 
 /**
  * 从投影推导界面要显示的东西（RFC-012 §2.3）。
@@ -97,7 +97,7 @@ export function countdownText(remaining: number): string {
 /** 屏幕阅读器的整局描述（不含倒计时，避免每秒播报）。 */
 export function boardAnnouncement(ctx: ProjectedContext): string {
   const speaking = speakingSeat(ctx);
-  return `你是 ${ctx.self.seat} 号，第 ${ctx.day} 天，${phaseLabel(ctx.phase)}${
+  return `你是 ${ctx.self.seat} 号，${dayLabel(ctx.day, ctx.phase)}，${phaseLabel(ctx.phase)}${
     speaking === null ? '' : `，轮到 ${speaking} 号发言`
   }。`;
 }

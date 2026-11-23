@@ -16,6 +16,7 @@ const ReplayPage = lazy(() =>
   import('./pages/ReplayPage').then((m) => ({ default: m.ReplayPage })),
 );
 import type { ReplaySnapshot } from '@shared/replay';
+import { dayLabel } from '@shared/phase-labels';
 import type { TruthView } from '@shared/truth';
 import { SeatGrid } from './components/SeatGrid';
 import { SpeechFeed, type SpeechLine } from './components/SpeechFeed';
@@ -307,7 +308,12 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
               {truthData.deaths.length === 0 ? <li>还没有人出局。</li> : null}
               {truthData.deaths.map((death, index) => (
                 <li key={`${death.seat}-${index}`}>
-                  {death.seat} 号（第 {death.day} 天，{death.cause}）
+                  {death.seat} 号（
+                  {dayLabel(
+                    death.day,
+                    death.cause === 'wolf' || death.cause === 'poison' ? 'NIGHT' : 'DAY',
+                  )}
+                  ，{death.cause}）
                 </li>
               ))}
             </ul>

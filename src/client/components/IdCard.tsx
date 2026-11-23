@@ -1,5 +1,6 @@
 import type { ProjectedContext } from '@shared/project';
 
+import { dayLabel } from '@shared/phase-labels';
 import { ROLE_LABELS } from '@shared/terms';
 
 /**
@@ -36,7 +37,7 @@ export function IdCard({ ctx }: { ctx: ProjectedContext }) {
         {role === 'seer'
           ? ctx.knowledge.checks.map((check) => (
               <li key={`${check.target}-${check.day}`}>
-                第 {check.day} 天查 {check.target} 号：
+                {dayLabel(check.day, 'NIGHT')}查 {check.target} 号：
                 {check.result === 'wolf' ? ROLE_LABELS.wolf : '好人'}
               </li>
             ))

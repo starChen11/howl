@@ -89,7 +89,7 @@ describe('AC-8 / AC-9 · 版本与幂等', () => {
       url: `/api/games/${body.gameId}/actions`,
       headers: { cookie },
       payload: {
-        action: { type: 'WOLF_CHAT', ts: 1, seat: 1, text: '' },
+        action: { type: 'WOLF_CHAT', ts: 1, seat: 1, text: '刀 2 号' },
         expectedVersion: version,
       },
     });
@@ -108,7 +108,7 @@ describe('AC-8 / AC-9 · 版本与幂等', () => {
       headers: { cookie },
     });
     const version = view.json<{ version: number }>().version;
-    const action = { type: 'WOLF_CHAT', ts: 1, seat: 1, text: '' };
+    const action = { type: 'WOLF_CHAT', ts: 1, seat: 1, text: '刀 2 号' };
 
     const first = await app.inject({
       method: 'POST',
@@ -148,7 +148,10 @@ describe('AC-8 / AC-9 · 版本与幂等', () => {
       method: 'POST',
       url: `/api/games/${body.gameId}/actions`,
       headers: { cookie },
-      payload: { action: { type: 'WOLF_CHAT', ts: 1, seat: 1, text: '' }, expectedVersion: 999 },
+      payload: {
+        action: { type: 'WOLF_CHAT', ts: 1, seat: 1, text: '刀 2 号' },
+        expectedVersion: 999,
+      },
     });
 
     expect(res.statusCode).toBe(409);
@@ -183,7 +186,7 @@ describe('B1 / B2 · HTTP 层的可见性与席位授权', () => {
       url: `/api/games/${body.gameId}/actions`,
       headers: { cookie },
       payload: {
-        action: { type: 'WOLF_CHAT', ts: 1, seat: 1, text: '' },
+        action: { type: 'WOLF_CHAT', ts: 1, seat: 1, text: '刀 2 号' },
         expectedVersion: version,
       },
     });
@@ -209,7 +212,7 @@ describe('B1 / B2 · HTTP 层的可见性与席位授权', () => {
       url: `/api/games/${body.gameId}/actions`,
       headers: { cookie },
       payload: {
-        action: { type: 'WOLF_CHAT', ts: 1, seat: 2, text: '' },
+        action: { type: 'WOLF_CHAT', ts: 1, seat: 2, text: '刀 2 号' },
         expectedVersion: version,
       },
     });

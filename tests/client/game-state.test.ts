@@ -106,6 +106,12 @@ describe('AC-14 · 文字表达', () => {
     expect(text).toContain('轮到 3 号');
   });
 
+  it('夜间读屏公告说「第 N 夜」', () => {
+    const text = boardAnnouncement(ctx({ phase: 'NIGHT', day: 2, pending: 'chat' }));
+    expect(text).toContain('第 2 夜');
+    expect(text).not.toContain('第 2 天');
+  });
+
   it('不是发言阶段时不提发言者', () => {
     const text = boardAnnouncement(ctx({ phase: 'DAY_VOTE' }));
     expect(text).not.toContain('轮到');

@@ -130,13 +130,14 @@ describe('C-28 · aliveSeats 与 legalTargets 的口径', () => {
     expect(ctx.aliveSeats).toContain(hunter);
   });
 
-  it('夜里 legalTargets 用「已知存活」：当夜死者仍在候选里（否则目标消失=泄漏）', () => {
+  it('夜里的夜间目标用「已知存活」：当夜死者仍在候选里（否则目标消失=泄漏）', () => {
     const { state, events } = runTo('NIGHT_HUNTER_SHOOT');
     const hunter = seatOfRole(state, 'hunter');
     // 引擎里他已经出局，但观察者还不知道——所以他还应在候选名单里
     expect(state.seats.find((seat) => seat.seat === hunter)?.alive).toBe(false);
 
-    const ctx = project({ state, events, observer: 1, pending: 'vote' });
+    // 用夜间技能（查验）代表夜间目标；白天投票在公布后改用引擎真值。
+    const ctx = project({ state, events, observer: 1, pending: 'check' });
     expect(ctx.legalTargets).toContain(hunter);
   });
 

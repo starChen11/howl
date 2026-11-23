@@ -75,3 +75,14 @@ export function conditionLabel(condition: string): string {
       return condition;
   }
 }
+
+/**
+ * 「第 N 天」还是「第 N 夜」。
+ *
+ * 真实规则里首夜在第一天之前：夜 N 不算第 N 天。投影把夜间折叠成 `NIGHT`，
+ * 所以这里同时接受真实相位（`NIGHT_*`）与投影相位（`NIGHT`）。
+ */
+export function dayLabel(day: number, phase: string | null | undefined): string {
+  const night = typeof phase === 'string' && (phase === 'NIGHT' || phase.startsWith('NIGHT_'));
+  return `第 ${day} ${night ? '夜' : '天'}`;
+}

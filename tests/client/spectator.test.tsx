@@ -318,7 +318,7 @@ describe('AC-9 · 真相区渲染动作与出局记录', () => {
     await user.click(screen.getByRole('button', { name: '打开真相视图' }));
 
     await waitFor(() => expect(screen.getByText(/袭击了 1 号/)).toBeTruthy());
-    expect(screen.getByText(/第 2 天，wolf/)).toBeTruthy();
+    expect(screen.getByText(/第 2 夜，wolf/)).toBeTruthy();
     expect(screen.getByText(/第 1 夜：2→1/)).toBeTruthy();
   });
 });

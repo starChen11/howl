@@ -1,3 +1,4 @@
+import { dayLabel } from '@shared/phase-labels';
 import type { TimelineEntry } from '@shared/replay';
 
 /**
@@ -28,7 +29,9 @@ export function Timeline({
             }`}
             data-replay-seq={entry.seq}
           >
-            <span className="replay-timeline__day">第 {entry.day} 天</span>
+            <span className="replay-timeline__day">
+              {entry.day === 0 ? '开局' : dayLabel(entry.day, entry.phase)}
+            </span>
             {degradedSet.has(entry.seq) ? (
               <span className="replay-timeline__degraded">降级</span>
             ) : null}
