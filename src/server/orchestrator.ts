@@ -241,9 +241,19 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     // 玩家触发点：白天发言（AC-11）与白天投票（AC-11 的「发言 → 投票」）。
     // 夜间的目标选择仍是另一套输入，先用注入的 `decide` 代劳。
     // 自由投票下，AI 的票之间留间隔，让玩家能看到票型逐条出现（RUL-15）。
+    // 只有「玩家是狼且还没确认」时才放慢 AI 的票，让玩家看清票型跟票；
+    // 玩家已确认（或玩家不是狼）就没必要再等，直接推进到夜晚结算。
+    const playerIsWolf =
+      state.seats.find((entry) => entry.seat === record.playerSeat)?.role === 'wolf' &&
+      state.seats.find((entry) => entry.seat === record.playerSeat)?.alive === true;
+    const playerConfirmed = (state.wolfVotes ?? []).some(
+      (vote) => vote.seat === record.playerSeat && vote.confirmed !== false,
+    );
     if (
       (state.phase === 'NIGHT_WOLVES' || state.phase === 'NIGHT_WOLF_RUNOFF') &&
       seat !== record.playerSeat &&
+      playerIsWolf &&
+      !playerConfirmed &&
       (deps.wolfVoteDelayMs ?? 0) > 0 &&
       (state.wolfVotes ?? []).some((vote) => vote.seat !== seat)
     ) {
