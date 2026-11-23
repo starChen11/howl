@@ -373,10 +373,8 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
     if (accepted && parsed.data.action.type === 'WOLF_READY') {
       channels.submit(record.gameId, '');
     }
-    if (
-      accepted &&
-      (parsed.data.action.type === 'WOLF_VOTE' || parsed.data.action.type === 'SEER_CHECK')
-    ) {
+    // 狼队「选择」只是意向，不唤醒编排层；只有 CONFIRM 才唤醒（RUL-15）。
+    if (accepted && parsed.data.action.type === 'SEER_CHECK') {
       channels.submit(record.gameId, String(parsed.data.action.target));
     }
     if (accepted && parsed.data.action.type === 'WITCH_ACT') {
