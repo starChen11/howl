@@ -61,7 +61,8 @@ const loop = new GameLoop({
     }),
 });
 
-process.env['HOWL_WOLF_READY_MS'] ??= '5000';
+// 脚本替身没有思考时间：进入讨论即准备；真实模型保留 5 秒节奏。
+process.env['HOWL_WOLF_READY_MS'] ??= process.env['HOWL_FAKE_AI'] === '1' ? '0' : '5000';
 // 真实模型自己决定「准备完成」；脚本替身固定 5 秒后自动准备。
 process.env['HOWL_WOLF_AI_READY'] ??= process.env['HOWL_FAKE_AI'] === '1' ? 'auto' : 'model';
 

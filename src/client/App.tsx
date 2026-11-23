@@ -350,7 +350,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
               (vote) => vote.seat === ctx.self.seat,
             )}
             chatSeconds={50}
-            readyAfterSeconds={__HOWL_FAKE_AI__ ? 5 : 30}
+            readyAfterSeconds={__HOWL_FAKE_AI__ ? 0 : 30}
             readySeats={currentNightWolfEvents(ctx.privateEvents)
               .filter((event) => event.type === 'WOLF_READY_MARKED')
               .map((event) => (event.payload as { seat: number }).seat)}

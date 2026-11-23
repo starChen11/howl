@@ -594,7 +594,7 @@ async function driveWolfChat(deps: OrchestratorDeps, initial: GameRecord): Promi
   const aiWolves = () =>
     registry
       .stateOf(record)
-      .seats.filter((seat) => seat.alive && seat.role === 'wolf' && seat.seat !== playerSeat)
+      .seats.filter((seat) => seat.alive && seat.role === 'wolf' && !seat.isPlayer)
       .map((seat) => seat.seat);
 
   const submit = async (seat: number, action: Action): Promise<void> => {
