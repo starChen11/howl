@@ -166,3 +166,22 @@ describe('RUL-13 · 重投相位也能投票', () => {
     });
   });
 });
+
+describe('RFC-020 · PK 发言也是合法动作', () => {
+  it('DAY_PK_SPEECH 接受 speak / skip', () => {
+    const ctx = {
+      seat: 1 as never,
+      phase: 'DAY_PK_SPEECH' as never,
+      day: 1,
+      legalTargets: [],
+    };
+    expect(toAction({ action: 'speak', reason: '自证', speech: '我不是狼' }, ctx, 1)).toMatchObject(
+      {
+        action: { type: 'SPEECH', text: '我不是狼' },
+      },
+    );
+    expect(toAction({ action: 'skip', reason: '过' }, ctx, 1)).toMatchObject({
+      action: { type: 'SPEECH_SKIP' },
+    });
+  });
+});

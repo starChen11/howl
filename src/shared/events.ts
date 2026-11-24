@@ -138,7 +138,15 @@ export interface GameEventMap {
    * `applyEvent` 会校验 `from === state.phase`：不一致说明事件流被拼错了。
    */
   PHASE_CHANGED: { from: Phase; to: Phase };
-  AI_THOUGHT: { reason: string; claim?: Claim; decisionSeq: number; seat: SeatId };
+  AI_THOUGHT: {
+    reason: string;
+    claim?: Claim;
+    decisionSeq: number;
+    seat: SeatId;
+    phase?: Phase;
+    decisionAction?: string;
+    target?: SeatId | 'abstain';
+  };
   GAME_ENDED: { result: 'wolf' | 'good'; condition: string };
   DEGRADED: { seat: SeatId };
 }

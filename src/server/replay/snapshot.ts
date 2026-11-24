@@ -214,13 +214,27 @@ export function buildThoughts(events: readonly EventEnvelope[]): ThoughtEntry[] 
         claim?: Claim;
         decisionSeq: number;
         seat: number;
+        phase?: string;
+        decisionAction?: string;
+        target?: number | 'abstain';
       };
+      const kind: ThoughtEntry['kind'] = payload.phase?.startsWith('NIGHT')
+        ? 'night-action'
+        : payload.phase === 'DAY_VOTE' || payload.phase === 'DAY_VOTE_RUNOFF'
+          ? 'vote'
+          : 'speech';
+      const chose =
+        payload.target === undefined
+          ? ''
+          : payload.target === 'abstain'
+            ? '弃权'
+            : `${payload.decisionAction === 'VOTE' ? '投' : '选择'} ${payload.target} 号`;
       const thought: ThoughtEntry = {
         seq: event.seq,
         seat: payload.seat,
-        kind: 'speech',
+        kind,
         reason: payload.reason,
-        chose: '',
+        chose,
       };
       if (payload.claim !== undefined) thought.claim = payload.claim;
       return thought;

@@ -10,9 +10,12 @@ export function ThoughtCard({ thought }: { thought: ThoughtEntry }) {
     <article className="thought" aria-label={`${thought.seat} 号在第 ${thought.seq} 步的推理`}>
       <header className="thought__header">
         <span className="thought__seat">{thought.seat} 号</span>
-        <span className="thought__kind">{thought.kind === 'speech' ? '发言' : thought.kind}</span>
+        <span className="thought__kind">
+          {thought.kind === 'speech' ? '发言' : thought.kind === 'vote' ? '投票' : '夜间行动'}
+        </span>
       </header>
       <p className="thought__reason">{thought.reason}</p>
+      {thought.chose === '' ? null : <p className="thought__chose">选择：{thought.chose}</p>}
       {thought.claim === undefined ? null : (
         <p className="thought__claim">
           声称：

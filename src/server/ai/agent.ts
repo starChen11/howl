@@ -228,6 +228,11 @@ export function createLlmAgent(input: {
         lastFeedback = translated.reject;
       } catch (error) {
         if (controller.signal.aborted) return { action: undefined };
+        console.warn('[llm] 模型调用失败，使用脚本兜底', {
+          seat,
+          phase,
+          error: error instanceof Error ? error.message : String(error),
+        });
         // 真实调用彻底失败：退回脚本动作，保证对局不冻结（发言降级由编排层处理）。
         try {
           return { ...(await scriptedAgent({ seat, ctx, phase })), degraded: true };
@@ -239,6 +244,7 @@ export function createLlmAgent(input: {
     }
 
     // 两次都被拒：退回脚本动作，至少让对局能继续。
+    console.warn('[llm] 动作连续被拒，使用脚本兜底', { seat, phase, reason: lastFeedback });
     return { ...(await scriptedAgent({ seat, ctx, phase })), degraded: true };
   };
 }

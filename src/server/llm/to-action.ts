@@ -52,11 +52,13 @@ function phaseAllows(action: Decision['action'], ctx: DecisionContext): boolean 
       return ctx.phase === 'DAY_VOTE' || ctx.phase === 'DAY_VOTE_RUNOFF';
     case 'speak':
     case 'skip':
-      return ctx.phase === 'DAY_SPEECH';
+      return ctx.phase === 'DAY_SPEECH' || ctx.phase === 'DAY_PK_SPEECH';
     case 'shoot':
       return ctx.phase === 'NIGHT_HUNTER_SHOOT' || ctx.phase === 'DAY_HUNTER_SHOOT';
     case 'expose':
-      return ctx.phase === 'DAY_SPEECH' || ctx.phase === 'DAY_VOTE';
+      return (
+        ctx.phase === 'DAY_SPEECH' || ctx.phase === 'DAY_PK_SPEECH' || ctx.phase === 'DAY_VOTE'
+      );
     case 'chat':
       return ctx.phase === 'NIGHT_WOLF_CHAT';
     default:

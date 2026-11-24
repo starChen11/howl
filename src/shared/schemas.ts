@@ -250,6 +250,10 @@ export const AiThoughtPayloadSchema = z.object({
   claim: z.unknown().optional(),
   decisionSeq: z.number().int().min(0),
   seat: z.number().int().min(1).max(9),
+  // 新字段可选：旧对局的事件流里没有，复盘仍按「发言」处理。
+  phase: phaseSchema.optional(),
+  decisionAction: z.string().optional(),
+  target: z.union([z.number().int().min(1).max(9), z.literal('abstain')]).optional(),
 });
 
 /** 降级标记（RFC-010）：被降级的席位。 */

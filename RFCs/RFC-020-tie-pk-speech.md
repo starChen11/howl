@@ -38,3 +38,8 @@
 
 修复：`speakingSeat` 原先只认 `DAY_SPEECH`，PK 阶段玩家看不到发言框。
 现在从最近一次唱票算出并列者，并在 PK 发言事件里推进，玩家能在 PK 阶段亲自发言。
+
+### 4.2 `toAction` 漏掉 PK 相位（2026-11-24）
+
+真实模型局每轮 PK 发言都被 `toAction` 以「阶段不接受 speak」拒绝，重试后降级成脚本短句。
+现在 `speak`/`skip`/`expose` 都接受 `DAY_PK_SPEECH`，并有单测。
