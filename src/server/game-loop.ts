@@ -1,6 +1,7 @@
 import type { InputChannel, OutputChannel } from '@shared/channels';
 
 import type { Decider } from './ai/agent';
+import { loadPhaseTimers } from './config/phase-timers';
 import { runGame } from './orchestrator';
 import type { GameRegistry, SessionRecord } from './store/game-registry';
 import type { ChannelRegistry } from './channels/session';
@@ -56,6 +57,7 @@ export class GameLoop {
     const input: InputChannel = channel.input;
 
     try {
+      const phaseTimers = loadPhaseTimers();
       await runGame({
         registry,
         session,
@@ -64,9 +66,10 @@ export class GameLoop {
         output,
         decide,
         // RUL-14 的时限：生产读环境变量（e2e 用极短时限），引擎本身不读时钟。
-        wolfChatMs: Number(process.env['HOWL_WOLF_CHAT_MS'] ?? 50_000),
+        wolfChatMs: phaseTimers.wolfChatMs,
         wolfReadyMs: Number(process.env['HOWL_WOLF_READY_MS'] ?? 0),
-        wolfVoteMs: Number(process.env['HOWL_WOLF_VOTE_MS'] ?? 10_000),
+        wolfVoteMs: phaseTimers.wolfVoteMs,
+        phaseTimers,
         wolfVoteDelayMs: Number(process.env['HOWL_WOLF_VOTE_DELAY_MS'] ?? 0),
         wolfAiReady: process.env['HOWL_WOLF_AI_READY'] === 'model' ? 'model' : 'auto',
         ...(this.options.maxSteps === undefined ? {} : { maxSteps: this.options.maxSteps }),

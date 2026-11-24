@@ -19,7 +19,8 @@ export function NightAction({
   selfSeat = 0,
   localTarget = null,
   onConfirmVote,
-  chatSeconds = 50,
+  chatSeconds = 100,
+  currentRemaining = null,
   readyAfterSeconds = 30,
   readySeats = [],
   wolfCount = 0,
@@ -50,6 +51,8 @@ export function NightAction({
   onConfirmVote?: () => void;
   /** 讨论总时长（秒）。 */
   chatSeconds?: number;
+  /** 服务端权威的当前剩余秒数；优先于本地 elapsed。 */
+  currentRemaining?: number | null;
   /** 多少秒后才允许点「准备完成」。 */
   readyAfterSeconds?: number;
   /** 已经准备的狼。 */
@@ -71,7 +74,8 @@ export function NightAction({
   }, [pending]);
 
   if (pending === 'chat') {
-    const remaining = Math.max(0, chatSeconds - elapsed);
+    const remaining =
+      currentRemaining === null ? Math.max(0, chatSeconds - elapsed) : currentRemaining;
     const canReady = elapsed >= readyAfterSeconds;
 
     return (

@@ -37,6 +37,17 @@ describe('RUL-14 · 讨论与投票的时限', () => {
       wolfChatMs: 20,
       wolfReadyMs: 0,
       wolfVoteMs: 20,
+      phaseTimers: {
+        wolfChatMs: 20,
+        wolfVoteMs: 20,
+        seerMs: 20,
+        witchMs: 20,
+        hunterShootMs: 20,
+        daySpeechMs: 20,
+        pkSpeechMs: 20,
+        dayVoteMs: 20,
+        dayVoteRunoffMs: 20,
+      },
       maxSteps: 8,
     });
 

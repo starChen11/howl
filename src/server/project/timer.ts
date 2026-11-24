@@ -1,19 +1,5 @@
 import type { GameRecord } from '../store/game-registry';
-
-/** 有倒计时的相位及其上限（秒）。自动结算相位没有倒计时。 */
-const PHASE_SECONDS: Record<string, number> = {
-  NIGHT_WOLF_CHAT: 50,
-  NIGHT_WOLVES: 10,
-  NIGHT_WOLF_RUNOFF: 10,
-  NIGHT_SEER: 60,
-  NIGHT_WITCH: 60,
-  NIGHT_HUNTER_SHOOT: 60,
-  DAY_SPEECH: 60,
-  DAY_PK_SPEECH: 60,
-  DAY_VOTE: 60,
-  DAY_VOTE_RUNOFF: 60,
-  DAY_HUNTER_SHOOT: 60,
-};
+import { loadPhaseTimers, timeoutForPhase, type PhaseTimers } from '../config/phase-timers';
 
 export interface PhaseTimer {
   phase: string;
@@ -30,16 +16,16 @@ export interface PhaseTimer {
 export function phaseTimer(
   record: Pick<GameRecord, 'events'>,
   phase: string,
-  env: NodeJS.ProcessEnv = process.env,
+  timersOrEnv: PhaseTimers | NodeJS.ProcessEnv = loadPhaseTimers(),
   now = Date.now(),
 ): PhaseTimer | null {
-  const total =
-    phase === 'NIGHT_WOLF_CHAT'
-      ? Math.max(1, Math.round(Number(env['HOWL_WOLF_CHAT_MS'] ?? 50_000) / 1000))
-      : phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF'
-        ? Math.max(1, Math.round(Number(env['HOWL_WOLF_VOTE_MS'] ?? 10_000) / 1000))
-        : PHASE_SECONDS[phase];
-  if (total === undefined) return null;
+  const timers =
+    (timersOrEnv as PhaseTimers).wolfChatMs !== undefined
+      ? (timersOrEnv as PhaseTimers)
+      : loadPhaseTimers(timersOrEnv as NodeJS.ProcessEnv);
+  const timeoutMs = timeoutForPhase(phase, timers);
+  if (timeoutMs === null) return null;
+  const total = Math.max(1, Math.round(timeoutMs / 1000));
 
   let startedAt: number | null = null;
   for (const event of record.events) {

@@ -536,3 +536,13 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 3 | 同上：并列者各说完后进入 DAY_VOTE_RUNOFF | unit | existing | Must |
 | 4 | 同上：重投仍平票则入夜 | unit | existing | Must |
 | 5 | `tests/server/orchestrator.test.ts`：玩家 PK 发言后被问重投 | integration | existing | Must |
+
+## RFC-021: 可配置的阶段倒计时
+
+| AC | 计划测试 | 层级 | Exists? | 优先级 |
+|---|---|---|---|---|
+| 1 | `tests/server/phase-timer.test.ts`：默认值覆盖全部相位 | unit | existing | Must |
+| 2 | 环境变量覆盖（后续补） | unit | planned | Must |
+| 3 | 自动相位返回 null | unit | existing | Must |
+| 4 | 第二夜不沿用第一夜起点 | unit | existing | Must |
+| 5 | 前端使用服务端 timer | client | existing | Must |

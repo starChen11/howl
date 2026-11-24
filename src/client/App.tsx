@@ -390,7 +390,8 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
             hasVoted={currentWolfVotes(ctx.privateEvents).some(
               (vote) => vote.seat === ctx.self.seat,
             )}
-            chatSeconds={50}
+            chatSeconds={view.timer?.totalSeconds ?? 100}
+            currentRemaining={remaining}
             readyAfterSeconds={__HOWL_FAKE_AI__ ? 0 : 30}
             readySeats={currentNightWolfEvents(ctx.privateEvents)
               .filter((event) => event.type === 'WOLF_READY_MARKED')

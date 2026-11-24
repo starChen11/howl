@@ -3,6 +3,7 @@ import type { InputChannel, OutputChannel } from '@shared/channels';
 import type { EventEnvelope } from '@shared/events';
 import type { PendingDecision, ProjectedContext } from '@shared/project';
 
+import { loadPhaseTimers, timeoutForPhase, type PhaseTimers } from './config/phase-timers';
 import { degradeSentence } from './llm/degrade';
 import { project } from './project';
 import type { GameRecord, GameRegistry, SessionRecord } from './store/game-registry';
@@ -45,7 +46,9 @@ export interface OrchestratorDeps {
   }) => Promise<AgentDecision>;
   /** 提前结束（测试用）。 */
   maxSteps?: number;
-  /** 狼队讨论时长（毫秒，RUL-14）。默认 50 秒。 */
+  /** 各阶段最长等待时间；不传时从环境变量读取（默认已翻倍）。 */
+  phaseTimers?: PhaseTimers;
+  /** 狼队讨论时长（毫秒，RUL-14）。默认 100 秒。 */
   wolfChatMs?: number;
   /** AI 脚本队友多久后自动准备（毫秒）。生产 5 秒；测试默认 0。 */
   wolfReadyMs?: number;
@@ -517,7 +520,6 @@ async function playerAction(
   gameId: string,
 ): Promise<AgentDecision> {
   const now = deps.now ?? Date.now;
-  const isWolfVote = phase === 'NIGHT_WOLVES' || phase === 'NIGHT_WOLF_RUNOFF';
   // 玩家可能在「不是自己行动」的瞬间通过路由确认/投票；如果此时编排层正阻塞在
   // 等输入上，会一直等到超时。这里同时轮询「是否已经轮不到我 / 相位是否已变」。
   let settled = false;
@@ -537,7 +539,7 @@ async function playerAction(
   const input = await Promise.race([
     deps.input.read({
       seat: seat as never,
-      timeoutMs: isWolfVote ? (deps.wolfVoteMs ?? 10_000) : 60_000,
+      timeoutMs: timeoutForPhase(phase, deps.phaseTimers ?? loadPhaseTimers()) ?? 60_000,
       kind:
         phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF'
           ? 'vote'

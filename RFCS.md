@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.162 · 来源 `PRD.md` v0.5 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-21
+> 版本 v2.163 · 来源 `PRD.md` v0.5 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-21
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -57,6 +57,7 @@
 | [RFC-018](RFCs/RFC-018-wolf-night-chat-room.md) | 狼队夜间讨论改为限时聊天室 | F9, F10, F26 | Large | Reviewed |
 | [RFC-019](RFCs/RFC-019-free-wolf-vote.md) | 狼队自由投票与确认 | F9, F10 | Large | Implemented |
 | [RFC-020](RFCs/RFC-020-tie-pk-speech.md) | 放逐平票的 PK 发言 | F5, F6 | Medium | Implemented |
+| [RFC-021](RFCs/RFC-021-configurable-phase-timers.md) | 可配置的阶段倒计时 | F5, F9 | Small | Implemented |
 
 **复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
 
@@ -86,6 +87,7 @@
 | RFC-018 | 005, 011 | — |
 | RFC-019 | 017, 018 | — |
 | RFC-020 | 004 | — |
+| RFC-021 | 012, 018, 019, 020 | — |
 
 **可并行分支**（顺序实现时无意义，多人协作有用）：
 
@@ -1319,6 +1321,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-24 | v2.163 | CHANGE-REQUEST-015 / RFC-021：阶段倒计时全部可配置；默认翻倍（RUL-17）。新增 RFC-021（Implemented） |
 | 2026-11-23 | v2.162 | CHANGE-REQUEST-014 / RFC-020：RUL-16 放逐平票先 PK 发言再重投。RFC-004 → Spec changed；新增 RFC-020（Implemented） |
 | 2026-11-23 | v2.161 | CHANGE-REQUEST-013 / RFC-019：RUL-15 狼队自由投票 + 确认（只计确认票、超时自动确认）。RFC-017 → Spec changed；新增 RFC-019（Implemented） |
 | 2026-11-21 | v2.160 | RFC-018 Round 4 窄复核（**B3 闭合，Status → `Reviewed`**）：空 `WOLF_CHAT` 校验前移到 `registry.submit` 之前，`strengthen.test.ts` 断言事件流不新增；`readyAfterSeconds` 只由 `__HOWL_FAKE_AI__` 决定，首页不再传 `?fast=1`。C-238 关闭；C-235 / C-237 仍 Open。详见 [`reviews/REVIEW-RFC-018.md`](reviews/REVIEW-RFC-018.md) Round 4 |

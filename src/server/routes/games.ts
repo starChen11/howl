@@ -12,6 +12,7 @@ import type { ProjectedContext } from '@shared/project';
 import type { PendingDecision } from '@shared/project';
 
 import { project } from '../project';
+import { loadPhaseTimers } from '../config/phase-timers';
 import { phaseTimer } from '../project/timer';
 import { replay } from '@engine/replay';
 import { buildTruth, canSeeTruth } from '../view/truth';
@@ -125,7 +126,11 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
         pending,
       });
 
-      return reply.send({ version: state.seq, view, timer: phaseTimer(record, state.phase) });
+      return reply.send({
+        version: state.seq,
+        view,
+        timer: phaseTimer(record, state.phase, loadPhaseTimers()),
+      });
     },
   );
 
