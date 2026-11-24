@@ -45,7 +45,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
   const api = clientRef.current;
   const [view, setView] = useState<GameViewResponse | null>(null);
   const [stream, setStream] = useState<StreamState>(initialStreamState);
-  const [remaining, setRemaining] = useState(60);
+  const [remaining, setRemaining] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dismissedResultSeq, setDismissedResultSeq] = useState(0);
   const [wolfTarget, setWolfTarget] = useState<number | null>(null);
@@ -57,7 +57,13 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
 
   const refresh = useCallback(async () => {
     try {
-      setView(await api.game(gameId));
+      const next = await api.game(gameId);
+      setView(next);
+      setRemaining(
+        next.timer === null || next.timer === undefined
+          ? null
+          : Math.max(0, next.timer.remainingSeconds),
+      );
       setError(null);
     } catch (cause) {
       // 对局已被释放（GET 410）时仍然可以看复盘：这里退到复盘接口。
@@ -99,7 +105,10 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
   }, [api, gameId, refresh]);
 
   useEffect(() => {
-    const timer = setInterval(() => setRemaining((value) => Math.max(0, value - 1)), 1_000);
+    const timer = setInterval(
+      () => setRemaining((value) => (value === null ? null : Math.max(0, value - 1))),
+      1_000,
+    );
     return () => clearInterval(timer);
   }, []);
 
@@ -308,7 +317,9 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         {announcement}
       </p>
       <footer className="app__footer">
-        {ctx.phase === 'FINISHED' ? null : <PhaseClock remaining={remaining} />}
+        {ctx.phase === 'FINISHED' || remaining === null ? null : (
+          <PhaseClock remaining={remaining} />
+        )}
         {ctx.self.alive || ctx.pending !== null ? null : (
           <SpectatorBar truthEnabled={truth.enabled} onToggleTruth={() => void onToggleTruth()} />
         )}
@@ -356,7 +367,12 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
           </section>
         ) : null}
         {ctx.self.alive && myTurn ? (
-          <SpeechInput remaining={remaining} onSubmit={submit} onSkip={skip} onDraft={syncDraft} />
+          <SpeechInput
+            remaining={remaining ?? 0}
+            onSubmit={submit}
+            onSkip={skip}
+            onDraft={syncDraft}
+          />
         ) : null}
         {ctx.pending === 'chat' ||
         ctx.pending === 'kill' ||

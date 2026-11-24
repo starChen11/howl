@@ -18,7 +18,7 @@ export function StatusBar({
   day: number;
   phase: string;
   aliveCount: number;
-  remaining: number;
+  remaining: number | null;
   speakingSeat: number | null;
 }) {
   return (
@@ -42,9 +42,11 @@ export function StatusBar({
           <dd>{speakingSeat === null ? '等待' : `${speakingSeat} 号发言`}</dd>
         </div>
       </dl>
-      <p className="status__timer" role="timer" aria-live="off">
-        {countdownText(remaining)}
-      </p>
+      {remaining === null ? null : (
+        <p className="status__timer" role="timer" aria-live="off">
+          {countdownText(remaining)}
+        </p>
+      )}
     </header>
   );
 }

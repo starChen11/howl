@@ -19,6 +19,8 @@ export interface ApiClientOptions {
 export interface GameViewResponse {
   version: number;
   view: ProjectedContext;
+  /** 本阶段最长等待时间；自动结算相位没有。 */
+  timer?: { phase: string; totalSeconds: number; remainingSeconds: number } | null;
 }
 
 export class ApiClient {

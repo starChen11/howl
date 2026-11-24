@@ -46,6 +46,35 @@ export function spokenSeats(ctx: ProjectedContext): number[] {
  * 与引擎的发言顺序一致（引擎按存活顺序推进），所以刷新后不会错位。
  */
 export function speakingSeat(ctx: ProjectedContext): number | null {
+  if (ctx.phase === 'DAY_PK_SPEECH') {
+    // PK 只有平票者能发言：从最近一次唱票算出并列者，再按座位顺序轮。
+    let revealedAt = -1;
+    let tied: number[] = [];
+    ctx.publicEvents.forEach((event, index) => {
+      if (event.type !== 'VOTE_REVEALED') return;
+      revealedAt = index;
+      const tally = new Map<number, number>();
+      for (const vote of (event.payload as { votes?: { target: number | 'abstain' }[] }).votes ??
+        []) {
+        if (vote.target === 'abstain') continue;
+        tally.set(vote.target, (tally.get(vote.target) ?? 0) + 1);
+      }
+      const top = Math.max(0, ...tally.values());
+      tied = [...tally.entries()]
+        .filter(([, count]) => count === top)
+        .map(([seat]) => seat)
+        .sort((a, b) => a - b);
+    });
+    if (tied.length === 0) return null;
+    const spoken = new Set(
+      ctx.publicEvents
+        .slice(revealedAt + 1)
+        .filter((event) => event.type === 'SPEECH' || event.type === 'SPEECH_SKIPPED')
+        .map((event) => (event.payload as { seat: number }).seat),
+    );
+    return tied.find((seat) => !spoken.has(seat)) ?? null;
+  }
+
   if (ctx.phase !== 'DAY_SPEECH') return null;
 
   const spoken = new Set(spokenSeats(ctx));

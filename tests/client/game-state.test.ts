@@ -7,6 +7,7 @@ import {
   buildBoard,
   clockText,
   countdownText,
+  speakingSeat,
   spokenSeats,
 } from '@client/game-state';
 
@@ -160,5 +161,27 @@ describe('C-121 · 跨天发言只算最近一天', () => {
 
     expect(spokenSeats(ctx2)).toEqual([]);
     expect(buildBoard(ctx2).speakingSeat).toBe(1);
+  });
+});
+
+describe('PK 发言的当前发言人', () => {
+  it('只从平票者里按座位顺序轮，不把非平票者算进来', () => {
+    const events = [
+      {
+        seq: 1,
+        type: 'VOTE_REVEALED',
+        payload: {
+          votes: [
+            { seat: 1, target: 2 },
+            { seat: 2, target: 5 },
+            { seat: 3, target: 2 },
+            { seat: 4, target: 5 },
+          ],
+        },
+      },
+      { seq: 2, type: 'SPEECH', payload: { seat: 2, text: '我先说' } },
+    ] as never;
+    const pk = ctx({ phase: 'DAY_PK_SPEECH', aliveSeats: [1, 2, 5], publicEvents: events });
+    expect(speakingSeat(pk)).toBe(5);
   });
 });
