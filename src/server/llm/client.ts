@@ -140,6 +140,7 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
           ? AbortSignal.timeout(config.timeoutMs)
           : AbortSignal.any([AbortSignal.timeout(config.timeoutMs), input.signal]);
       const streamThis = input.onDelta !== undefined && attempt === 1;
+      const tokenBudget = maxTokensFor(config, input.personaId ?? null) * (attempt === 1 ? 1 : 2);
 
       let content = '';
       let usage:
@@ -156,7 +157,7 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
             model: config.model,
             messages,
             temperature: config.temperature,
-            max_tokens: maxTokensFor(config, input.personaId ?? null),
+            max_tokens: tokenBudget,
             stream: true,
             stream_options: { include_usage: true },
           },
@@ -178,7 +179,7 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
             model: config.model,
             messages,
             temperature: config.temperature,
-            max_tokens: maxTokensFor(config, input.personaId ?? null),
+            max_tokens: tokenBudget,
           },
           { signal },
         );
@@ -186,6 +187,13 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
         usage = response.usage;
       }
 
+      if (content.trim() === '') {
+        console.warn('[llm] 模型返回空正文', {
+          seat: input.ctx.self.seat,
+          phase: input.ctx.phase,
+          maxTokens: maxTokensFor(config, input.personaId ?? null),
+        });
+      }
       const parsed = DecisionSchema.safeParse(normalizeDecision(safeJson(content)));
 
       if (!parsed.success) {

@@ -21,7 +21,8 @@ export const DEFAULT_LLM_CONFIG = {
   model: 'deepseek-flash',
   thinking: true,
   temperature: 0.8,
-  maxOutputTokens: 800,
+  // 思维链也占输出预算；800 在后期容易只剩思考没有正文。
+  maxOutputTokens: 4096,
   timeoutMs: 30_000,
   maxRetries: 1,
 } as const;
@@ -55,7 +56,7 @@ export function loadLlmConfig(env: NodeJS.ProcessEnv = process.env): LlmConfig {
     model: env['LLM_MODEL'] ?? DEFAULT_LLM_CONFIG.model,
     thinking: DEFAULT_LLM_CONFIG.thinking,
     temperature: DEFAULT_LLM_CONFIG.temperature,
-    maxOutputTokens: DEFAULT_LLM_CONFIG.maxOutputTokens,
+    maxOutputTokens: readInt(env, 'LLM_MAX_OUTPUT_TOKENS', DEFAULT_LLM_CONFIG.maxOutputTokens),
     timeoutMs: readInt(env, 'LLM_TIMEOUT_MS', DEFAULT_LLM_CONFIG.timeoutMs),
     maxRetries: readInt(env, 'LLM_MAX_RETRIES', DEFAULT_LLM_CONFIG.maxRetries),
   };

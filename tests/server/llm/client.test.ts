@@ -199,6 +199,10 @@ describe('AC-4 · 配置与环境变量', () => {
 
     expect(config.timeoutMs).toBe(DEFAULT_LLM_CONFIG.timeoutMs);
     expect(config.maxRetries).toBe(DEFAULT_LLM_CONFIG.maxRetries);
+    expect(config.maxOutputTokens).toBe(DEFAULT_LLM_CONFIG.maxOutputTokens);
+    expect(
+      loadLlmConfig({ DEEPSEEK_API_KEY: 'k', LLM_MAX_OUTPUT_TOKENS: '2048' }).maxOutputTokens,
+    ).toBe(2048);
     expect(config.model).toBe('deepseek-flash');
   });
 

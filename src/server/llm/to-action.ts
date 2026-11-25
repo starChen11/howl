@@ -30,7 +30,6 @@ const REQUIRED_TARGET: ReadonlySet<Decision['action']> = new Set([
   'heal',
   'poison',
   'vote',
-  'shoot',
 ]);
 
 /** 决策需要的阶段。用它把「动作与阶段不匹配」挡在引擎之外。 */
@@ -69,6 +68,19 @@ function phaseAllows(action: Decision['action'], ctx: DecisionContext): boolean 
 export function toAction(decision: Decision, ctx: DecisionContext, ts: number): DecisionResult {
   if (!phaseAllows(decision.action, ctx)) {
     return { reject: `阶段 ${ctx.phase} 不接受动作 ${decision.action}` };
+  }
+
+  if (decision.action === 'shoot') {
+    // 开枪者可以选择不开枪（目标缺省）；有目标时必须合法。
+    if (decision.target === undefined) {
+      return { action: { type: 'HUNTER_SHOOT', ts, seat: ctx.seat } };
+    }
+    if (!ctx.legalTargets.includes(decision.target as SeatId)) {
+      return { reject: `目标 ${decision.target} 不在本阶段的合法清单里` };
+    }
+    return {
+      action: { type: 'HUNTER_SHOOT', ts, seat: ctx.seat, target: decision.target as SeatId },
+    };
   }
 
   if (REQUIRED_TARGET.has(decision.action)) {

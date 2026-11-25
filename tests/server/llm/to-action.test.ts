@@ -185,3 +185,17 @@ describe('RFC-020 · PK 发言也是合法动作', () => {
     });
   });
 });
+
+describe('猎人可以选择不开枪', () => {
+  it('shoot 没有 target 时翻译成不开枪，而不是拒绝', () => {
+    const ctx = {
+      seat: 2 as never,
+      phase: 'DAY_HUNTER_SHOOT' as never,
+      day: 1,
+      legalTargets: [3, 4],
+    };
+    expect(toAction({ action: 'shoot', reason: '没有信息' }, ctx as never, 1)).toMatchObject({
+      action: { type: 'HUNTER_SHOOT', seat: 2 },
+    });
+  });
+});
