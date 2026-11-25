@@ -200,3 +200,61 @@ NIGHT_RESOLVE（首夜结算，死讯仍保密）
 - 新相位/动作/事件/payload/可见性/shared schema 全量契约。
 
 详细评审结论见本轮设计评审报告；解决后再进入实现。
+
+## 13. 设计评审后的落实方案
+
+### 13.1 首夜死亡延后落地
+
+为同时满足「死讯公布前竞选」和「首夜死者可参与」，首夜不再在 `NIGHT_RESOLVE` 立即把席位标成死亡：
+
+- `NIGHT_RESOLVE` 只计算并暂存 `pendingDeaths`（含狼刀/毒药），胜负判定延后到死讯落地后；
+- 竞选期间 `aliveSeats` 仍是 9 人，投影、真相视图、身份卡都不会提前显示死亡；
+- `DAY_ANNOUNCE` 才把 `pendingDeaths` 应用到席位并公布；
+- 公布后如有猎人，进入 `DAY_HUNTER_SHOOT`；再处理警长死亡移交；
+- 竞选期间自曝同样先走 `DAY_ANNOUNCE`，再入夜。
+
+这比给投影加一层「假装活着」更安全：死亡在事件流里真的还没发生。
+
+### 13.2 竞选发言独立
+
+竞选发言不复用白天的 `SPEECH` cursor：新增 `SHERIFF_SPEECH` / `SHERIFF_SPEECH_SKIPPED` 事件与独立轮次状态，避免 `DAY_STARTED` 重置和客户端 `spokenSeats` 污染。
+
+### 13.3 发言顺序与归票
+
+- `SHERIFF_ORDER_CHOSEN` 携带 `startSeat` 与 `direction`，是当天发言顺序的权威；
+- `DAY_STARTED.speechStartSeat` 只作为无警长默认值；
+- 警长在正常轮转中照常发言；全员说完后进入 `DAY_SHERIFF_FINAL_SPEECH`，警长额外发言一次，再投票。
+
+### 13.4 1.5 票契约
+
+- 引擎内部：普通票 2 个半票单位，警长票 3 个；
+- `VOTE_REVEALED` 增加 `countedVotes`（每位玩家折算后的半票数）与 `sheriffSeat` 快照；
+- `applyVoteRevealed`、`runoff`、UI、prompt、复盘全部读折算票；原始票仍保留供审计；
+- 重投同规则，警长 1.5 继续生效。
+
+### 13.5 竞选动作与超时
+
+| 相位 | 默认动作 |
+|---|---|
+| 上警 | 不上警 |
+| 竞选发言 | 跳过 |
+| 退水 | 不退水 |
+| 警下投票 | 弃权 |
+| PK 发言 | 跳过 |
+| 重投 | 投第一个并列者（不能弃权） |
+| 警长选顺序 | 沿用无警长默认 |
+| 归票发言 | 跳过 |
+| 警徽移交 | 撕徽 |
+
+所有新相位接入 RFC-021 的 `PhaseTimers`，默认 120 秒。
+
+### 13.6 状态
+
+公开：`sheriffSeat`、`sheriffCandidates`、`sheriffVoters`、`badge: 'none'|'held'|'destroyed'`。
+私有/服务端：`sheriffVotes`、`sheriffRunoff`。
+选举失败/从未有警长是 `badge='none'`；被撕是 `'destroyed'`。
+
+### 13.7 仍未清除的门禁
+
+RFC-022 的前置 RFC-002/004/006/007/012/014/021 仍是 `Spec changed`，RFC-003/013/015 也被实际影响。
+在这些 delta 未实现/复核前，不写实现代码；需要决定是否允许「RFC-022 作为统一实现载体」一次性落地并随后整体评审。
