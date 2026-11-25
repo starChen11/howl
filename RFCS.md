@@ -1,6 +1,6 @@
 # Howl · RFC 索引（RFCS）
 
-> 版本 v2.163 · 来源 `PRD.md` v0.5 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-21
+> 版本 v2.164 · 来源 `PRD.md` v0.5 / `FEATURES.md` v1.0 / `RULES.md` v1.4 · 最后更新 2026-11-21
 > **Status 列是唯一事实来源。** 由 `/implement-rfc`、`/review-rfc`、`/manage-changes` 维护。
 > 每个 RFC 由 `/implement-rfc <id>` 实现，例如 `/implement-rfc 003`。不要另写实现提示词文件——那会与命令正文漂移。
 
@@ -38,28 +38,29 @@
 | RFC | 标题 | 功能 | 复杂度 | Status |
 |---|---|---|---|---|
 | [RFC-001](RFCs/RFC-001-project-scaffold-and-shared-contracts.md) | 工程骨架与共享契约 | F43 | Low | Spec changed |
-| [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Reviewed |
+| [RFC-002](RFCs/RFC-002-engine-core-state-events-seed-effects.md) | 引擎内核：状态机、事件流、种子与效果管道 | F2, F7, F38, F44 | High | Spec changed |
 | [RFC-003](RFCs/RFC-003-roles-night-phase-and-strict-rules.md) | 板子分配、夜晚阶段与严格规则 | F1, F3, F8 | Medium | Reviewed |
 | [RFC-004](RFCs/RFC-004-day-speeches-votes-and-win-check.md) | 白天发言、投票与胜负判定 | F4, F5, F6 | Medium | Spec changed |
 | [RFC-005](RFCs/RFC-005-wolf-self-expose-and-night-chat.md) | 狼人自曝与夜间私聊 | F9, F10 | Medium | Spec changed |
 | [RFC-006](RFCs/RFC-006-llm-client-and-structured-decisions.md) | LLM 接入与结构化决策 | F11, F16, F17, F20 | High | Spec changed |
-| [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Reviewed |
+| [RFC-007](RFCs/RFC-007-context-projection-and-injection-guard.md) | 上下文投影与注入隔离 | F12, F13 | High | Spec changed |
 | [RFC-008](RFCs/RFC-008-session-store-and-resume.md) | 会话、状态存储与刷新恢复 | F34, F35, F36, F37 | Medium | Reviewed |
 | [RFC-009](RFCs/RFC-009-ai-personas-and-advanced-play.md) | AI 人格与高级打法 | F14, F15 | High | Reviewed |
 | [RFC-010](RFCs/RFC-010-streaming-thinking-indicator-and-degrade.md) | 流式发言、思考指示与降级 | F18, F19 | High | Spec changed |
 | [RFC-011](RFCs/RFC-011-player-view-speech-input-and-channel.md) | 玩家视角、发言输入与通道抽象 | F21, F22, F23 | Medium | Spec changed |
 | [RFC-012](RFCs/RFC-012-game-ui-onboarding-and-responsive.md) | 对局界面、新手引导与响应式 | F24, F26, F30, F40 | Medium | Spec changed |
 | [RFC-013](RFCs/RFC-013-event-panel-spectator-and-truth-view.md) | 事件面板、观战与真相视图 | F25, F27, F28, F29 | Low | Reviewed |
-| [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Reviewed |
+| [RFC-014](RFCs/RFC-014-replay-and-restart.md) | 复盘与再来一局 | F31, F32, F33 | High | Spec changed |
 | [RFC-015](RFCs/RFC-015-headless-selfplay.md) | headless 自动对局 | F39 | Medium | Reviewed |
 | [RFC-016](RFCs/RFC-016-browser-support-and-first-paint.md) | 浏览器兼容与首屏性能 | F41, F42 | Low | Reviewed |
 | [RFC-017](RFCs/RFC-017-wolf-team-vote.md) | 狼队投票决定刀谁 | F3, F9, F10 | Medium | Spec changed |
 | [RFC-018](RFCs/RFC-018-wolf-night-chat-room.md) | 狼队夜间讨论改为限时聊天室 | F9, F10, F26 | Large | Reviewed |
 | [RFC-019](RFCs/RFC-019-free-wolf-vote.md) | 狼队自由投票与确认 | F9, F10 | Large | Implemented |
 | [RFC-020](RFCs/RFC-020-tie-pk-speech.md) | 放逐平票的 PK 发言 | F5, F6 | Medium | Implemented |
-| [RFC-021](RFCs/RFC-021-configurable-phase-timers.md) | 可配置的阶段倒计时 | F5, F9 | Small | Implemented |
+| [RFC-021](RFCs/RFC-021-configurable-phase-timers.md) | 可配置的阶段倒计时 | F5, F9 | Small | Spec changed |
+| [RFC-022](RFCs/RFC-022-sheriff-election-and-badge.md) | 完整警长竞选与警徽 | F49, F4, F5 | Large | Planned |
 
-**复杂度分布**：High 6（002 / 006 / 007 / 009 / 010 / 014）、Medium 7、Low 3。
+**复杂度分布**：High 7（002 / 006 / 007 / 009 / 010 / 014 / 022）、Medium 7、Low 3。
 
 ---
 
@@ -88,6 +89,7 @@
 | RFC-019 | 017, 018 | — |
 | RFC-020 | 004 | — |
 | RFC-021 | 012, 018, 019, 020 | — |
+| RFC-022 | 002, 003, 004, 006, 007, 012, 014, 020, 021 | — |
 
 **可并行分支**（顺序实现时无意义，多人协作有用）：
 
@@ -1321,6 +1323,7 @@ Round 3 的非阻塞发现（不阻塞 `Reviewed`）：
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
+| 2026-11-25 | v2.164 | CHANGE-REQUEST-016：9 人局完整警长（RUL-18）。新增 RFC-022（Planned）；RFC-002/004/006/007/011/012/014/021 → Spec changed |
 | 2026-11-24 | v2.163 | CHANGE-REQUEST-015 / RFC-021：阶段倒计时全部可配置；默认翻倍（RUL-17）。新增 RFC-021（Implemented） |
 | 2026-11-23 | v2.162 | CHANGE-REQUEST-014 / RFC-020：RUL-16 放逐平票先 PK 发言再重投。RFC-004 → Spec changed；新增 RFC-020（Implemented） |
 | 2026-11-23 | v2.161 | CHANGE-REQUEST-013 / RFC-019：RUL-15 狼队自由投票 + 确认（只计确认票、超时自动确认）。RFC-017 → Spec changed；新增 RFC-019（Implemented） |

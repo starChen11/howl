@@ -285,3 +285,7 @@ Round 2 复核了 Round 1 的修复：C-28 的折叠与 C-41 的代码都正确�
 ```
 $ pnpm test → 50 files / 412 tests
 ```
+
+### CHANGE-REQUEST-016 / RFC-022
+
+CHANGE-REQUEST-016 / RFC-022：投影新增警长、警徽、候选人/警下身份，且不得泄露死讯。

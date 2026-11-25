@@ -234,3 +234,7 @@ RUL-13 之后，复盘的夜间段落会显示每条 `WOLF_VOTE_CAST`（`N 号�
 
 `AI_THOUGHT` 增加可选的 `phase`、`decisionAction`、`target`；复盘据此把推理标成
 「发言 / 投票 / 夜间行动」，投票还会显示「投 N 号 / 弃权」。旧事件缺这些字段时仍按发言处理。
+
+### CHANGE-REQUEST-016 / RFC-022
+
+CHANGE-REQUEST-016 / RFC-022：复盘记录竞选、警长、票权与警徽移交。

@@ -287,3 +287,7 @@ Round 2 复核了 Round 1 的修复，结论仍是 **Changes requested**，但�
 ### 8.10 Spec changed（CHANGE-REQUEST-014 / RFC-020）
 
 放逐首轮平票不再直接重投：并列者先做一轮 PK 发言，再重投；重投仍平票则入夜。
+
+### CHANGE-REQUEST-016 / RFC-022
+
+CHANGE-REQUEST-016 / RFC-022：白天发言顺序、放逐票权、警长竞选接入。

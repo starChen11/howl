@@ -310,3 +310,7 @@ $ pnpm exec vitest run --project unit --coverage
 | 覆盖率只覆盖 `src/engine/` | `shared` / `server` / `client` 的覆盖率门禁不在 TEST-2 范围内 | 按 RULES 现状；如需扩展改 TEST-2 |
 | `RANDOM_CONSUMING_EVENTS` 是手工维护的集合 | 新增消耗随机数的事件时若忘了加进去，`applyEvent` 就不会要求 `rngAfter`，重放会静默漂移。**纪律**：RFC-003/004 每次新增这类事件，同时更新该集合与一条「缺 `rngAfter` 抛 `MissingRngStateError`」的用例 | RFC-003 / RFC-004 |
 | 没有做深冻结（N14） | `Object.freeze` 只冻结一层，嵌套对象仍可被改。当前 `step` 不写嵌套对象，且纯函数性已有两条测试（冻结不抛 + 两次调用相等）；深冻结收益边际 | 按需 |
+
+### CHANGE-REQUEST-016 / RFC-022
+
+CHANGE-REQUEST-016 / RFC-022：新增警长相关相位、事件与半票计票。

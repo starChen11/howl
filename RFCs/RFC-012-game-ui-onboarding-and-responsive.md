@@ -331,3 +331,7 @@ $ pnpm test → 80 files / 689 tests
 `GET /api/games/:id` 返回 `timer`（本阶段上限与剩余秒数），前端不再用全局 60 秒假倒数；
 每个相位、每天都从进入该相位的事件重新起算。自动结算相位没有 timer。
 界面同时保留状态条秒数与操作区大号计时。
+
+### CHANGE-REQUEST-016 / RFC-022
+
+CHANGE-REQUEST-016 / RFC-022：新增竞选、警徽、1.5 票、发言顺序 UI。

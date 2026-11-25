@@ -319,3 +319,7 @@ RUL-13 之后，模型在 `NIGHT_WOLVES` 的 `kill` 决策翻译为 `WOLF_VOTE`�
 - 默认输出预算 4096（`LLM_MAX_OUTPUT_TOKENS` 可覆盖），重试时再翻倍；
 - 空正文会打印 `[llm] 模型返回空正文`；
 - `shoot` 不带 target 表示不开枪，不再被 schema 拒绝而走无推理的脚本兜底。
+
+### CHANGE-REQUEST-016 / RFC-022
+
+CHANGE-REQUEST-016 / RFC-022：新增上警/退水/警下投票/发言顺序/警徽移交决策。

@@ -45,3 +45,7 @@
 
 - `phaseTimer()` 的起点取进入当前相位的事件，第一夜退回 `GAME_STARTED`；
 - 前端不再本地假设 60 秒，夜间讨论面板也使用服务端剩余秒数。
+
+### CHANGE-REQUEST-016 / RFC-022
+
+CHANGE-REQUEST-016 / RFC-022：新增 9 个竞选/移交相位的倒计时配置。
