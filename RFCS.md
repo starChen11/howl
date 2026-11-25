@@ -58,7 +58,7 @@
 | [RFC-019](RFCs/RFC-019-free-wolf-vote.md) | 狼队自由投票与确认 | F9, F10 | Large | Implemented |
 | [RFC-020](RFCs/RFC-020-tie-pk-speech.md) | 放逐平票的 PK 发言 | F5, F6 | Medium | Implemented |
 | [RFC-021](RFCs/RFC-021-configurable-phase-timers.md) | 可配置的阶段倒计时 | F5, F9 | Small | Spec changed |
-| [RFC-022](RFCs/RFC-022-sheriff-election-and-badge.md) | 完整警长竞选与警徽 | F49, F4, F5 | Large | Planned |
+| [RFC-022](RFCs/RFC-022-sheriff-election-and-badge.md) | 完整警长竞选与警徽 | F49, F4, F5 | Large | In progress |
 
 **复杂度分布**：High 7（002 / 006 / 007 / 009 / 010 / 014 / 022）、Medium 7、Low 3。
 
