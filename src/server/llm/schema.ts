@@ -23,7 +23,11 @@ export const DecisionSchema = z.object({
     'ready',
   ]),
   target: z.number().int().min(1).max(9).optional(),
-  reason: z.string().min(1).max(200),
+  // 理由超长只截断，不整条作废：模型多说两句不该让这一轮行动丢失。
+  reason: z
+    .string()
+    .min(1)
+    .transform((value) => value.slice(0, 200)),
   // 长度不在这里限制：超长由 `toAction` 截断（RFC §2.2）。在 schema 层拒绝会让
   // 整条决策作废——模型多说两句就把这一轮的行动弄丢了。
   speech: z.string().optional(),

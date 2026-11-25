@@ -309,13 +309,23 @@ export function extractSpeechIncrement(content: string, state: { emitted: number
   return addition;
 }
 
-/** 解析 JSON；解析失败当作格式错误（由 schema 再兜一层）。 */
+/** 解析 JSON；容忍模型常见的 ```json 代码块和前后解释文字。 */
 function safeJson(content: string): unknown {
-  try {
-    return JSON.parse(content);
-  } catch {
-    return undefined;
+  const candidates = [content];
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(content);
+  if (fenced?.[1] !== undefined) candidates.push(fenced[1]);
+  const first = content.indexOf('{');
+  const last = content.lastIndexOf('}');
+  if (first >= 0 && last > first) candidates.push(content.slice(first, last + 1));
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // 继续尝试下一个候选。
+    }
   }
+  return undefined;
 }
 
 /**

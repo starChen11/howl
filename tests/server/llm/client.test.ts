@@ -494,3 +494,43 @@ describe('token 级流式发言', () => {
     expect(result.decision).toEqual({ action: 'speak', reason: '测试', speech: '你好，世界' });
   });
 });
+
+describe('模型输出容错', () => {
+  it('容忍 ```json 代码块和前后解释文字', async () => {
+    for (const content of [
+      '```json\n{"action":"speak","reason":"测试","speech":"你好"}\n```',
+      '好的，这是结果：\n{"action":"speak","reason":"测试","speech":"你好"}\n希望有用。',
+    ]) {
+      const fetchImpl = (async () =>
+        chatResponse({
+          id: 'x',
+          choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+        })) as unknown as typeof fetch;
+      const result = await decide(
+        { config: CONFIG, fetchImpl },
+        { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+      );
+      if ('duplicate' in result) throw new Error('不应重复');
+      expect(result.decision.action).toBe('speak');
+    }
+  });
+
+  it('reason 超过 200 字只截断，不让整条决策失败', async () => {
+    const content = JSON.stringify({
+      action: 'speak',
+      reason: '很长的理由'.repeat(100),
+      speech: '你好',
+    });
+    const fetchImpl = (async () =>
+      chatResponse({
+        id: 'x',
+        choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+      })) as unknown as typeof fetch;
+    const result = await decide(
+      { config: CONFIG, fetchImpl },
+      { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+    );
+    if ('duplicate' in result) throw new Error('不应重复');
+    expect(result.decision.reason.length).toBe(200);
+  });
+});

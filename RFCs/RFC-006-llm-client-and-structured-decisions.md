@@ -294,3 +294,9 @@ RUL-13 之后，模型在 `NIGHT_WOLVES` 的 `kill` 决策翻译为 `WOLF_VOTE`�
 `buildUserMessage` 现在把 `WOLF_VOTE_CAST` / `WOLF_VOTE_REVEALED` 渲染成
 「N 号投了 M 号（狼队投票）」与「狼队票型：…；平票（…）→ 重投」，
 模型在投票前能看到队友的票。
+
+### 9.x 输出容错与降级日志（2026-11-25）
+
+- `safeJson` 容忍 ```json 代码块与前后解释文字；
+- `reason` 超长只截断到 200 字，不整条作废；
+- 模型失败/连续被拒时打印 `[llm]` 日志；开发服务器写入 `logs/howl-dev.log`。
