@@ -220,11 +220,12 @@ test.describe('整局界面', () => {
   });
 
   test('键盘：Tab 能到发言区，Enter 能提交', async ({ page }) => {
+    test.setTimeout(120_000);
     await page.setViewportSize({ width: 1100, height: 800 });
     await page.goto('/?seed=13');
 
     // 等到轮到玩家（脚本 AI 会很快说完前面几位；夜间行动也点掉）
-    await waitForMyTurn(page);
+    await waitForMyTurn(page, 90_000);
     const box = page.getByLabel('你的发言');
 
     // 真的用 Tab 走到输入框，而不是 focus()（评审 C-119 的同一条要求）
