@@ -4,6 +4,12 @@ import type { ProjectedContext, ProjectedPhase, ProjectInput } from '@shared/pro
 import type { EventEnvelope } from '@shared/events';
 
 import { applyEvent } from '@engine/apply';
+import {
+  badgeOf,
+  sheriffElectionView,
+  sheriffOrderOptions,
+  sheriffSeatOf,
+} from '@engine/phases/sheriff';
 import { createEmptyState } from '@engine/init';
 import { seatAt } from '@engine/queries';
 import { knowledgeOf } from './knowledge';
@@ -29,10 +35,19 @@ export function project(input: ProjectInput): ProjectedContext {
   const privateEvents: EventEnvelope[] = [];
 
   let cursor: GameState = createEmptyState();
+  // 白天（死讯已公布后）的 hunter 开枪是公开动作：中枪者的死亡应当立刻可见。
+  // 夜里开枪发生在公布前，仍等 `DAY_STARTED` 再公开（C-28）。
+  const declaredShotVictims = new Set<SeatId>();
 
   for (const event of events) {
     // 折叠到「这条事件之后」的状态，再拿它判断可见性。
     cursor = applyEvent(cursor, event as never);
+    if (event.type === 'HUNTER_SHOOT') {
+      const payload = event.payload as { target: SeatId | null };
+      if (payload.target !== null && cursor.dayAnnounced === true) {
+        declaredShotVictims.add(payload.target);
+      }
+    }
 
     if (excludeSeq !== undefined && event.seq === excludeSeq) continue;
     if (!isVisibleTo(event, observer, cursor)) continue;
@@ -50,7 +65,7 @@ export function project(input: ProjectInput): ProjectedContext {
   // 观察者「知道死了谁」的来源只有两种：公开的 `PLAYER_DIED`（放逐 / 开枪），
   // 以及天亮时公布的 `DAY_STARTED.diedLastNight`。夜间的 `PLAYER_DIED` 是 server 可见的，
   // 不会进这里——所以当夜死者不会提前泄漏（C-28）。
-  const knownDead = new Set<SeatId>();
+  const knownDead = new Set<SeatId>(declaredShotVictims);
   for (const event of visible) {
     if (event.type === 'PLAYER_DIED') {
       knownDead.add((event.payload as { seat: SeatId }).seat);
@@ -88,6 +103,14 @@ export function project(input: ProjectInput): ProjectedContext {
     privateEvents,
     knowledge: knowledgeOf(state, observer, visible, pending),
     legalTargets: legalTargetsOf(state, pending, aliveSeats, observer),
+    // RFC-022 §13.6：警长、警徽与竞选都是公开信息。`sheriffVotes` 不在视图里——
+    // 警长票唱票前是暗投，只能按 `self:<seat>` 可见性分发（见 `sheriffElectionView`）。
+    sheriffSeat: sheriffSeatOf(state),
+    badge: badgeOf(state),
+    sheriff: sheriffElectionView(state, observer),
+    ...(state.phase === 'DAY_SHERIFF_ORDER'
+      ? { sheriffOrderOptions: sheriffOrderOptions(state) }
+      : {}),
     pending,
     ...(self.role === 'wolf' && self.alive
       ? {

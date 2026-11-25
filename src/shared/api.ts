@@ -42,7 +42,27 @@ export interface SessionResponse {
 
 /** `GET /api/games/:id?pending=...` 的查询参数。 */
 export const PendingQuerySchema = z.object({
-  pending: z.enum(['speak', 'kill', 'check', 'witch', 'vote', 'shoot', 'chat']).optional(),
+  // RFC-022 新增的警长决策点也走同一条查询参数；旧客户端只传旧值，不受影响。
+  pending: z
+    .enum([
+      'speak',
+      'kill',
+      'check',
+      'witch',
+      'vote',
+      'shoot',
+      'chat',
+      'sheriff-signup',
+      'sheriff-speech',
+      'sheriff-withdraw',
+      'sheriff-vote',
+      'sheriff-pk',
+      'sheriff-runoff',
+      'badge-transfer',
+      'sheriff-order',
+      'sheriff-final-speech',
+    ])
+    .optional(),
 });
 
 /** `POST /api/games/:id/actions` */

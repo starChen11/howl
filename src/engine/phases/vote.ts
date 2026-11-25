@@ -1,4 +1,6 @@
 import type { GameState, Phase, SeatId } from '@shared/domain';
+import type { CountedVote } from '@shared/votes';
+import { countVotes, tallyCountedVotes } from '@shared/votes';
 
 import { aliveSeats, isAlive } from '../queries';
 import { rejectionDraft } from '../reject';
@@ -36,7 +38,7 @@ export function tallyOf(votes: Ballot): { target: SeatId; count: number }[] {
 export type VoteOutcome =
   { kind: 'lynch'; target: SeatId } | { kind: 'runoff'; tied: SeatId[] } | { kind: 'none' };
 
-/** 由票型决定下一步。并列是「票数最高的有多人」，不是「所有票数相等」。 */
+/** 由（等权）票型决定下一步。并列是「票数最高的有多人」，不是「所有票数相等」。 */
 export function outcomeOf(votes: Ballot): VoteOutcome {
   const tally = tallyOf(votes);
   const top = tally[0];
@@ -44,6 +46,24 @@ export function outcomeOf(votes: Ballot): VoteOutcome {
   if (top === undefined) return { kind: 'none' };
 
   const tied = tally.filter((entry) => entry.count === top.count).map((entry) => entry.target);
+  return tied.length === 1 ? { kind: 'lynch', target: top.target } : { kind: 'runoff', tied };
+}
+
+/**
+ * 由**折算票**决定下一步（RFC-022 §3.1：平票按 1.5 票折算后的半票数）。
+ *
+ * 入参是 `countedVotes` 而非原始票：警长那一票值 3 个半票单位，用原始票数判平票会算错。
+ */
+export function outcomeOfCounted(counted: readonly CountedVote[]): VoteOutcome {
+  const tally = tallyCountedVotes(counted);
+  const top = tally[0];
+
+  if (top === undefined) return { kind: 'none' };
+
+  const tied = tally
+    .filter((entry) => entry.halfVotes === top.halfVotes)
+    .map((entry) => entry.target);
+
   return tied.length === 1 ? { kind: 'lynch', target: top.target } : { kind: 'runoff', tied };
 }
 
@@ -87,11 +107,18 @@ export function enterNight(from: Phase): EventDraft[] {
 
 /** 投票结算：公布票型，然后决定去向。 */
 function settle(from: Phase, state: GameState, votes: Ballot): EventDraft[] {
+  // RFC-022 §13.4：票型带原始票与折算票，并记录投票时的警长快照。平票按折算票判。
+  const sheriffSeat = state.sheriffSeat ?? null;
+  const countedVotes = countVotes(votes, sheriffSeat);
   const drafts: EventDraft[] = [
-    { type: 'VOTE_REVEALED', visibleTo: 'public', payload: { votes: [...votes] } },
+    {
+      type: 'VOTE_REVEALED',
+      visibleTo: 'public',
+      payload: { votes: [...votes], countedVotes, sheriffSeat },
+    },
   ];
 
-  const outcome = outcomeOf(votes);
+  const outcome = outcomeOfCounted(countedVotes);
 
   if (outcome.kind === 'lynch') {
     drafts.push(phaseChangedDraft(from, 'DAY_LYNCH'));

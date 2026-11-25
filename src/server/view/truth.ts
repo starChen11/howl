@@ -58,6 +58,9 @@ function actionsBySeat(state: GameState, events: readonly EventEnvelope[]): Map<
   const seer = state.seats.find((seat) => seat.role === 'seer')?.seat;
   const witch = state.seats.find((seat) => seat.role === 'witch')?.seat;
 
+  // 警长是流动的：`SHERIFF_ORDER_CHOSEN` 自身不带 seat，要按当时在任的警长归属。
+  let sheriff: number | null = null;
+
   for (const event of events) {
     const payload = event.payload as Record<string, unknown>;
 
@@ -78,6 +81,50 @@ function actionsBySeat(state: GameState, events: readonly EventEnvelope[]): Map<
       push(
         payload['seat'] as number,
         payload['target'] === null ? '没有开枪' : `开枪带走 ${String(payload['target'])} 号`,
+      );
+    }
+
+    /* ---- RFC-022：竞选 / 警徽 / 定序 ---- */
+    if (event.type === 'SHERIFF_SIGNUP' && typeof payload['seat'] === 'number') {
+      push(payload['seat'] as number, payload['run'] === true ? '上警' : '不上警');
+    }
+    if (event.type === 'SHERIFF_SPEECH' && typeof payload['seat'] === 'number') {
+      push(payload['seat'] as number, `竞选发言：${String(payload['text'])}`);
+    }
+    if (event.type === 'SHERIFF_SPEECH_SKIPPED' && typeof payload['seat'] === 'number') {
+      push(payload['seat'] as number, '跳过竞选发言');
+    }
+    if (event.type === 'SHERIFF_WITHDRAWN' && typeof payload['seat'] === 'number') {
+      push(payload['seat'] as number, payload['withdraw'] === true ? '退水' : '留在警上');
+    }
+    if (event.type === 'SHERIFF_VOTE_CAST' && typeof payload['seat'] === 'number') {
+      push(
+        payload['seat'] as number,
+        payload['target'] === 'abstain'
+          ? '警长投票弃权'
+          : `警长票投给 ${String(payload['target'])} 号`,
+      );
+    }
+    if (event.type === 'SHERIFF_ELECTED' && typeof payload['seat'] === 'number') {
+      sheriff = payload['seat'] as number;
+      push(sheriff, '当选警长');
+    }
+    if (event.type === 'BADGE_TRANSFERRED') {
+      const { from, to } = payload as { from: number; to: number };
+      push(from, `把警徽移交给 ${to} 号`);
+      push(to, `接任警长（原警长 ${from} 号）`);
+      sheriff = to;
+    }
+    if (event.type === 'BADGE_DESTROYED' && typeof payload['seat'] === 'number') {
+      push(payload['seat'] as number, '撕毁警徽');
+      sheriff = null;
+    }
+    if (event.type === 'SHERIFF_ORDER_CHOSEN' && sheriff !== null) {
+      push(
+        sheriff,
+        `选择发言顺序：从 ${String(payload['startSeat'])} 号开始（${
+          payload['direction'] === 'clockwise' ? '顺时针' : '逆时针'
+        }）`,
       );
     }
   }
@@ -135,8 +182,70 @@ export function buildTruth(state: GameState, events: readonly EventEnvelope[]): 
     });
   }
 
+  // 警长竞选的真相摘要（RFC-022 AC-15）：每一轮票、每次定序、每次移交都不丢。
+  let sheriffDay = 0;
+  let elected: number | null = null;
+  let badge: 'none' | 'held' | 'destroyed' = 'none';
+  const sheriffVotes: {
+    round: 'initial' | 'runoff';
+    votes: { seat: number; target: number | 'abstain' }[];
+    tied?: number[];
+  }[] = [];
+  const sheriffOrders: {
+    day: number;
+    startSeat: number;
+    direction: 'clockwise' | 'counterclockwise';
+  }[] = [];
+  const transfers: { from: number; to: number }[] = [];
+  for (const event of events) {
+    if (event.type === 'DAY_STARTED') {
+      sheriffDay = (event.payload as { day: number }).day;
+      continue;
+    }
+    const payload = event.payload as Record<string, unknown>;
+    if (event.type === 'SHERIFF_ELECTED' && typeof payload['seat'] === 'number') {
+      elected = payload['seat'] as number;
+      badge = 'held';
+      continue;
+    }
+    if (event.type === 'BADGE_TRANSFERRED') {
+      const { from, to } = payload as { from: number; to: number };
+      transfers.push({ from, to });
+      elected = to;
+      badge = 'held';
+      continue;
+    }
+    if (event.type === 'BADGE_DESTROYED') {
+      badge = 'destroyed';
+      elected = null;
+      continue;
+    }
+    if (event.type === 'SHERIFF_VOTE_REVEALED') {
+      sheriffVotes.push({
+        round: payload['round'] as 'initial' | 'runoff',
+        votes: payload['votes'] as { seat: number; target: number | 'abstain' }[],
+        ...(payload['tied'] === undefined ? {} : { tied: payload['tied'] as number[] }),
+      });
+      continue;
+    }
+    if (event.type === 'SHERIFF_ORDER_CHOSEN') {
+      sheriffOrders.push({
+        day: Math.max(sheriffDay, 1),
+        startSeat: payload['startSeat'] as number,
+        direction: payload['direction'] as 'clockwise' | 'counterclockwise',
+      });
+    }
+  }
+
   return {
     wolfVotes,
+    sheriff: {
+      elected,
+      badge,
+      votes: sheriffVotes,
+      orders: sheriffOrders,
+      transfers,
+    },
     seats: state.seats.map((seat) => ({
       seat: seat.seat,
       role: seat.role,

@@ -22,14 +22,14 @@ const DECLARED_PAIRS: readonly (readonly [string, Action['type']])[] = Object.en
 ).flatMap(([phase, actions]) => actions.map((action) => [phase, action] as const));
 
 describe('AC-9 · 声明与实现一致', () => {
-  it('表覆盖全部 14 个 phase（漏一个阶段会变成运行时 undefined）', () => {
+  it('表覆盖全部 26 个 phase（漏一个阶段会变成运行时 undefined）', () => {
     for (const phase of PHASES) {
       expect(DEFAULT_TRANSITIONS[phase], `缺少阶段 ${phase}`).toBeDefined();
     }
     expect(Object.keys(DEFAULT_TRANSITIONS)).toHaveLength(PHASES.length);
   });
 
-  it('声明随 RFC 推进而扩张：RFC-003 之后夜晚阶段已登记', () => {
+  it('声明随 RFC 推进而扩张：RFC-003 之后夜晚阶段、RFC-022 之后竞选阶段已登记', () => {
     // RFC-002 §6 原文：「其余阶段由后续 RFC 追加到同一张表，测试自动覆盖」。
     const declared = Object.entries(DEFAULT_TRANSITIONS)
       .filter(([, actions]) => actions.length > 0)
@@ -43,7 +43,16 @@ describe('AC-9 · 声明与实现一致', () => {
       'NIGHT_SEER',
       'NIGHT_WITCH',
       'NIGHT_HUNTER_SHOOT',
+      'DAY_SHERIFF_SIGNUP',
+      'DAY_SHERIFF_SPEECH',
+      'DAY_SHERIFF_WITHDRAW',
+      'DAY_SHERIFF_VOTE',
+      'DAY_SHERIFF_PK',
+      'DAY_SHERIFF_RUNOFF',
+      'DAY_BADGE_TRANSFER',
+      'DAY_SHERIFF_ORDER',
       'DAY_SPEECH',
+      'DAY_SHERIFF_FINAL_SPEECH',
       'DAY_VOTE',
       'DAY_PK_SPEECH',
       'DAY_VOTE_RUNOFF',
@@ -54,9 +63,10 @@ describe('AC-9 · 声明与实现一致', () => {
     // 无 action 的阶段：夜聊（RFC-005）与自动结算、以及白天（RFC-004）
     expect(DEFAULT_TRANSITIONS.NIGHT_WOLF_CHAT).toEqual(['WOLF_CHAT', 'WOLF_READY']);
     expect(DEFAULT_TRANSITIONS.NIGHT_RESOLVE).toEqual([]);
-    // 自动阶段没有允许的 action：天亮与放逐都由 step 的自动循环推进
+    // 自动阶段没有允许的 action：天亮、放逐、竞选结果都由 step 的自动循环推进
     expect(DEFAULT_TRANSITIONS.DAY_ANNOUNCE).toEqual([]);
     expect(DEFAULT_TRANSITIONS.DAY_LYNCH).toEqual([]);
+    expect(DEFAULT_TRANSITIONS.DAY_SHERIFF_RESULT).toEqual([]);
   });
 
   it('表里每个允许对都有 handler', () => {

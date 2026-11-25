@@ -1,5 +1,15 @@
 import type { Action } from './actions';
-import type { Phase, Role, RngState, SeatId, WinMode } from './domain';
+import type {
+  Phase,
+  Role,
+  RngState,
+  SeatId,
+  SheriffElectionFailureReason,
+  SheriffVoteRound,
+  SpeechDirection,
+  WinMode,
+} from './domain';
+import type { CountedVote } from './votes';
 
 /**
  * 可见性。事件的 `visibleTo` 决定谁能在投影里看到它。
@@ -96,6 +106,96 @@ export interface Claim {
   accuses?: ClaimedAccusation[];
 }
 
+/* ---------------------------------------------------------------------------
+ * RFC-022 · 警长竞选与警徽
+ * ------------------------------------------------------------------------- */
+
+/** 第一次进入竞选。`day` 目前恒为 1，保留字段是为了将来多板子/复盘时自解释。 */
+export interface SheriffElectionStartedPayload {
+  day: number;
+}
+
+/** 上警表态。`run: false` 表示明确选择不上警——也必须写事件，否则重放不知道他表过态。 */
+export interface SheriffSignupPayload {
+  seat: SeatId;
+  run: boolean;
+}
+
+/** 全部上警表态结束后公布的候选人名单（按座位升序）。 */
+export interface SheriffCandidatesPayload {
+  candidates: SeatId[];
+}
+
+/** 竞选 / PK 阶段的警上发言（与白天的 `SPEECH` 事件独立，RFC-022 §13.2；归票发言仍用 `SPEECH`）。 */
+export interface SheriffSpeechPayload {
+  seat: SeatId;
+  text: string;
+}
+
+export interface SheriffSpeechSkippedPayload {
+  seat: SeatId;
+}
+
+/** 退水表态。`withdraw: false` 表示明确选择不退水。 */
+export interface SheriffWithdrawnPayload {
+  seat: SeatId;
+  withdraw: boolean;
+}
+
+/** 警长票是暗投：与 `VOTE_CAST` 一样只有投票者本人可见。 */
+export interface SheriffVoteCastPayload {
+  seat: SeatId;
+  target: SeatId | 'abstain';
+}
+
+/** 警长票唱票。`tied` 非空表示平票（首轮进 PK，重投则无警长）。 */
+export interface SheriffVoteRevealedPayload {
+  votes: { seat: SeatId; target: SeatId | 'abstain' }[];
+  round: SheriffVoteRound;
+  tied?: SeatId[];
+}
+
+export interface SheriffElectedPayload {
+  seat: SeatId;
+}
+
+export interface SheriffElectionFailedPayload {
+  reason: SheriffElectionFailureReason;
+}
+
+/** 警徽移交。`from` 是死亡警长，`to` 是接任者。 */
+export interface BadgeTransferredPayload {
+  from: SeatId;
+  to: SeatId;
+}
+
+/** 撕徽。`seat` 是撕徽的死亡警长。 */
+export interface BadgeDestroyedPayload {
+  seat: SeatId;
+}
+
+/** 警长选定的当天发言顺序。方向是权威，不允许从起点位置反推。 */
+export interface SheriffOrderChosenPayload {
+  startSeat: SeatId;
+  direction: SpeechDirection;
+}
+
+/**
+ * 放逐票型公布（RFC-004，RFC-022 §13.4 扩展）。
+ *
+ * - `votes` 是原始票（审计用）；
+ * - `countedVotes` 是每位投票者折算后的半票（普通 2、警长 3）；
+ * - `sheriffSeat` 是投票时的警长快照。
+ *
+ * 后两个字段是 RFC-022 新增的，旧对局的事件流里没有，因此保持可选；`applyEvent` 在缺省时
+ * 回退到原始票等权计票。
+ */
+export interface VoteRevealedPayload {
+  votes: { seat: SeatId; target: SeatId | 'abstain' }[];
+  countedVotes?: CountedVote[];
+  sheriffSeat?: SeatId | null;
+}
+
 /**
  * 事件全集的信封约束（DATA-2）。
  *
@@ -123,11 +223,26 @@ export interface GameEventMap {
   SPEECH: { seat: SeatId; text: string };
   SPEECH_SKIPPED: { seat: SeatId };
   VOTE_CAST: { seat: SeatId; target: SeatId | 'abstain' };
-  VOTE_REVEALED: { votes: { seat: SeatId; target: SeatId | 'abstain' }[] };
+  VOTE_REVEALED: VoteRevealedPayload;
   WOLF_READY_MARKED: { seat: SeatId };
   WOLF_CHAT_POSTED: { seat: SeatId; text: string; round: 'night-chat' };
   SELF_EXPOSE: { seat: SeatId };
-  /** `claim` 是结构化载荷而非 `unknown`：复盘与判定都要在编译期知道该读什么（AI-5 / CR-003 C3）。 */
+
+  /* ---- RFC-022 · 警长竞选与警徽 ---- */
+  SHERIFF_ELECTION_STARTED: SheriffElectionStartedPayload;
+  SHERIFF_SIGNUP: SheriffSignupPayload;
+  SHERIFF_CANDIDATES: SheriffCandidatesPayload;
+  SHERIFF_SPEECH: SheriffSpeechPayload;
+  SHERIFF_SPEECH_SKIPPED: SheriffSpeechSkippedPayload;
+  SHERIFF_WITHDRAWN: SheriffWithdrawnPayload;
+  SHERIFF_VOTE_CAST: SheriffVoteCastPayload;
+  SHERIFF_VOTE_REVEALED: SheriffVoteRevealedPayload;
+  SHERIFF_ELECTED: SheriffElectedPayload;
+  SHERIFF_ELECTION_FAILED: SheriffElectionFailedPayload;
+  BADGE_TRANSFERRED: BadgeTransferredPayload;
+  BADGE_DESTROYED: BadgeDestroyedPayload;
+  SHERIFF_ORDER_CHOSEN: SheriffOrderChosenPayload;
+
   /**
    * 阶段推进（RFC-003 引入）。
    *
@@ -146,6 +261,11 @@ export interface GameEventMap {
     phase?: Phase;
     decisionAction?: string;
     target?: SeatId | 'abstain';
+    /**
+     * 没有 `target` 的警长决策（上警 / 退水 / 撕徽 / 定序方向）的可读选择。
+     * 复盘只靠结构化字段展示推理（AI-5），不能从自由文本里猜。
+     */
+    detail?: string;
   };
   GAME_ENDED: { result: 'wolf' | 'good'; condition: string };
   DEGRADED: { seat: SeatId };
@@ -180,6 +300,19 @@ export const GAME_EVENT_TYPES = [
   'WOLF_CHAT_POSTED',
   'WOLF_READY_MARKED',
   'SELF_EXPOSE',
+  'SHERIFF_ELECTION_STARTED',
+  'SHERIFF_SIGNUP',
+  'SHERIFF_CANDIDATES',
+  'SHERIFF_SPEECH',
+  'SHERIFF_SPEECH_SKIPPED',
+  'SHERIFF_WITHDRAWN',
+  'SHERIFF_VOTE_CAST',
+  'SHERIFF_VOTE_REVEALED',
+  'SHERIFF_ELECTED',
+  'SHERIFF_ELECTION_FAILED',
+  'BADGE_TRANSFERRED',
+  'BADGE_DESTROYED',
+  'SHERIFF_ORDER_CHOSEN',
   'PHASE_CHANGED',
   'AI_THOUGHT',
   'GAME_ENDED',

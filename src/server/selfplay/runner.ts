@@ -90,7 +90,29 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
             if (ctx.pending === 'witch') return { kind: 'skip' };
             if (ctx.pending === 'chat') return { kind: 'skip' };
             const legal = legalActionFor(ctx, rng);
-            const target = (legal as { target?: number } | undefined)?.target;
+            if (legal === undefined) return { kind: 'skip' };
+            // RFC-022 的布尔/组合动作没有 target，走各自的文本协议。
+            switch (legal.type) {
+              case 'SHERIFF_SIGNUP':
+                return { kind: 'speak', text: legal.run ? 'run' : 'no' };
+              case 'SHERIFF_WITHDRAW':
+                return { kind: 'speak', text: legal.withdraw ? 'withdraw' : 'stay' };
+              case 'SHERIFF_ORDER':
+                return { kind: 'speak', text: `${legal.startSeat}:${legal.direction}` };
+              case 'SHERIFF_VOTE':
+                return {
+                  kind: 'speak',
+                  text: legal.target === 'abstain' ? '' : String(legal.target),
+                };
+              case 'BADGE_TRANSFER':
+                return {
+                  kind: 'speak',
+                  text: legal.target === 'tear' ? 'tear' : String(legal.target),
+                };
+              default:
+                break;
+            }
+            const target = (legal as { target?: number }).target;
             if (target !== undefined) return { kind: 'speak', text: String(target) };
             return { kind: 'skip' };
           }
@@ -98,11 +120,17 @@ export async function runSelfplay(options: SelfplayOptions): Promise<GameOutcome
           const action = scriptedPlayerAction(ctx, { rng });
           if (action === undefined) return { kind: 'skip' };
           if (action.type === 'SPEECH_SKIP') return { kind: 'skip' };
-          if (action.type === 'VOTE') {
+          if (action.type === 'VOTE' || action.type === 'SHERIFF_VOTE') {
             // 编排层把投票目标放在同一个 `text` 字段里（空 → 弃权）。
             return action.target === 'abstain'
               ? { kind: 'skip' }
               : { kind: 'speak', text: String(action.target) };
+          }
+          if (action.type === 'BADGE_TRANSFER') {
+            return {
+              kind: 'speak',
+              text: action.target === 'tear' ? 'tear' : String(action.target),
+            };
           }
           return { kind: 'skip' };
         },

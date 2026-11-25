@@ -45,6 +45,19 @@ function validationError(message: string, issues: string[] = []): ApiError {
   return { error: 'VALIDATION_FAILED', message, issues };
 }
 
+/** 走 RFC-021 可配置倒计时的 RFC-022 相位。 */
+const SHERIFF_TIMED_PHASES: ReadonlySet<string> = new Set([
+  'DAY_SHERIFF_SIGNUP',
+  'DAY_SHERIFF_SPEECH',
+  'DAY_SHERIFF_WITHDRAW',
+  'DAY_SHERIFF_VOTE',
+  'DAY_SHERIFF_PK',
+  'DAY_SHERIFF_RUNOFF',
+  'DAY_BADGE_TRANSFER',
+  'DAY_SHERIFF_ORDER',
+  'DAY_SHERIFF_FINAL_SPEECH',
+]);
+
 export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOptions): void {
   const { registry, production, channels, loop } = options;
 
@@ -258,13 +271,27 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       .reverse()
       .find((event) => event.type === 'PHASE_CHANGED' || event.type === 'GAME_ENDED');
 
+    const currentPhase =
+      lastPhase === undefined
+        ? 'UNKNOWN'
+        : lastPhase.type === 'PHASE_CHANGED'
+          ? (lastPhase.payload as { to: string }).to
+          : 'FINISHED';
+
+    // RFC-022 的新相位不在旧的「60 秒发言」口径里：它们各自有可配置的 120 秒上限，
+    // 直接复用服务端权威的 `phaseTimer`（客户端刷新后也不会回满）。
+    if (SHERIFF_TIMED_PHASES.has(currentPhase)) {
+      const timer = phaseTimer(record, currentPhase, loadPhaseTimers());
+      return reply.send({
+        phase: currentPhase,
+        startedAt: lastPhase?.ts ?? null,
+        remainingSeconds: timer?.remainingSeconds ?? 0,
+        totalSeconds: timer?.totalSeconds ?? null,
+      });
+    }
+
     return reply.send({
-      phase:
-        lastPhase === undefined
-          ? 'UNKNOWN'
-          : lastPhase.type === 'PHASE_CHANGED'
-            ? (lastPhase.payload as { to: string }).to
-            : 'FINISHED',
+      phase: currentPhase,
       startedAt: startEvent?.ts ?? null,
       remainingSeconds:
         startEvent === undefined
@@ -396,6 +423,31 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
     if (accepted && parsed.data.action.type === 'HUNTER_SHOOT') {
       const target = parsed.data.action.target;
       channels.submit(record.gameId, target === undefined ? '' : String(target));
+    }
+    // RFC-022：竞选的每个决策点都要兑现挂起的输入，否则编排层会一直等到 120 秒超时。
+    if (accepted && parsed.data.action.type === 'SHERIFF_SIGNUP') {
+      channels.submit(record.gameId, parsed.data.action.run ? 'run' : 'no');
+    }
+    if (accepted && parsed.data.action.type === 'SHERIFF_WITHDRAW') {
+      channels.submit(record.gameId, parsed.data.action.withdraw ? 'withdraw' : 'stay');
+    }
+    if (accepted && parsed.data.action.type === 'SHERIFF_VOTE') {
+      channels.submit(
+        record.gameId,
+        parsed.data.action.target === 'abstain' ? '' : String(parsed.data.action.target),
+      );
+    }
+    if (accepted && parsed.data.action.type === 'BADGE_TRANSFER') {
+      channels.submit(
+        record.gameId,
+        parsed.data.action.target === 'tear' ? 'tear' : String(parsed.data.action.target),
+      );
+    }
+    if (accepted && parsed.data.action.type === 'SHERIFF_ORDER') {
+      channels.submit(
+        record.gameId,
+        `${parsed.data.action.startSeat}:${parsed.data.action.direction}`,
+      );
     }
 
     // B1：只回该席位可见的事件。`step` 的原始事件里含 `server` 可见的死亡与夜间相位。

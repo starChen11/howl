@@ -14,6 +14,16 @@ export interface PhaseTimers {
   pkSpeechMs: number;
   dayVoteMs: number;
   dayVoteRunoffMs: number;
+  /* ---- RFC-022：警长竞选与警徽（默认 120 秒，全部可配） ---- */
+  sheriffSignupMs: number;
+  sheriffSpeechMs: number;
+  sheriffWithdrawMs: number;
+  sheriffVoteMs: number;
+  sheriffPkMs: number;
+  sheriffRunoffMs: number;
+  badgeTransferMs: number;
+  sheriffOrderMs: number;
+  sheriffFinalSpeechMs: number;
 }
 
 export const DEFAULT_PHASE_TIMERS: PhaseTimers = {
@@ -26,6 +36,15 @@ export const DEFAULT_PHASE_TIMERS: PhaseTimers = {
   pkSpeechMs: 120_000,
   dayVoteMs: 120_000,
   dayVoteRunoffMs: 120_000,
+  sheriffSignupMs: 120_000,
+  sheriffSpeechMs: 120_000,
+  sheriffWithdrawMs: 120_000,
+  sheriffVoteMs: 120_000,
+  sheriffPkMs: 120_000,
+  sheriffRunoffMs: 120_000,
+  badgeTransferMs: 120_000,
+  sheriffOrderMs: 120_000,
+  sheriffFinalSpeechMs: 120_000,
 };
 
 function readMs(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -49,6 +68,23 @@ export function loadPhaseTimers(env: NodeJS.ProcessEnv = process.env): PhaseTime
     pkSpeechMs: readMs(env, 'HOWL_PK_SPEECH_MS', DEFAULT_PHASE_TIMERS.pkSpeechMs),
     dayVoteMs: readMs(env, 'HOWL_DAY_VOTE_MS', DEFAULT_PHASE_TIMERS.dayVoteMs),
     dayVoteRunoffMs: readMs(env, 'HOWL_DAY_VOTE_RUNOFF_MS', DEFAULT_PHASE_TIMERS.dayVoteRunoffMs),
+    sheriffSignupMs: readMs(env, 'HOWL_SHERIFF_SIGNUP_MS', DEFAULT_PHASE_TIMERS.sheriffSignupMs),
+    sheriffSpeechMs: readMs(env, 'HOWL_SHERIFF_SPEECH_MS', DEFAULT_PHASE_TIMERS.sheriffSpeechMs),
+    sheriffWithdrawMs: readMs(
+      env,
+      'HOWL_SHERIFF_WITHDRAW_MS',
+      DEFAULT_PHASE_TIMERS.sheriffWithdrawMs,
+    ),
+    sheriffVoteMs: readMs(env, 'HOWL_SHERIFF_VOTE_MS', DEFAULT_PHASE_TIMERS.sheriffVoteMs),
+    sheriffPkMs: readMs(env, 'HOWL_SHERIFF_PK_MS', DEFAULT_PHASE_TIMERS.sheriffPkMs),
+    sheriffRunoffMs: readMs(env, 'HOWL_SHERIFF_RUNOFF_MS', DEFAULT_PHASE_TIMERS.sheriffRunoffMs),
+    badgeTransferMs: readMs(env, 'HOWL_BADGE_TRANSFER_MS', DEFAULT_PHASE_TIMERS.badgeTransferMs),
+    sheriffOrderMs: readMs(env, 'HOWL_SHERIFF_ORDER_MS', DEFAULT_PHASE_TIMERS.sheriffOrderMs),
+    sheriffFinalSpeechMs: readMs(
+      env,
+      'HOWL_SHERIFF_FINAL_SPEECH_MS',
+      DEFAULT_PHASE_TIMERS.sheriffFinalSpeechMs,
+    ),
   };
 }
 
@@ -75,6 +111,25 @@ export function timeoutForPhase(phase: string, timers: PhaseTimers): number | nu
       return timers.dayVoteMs;
     case 'DAY_VOTE_RUNOFF':
       return timers.dayVoteRunoffMs;
+    /* ---- RFC-022：全部新相位继承 RFC-021 的可配置倒计时 ---- */
+    case 'DAY_SHERIFF_SIGNUP':
+      return timers.sheriffSignupMs;
+    case 'DAY_SHERIFF_SPEECH':
+      return timers.sheriffSpeechMs;
+    case 'DAY_SHERIFF_WITHDRAW':
+      return timers.sheriffWithdrawMs;
+    case 'DAY_SHERIFF_VOTE':
+      return timers.sheriffVoteMs;
+    case 'DAY_SHERIFF_PK':
+      return timers.sheriffPkMs;
+    case 'DAY_SHERIFF_RUNOFF':
+      return timers.sheriffRunoffMs;
+    case 'DAY_BADGE_TRANSFER':
+      return timers.badgeTransferMs;
+    case 'DAY_SHERIFF_ORDER':
+      return timers.sheriffOrderMs;
+    case 'DAY_SHERIFF_FINAL_SPEECH':
+      return timers.sheriffFinalSpeechMs;
     default:
       return null;
   }

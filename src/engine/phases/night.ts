@@ -37,6 +37,14 @@ function nightParams(state: GameState) {
   };
 }
 
+/**
+ * 公开给 `phases/day.ts`：首夜死亡延后到 `DAY_ANNOUNCE` 落地时，天亮要从同一份夜间输入
+ * 重算死亡。导出而不是复制一份，避免两处对「解药抵消」的判定漂移。
+ */
+export function nightParamsOf(state: GameState): ReturnType<typeof nightParams> {
+  return nightParams(state);
+}
+
 /** 下一个还要走的夜晚阶段；跳过的条件是「该身份已出局」（RFC-003 §2.2）。 */
 function nextAfterWolves(state: GameState): Phase {
   if (findAliveByRole(state, 'seer') !== undefined) return 'NIGHT_SEER';
@@ -69,6 +77,22 @@ function nextAfterSeer(state: GameState): Phase {
  * `PLAYER_DIED*` →（`GAME_ENDED` 或 `PHASE_CHANGED(→…)`）。
  */
 export function resolveNightEntry(state: GameState, context: HandlerContext): EventDraft[] {
+  // RFC-022 §13.1：首夜死亡**延后到 `DAY_ANNOUNCE` 才落地**。
+  //
+  // 竞选发生在死讯公布前，而且 9 名玩家（含首夜死者）都要能上警/发言/投票。与其给投影
+  // 加一层「假装活着」，不如让死亡事件真的还没发生：`aliveSeats` 仍是 9 人，投影与真相
+  // 视图都不可能提前看到。胜负判定也一并延后到死亡落地之后。
+  if (state.day === 1) {
+    return [
+      {
+        type: 'SHERIFF_ELECTION_STARTED',
+        visibleTo: 'public',
+        payload: { day: state.day },
+      },
+      phaseChangedDraft('NIGHT_RESOLVE', 'DAY_SHERIFF_SIGNUP'),
+    ];
+  }
+
   const resolution = resolveNight(nightParams(state));
   const drafts: EventDraft[] = [];
 
@@ -562,10 +586,36 @@ const hunterShoot: ActionHandlerFor<'HUNTER_SHOOT'> = (state, action, context) =
     return drafts;
   }
 
-  // 收尾取决于**开枪发生在哪个阶段**（RFC-004 §2.4 引入白天开枪）：
-  // 夜间开枪 → 天亮；白天开枪（放逐后）→ 入夜。
+  const sheriff = state.sheriffSeat ?? null;
+  const sheriffDead = sheriff !== null && !isAlive(afterShot, sheriff);
+  const sheriffLiving = sheriff !== null && isAlive(afterShot, sheriff);
+
+  // 收尾取决于**开枪发生在哪个阶段**（RFC-004 §2.4 / RFC-022 §3.3）：
+  // - 白天开枪（放逐后）→ 有警长死亡先移交，否则入夜；
+  // - 夜里开枪且在死讯公布前 → 天亮；
+  // - 夜里开枪但在首夜死讯公布后 → 接回白天的警徽/顺序流程。
   if (state.phase === 'DAY_HUNTER_SHOOT') {
-    drafts.push(...enterNight('DAY_HUNTER_SHOOT'));
+    if (sheriffDead) {
+      drafts.push(phaseChangedDraft('DAY_HUNTER_SHOOT', 'DAY_BADGE_TRANSFER'));
+    } else {
+      drafts.push(...enterNight('DAY_HUNTER_SHOOT'));
+    }
+    return drafts;
+  }
+
+  if (state.dayAnnounced === true) {
+    // 竞选期自曝中止了第一天：公布死讯、处理完开枪后直接入夜（RFC-022 §2.2）。
+    if (state.sheriffElectionFailure === 'self-exposed') {
+      drafts.push(...enterNight('NIGHT_HUNTER_SHOOT'));
+      return drafts;
+    }
+    if (sheriffDead) {
+      drafts.push(phaseChangedDraft('NIGHT_HUNTER_SHOOT', 'DAY_BADGE_TRANSFER'));
+      return drafts;
+    }
+    drafts.push(
+      phaseChangedDraft('NIGHT_HUNTER_SHOOT', sheriffLiving ? 'DAY_SHERIFF_ORDER' : 'DAY_SPEECH'),
+    );
     return drafts;
   }
 

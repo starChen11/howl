@@ -1,22 +1,35 @@
 import type { ProjectedContext } from '@shared/project';
+import { formatHalfVotes, tallyCountedVotes, type CountedVote } from '@shared/votes';
+
+import { directionLabel, sheriffFailureReasonLabel } from '../game-state';
 
 /**
- * 公开事件面板（RFC-013 §2.1）。
+ * 公开事件面板（RFC-013 §2.1 / RFC-022 §7）。
  *
- * 只显示三类：**死亡播报**、**放逐结果**、**票型**。角色与夜间细节一律不进来——
- * 面板是「已经公开的事实」，不是第二份真相。
+ * 只显示**已经公开的事实**：死亡播报、放逐结果、票型，以及警长竞选 / 投票 / 移交。
+ * 角色与夜间细节一律不进来——面板不是第二份真相。
  *
  * 每条还带 `anchor`：发言流里最近一条「此前已发生」的发言 `seq`。事件与发言是两套
  * 不同的 `seq`，直接用自己的 `seq` 去高亮永远匹配不到（评审 C-134）。
+ * 竞选发言（`SHERIFF_SPEECH`）也是发言流里的条目，所以同样可以作为锚点。
  */
 
 export interface PanelEntry {
   seq: number;
   day: number;
-  kind: 'death' | 'banish' | 'vote';
+  kind: 'death' | 'banish' | 'vote' | 'sheriff';
   text: string;
   /** 发言流里可以定位到的 `seq`；没有对应发言时为 `null`。 */
   anchor: number | null;
+}
+
+/** 一张原始票的文案。 */
+function ballotText(vote: { seat: number; target: number | 'abstain' }, weight?: number): string {
+  const weightText =
+    weight === undefined || weight === 2 ? '' : `（${formatHalfVotes(weight)} 票）`;
+  return vote.target === 'abstain'
+    ? `${vote.seat} 号弃权${weightText}`
+    : `${vote.seat} 号投 ${vote.target} 号${weightText}`;
 }
 
 export function buildPanelEntries(ctx: ProjectedContext): PanelEntry[] {
@@ -25,7 +38,7 @@ export function buildPanelEntries(ctx: ProjectedContext): PanelEntry[] {
 
   // 发言事件按 seq 递增，方便「找此前的最后一条」。
   const speeches = ctx.publicEvents
-    .filter((event) => event.type === 'SPEECH')
+    .filter((event) => event.type === 'SPEECH' || event.type === 'SHERIFF_SPEECH')
     .map((event) => event.seq);
 
   const anchorFor = (seq: number): number | null => {
@@ -71,16 +84,144 @@ export function buildPanelEntries(ctx: ProjectedContext): PanelEntry[] {
     }
 
     if (event.type === 'VOTE_REVEALED') {
-      const votes = (event.payload as { votes: { seat: number; target: number | 'abstain' }[] })
-        .votes;
-      const parts = votes.map((vote) =>
-        vote.target === 'abstain' ? `${vote.seat} 号弃权` : `${vote.seat} 号投 ${vote.target} 号`,
-      );
+      const payload = event.payload as {
+        votes: { seat: number; target: number | 'abstain' }[];
+        countedVotes?: CountedVote[];
+      };
+      const weights = new Map<number, number>();
+      for (const counted of payload.countedVotes ?? [])
+        weights.set(counted.seat, counted.halfVotes);
+
+      const parts = payload.votes.map((vote) => ballotText(vote, weights.get(vote.seat)));
+      let text = parts.join('，');
+      if (payload.countedVotes !== undefined) {
+        const totals = tallyCountedVotes(payload.countedVotes)
+          .map(
+            (entry) =>
+              `${entry.target} 号 ${formatHalfVotes(entry.halfVotes)} 票（原始 ${entry.votes} 票）`,
+          )
+          .join('，');
+        if (totals !== '') text = `${text}｜合计：${totals}`;
+      }
       entries.push({
         seq: event.seq,
         day,
         kind: 'vote',
-        text: parts.join('，'),
+        text,
+        anchor: anchorFor(event.seq),
+      });
+      continue;
+    }
+
+    /* ---- RFC-022 · 警长竞选与警徽 ---- */
+    if (event.type === 'SHERIFF_CANDIDATES') {
+      const candidates = (event.payload as { candidates: number[] }).candidates;
+      entries.push({
+        seq: event.seq,
+        day,
+        kind: 'sheriff',
+        text:
+          candidates.length === 0
+            ? '无人上警'
+            : `上警：${candidates.map((seat) => `${seat} 号`).join('、')}`,
+        anchor: anchorFor(event.seq),
+      });
+      continue;
+    }
+
+    if (event.type === 'SHERIFF_WITHDRAWN') {
+      const payload = event.payload as { seat: number; withdraw: boolean };
+      if (!payload.withdraw) continue;
+      entries.push({
+        seq: event.seq,
+        day,
+        kind: 'sheriff',
+        text: `${payload.seat} 号退水`,
+        anchor: anchorFor(event.seq),
+      });
+      continue;
+    }
+
+    if (event.type === 'SHERIFF_VOTE_REVEALED') {
+      const payload = event.payload as {
+        votes: { seat: number; target: number | 'abstain' }[];
+        round: 'initial' | 'runoff';
+        tied?: number[];
+      };
+      const round = payload.round === 'runoff' ? '重投' : '首轮';
+      const parts = payload.votes.map((vote) => ballotText(vote));
+      const tied =
+        payload.tied === undefined || payload.tied.length === 0
+          ? ''
+          : `｜平票：${payload.tied.map((seat) => `${seat} 号`).join('、')}`;
+      entries.push({
+        seq: event.seq,
+        day,
+        kind: 'sheriff',
+        text: `警长投票（${round}）：${parts.join('，')}${tied}`,
+        anchor: anchorFor(event.seq),
+      });
+      continue;
+    }
+
+    if (event.type === 'SHERIFF_ELECTED') {
+      const seat = (event.payload as { seat: number }).seat;
+      entries.push({
+        seq: event.seq,
+        day,
+        kind: 'sheriff',
+        text: `${seat} 号当选警长`,
+        anchor: anchorFor(event.seq),
+      });
+      continue;
+    }
+
+    if (event.type === 'SHERIFF_ELECTION_FAILED') {
+      const reason = (event.payload as { reason: string }).reason;
+      entries.push({
+        seq: event.seq,
+        day,
+        kind: 'sheriff',
+        text: `本局无警长（${sheriffFailureReasonLabel(reason)}）`,
+        anchor: anchorFor(event.seq),
+      });
+      continue;
+    }
+
+    if (event.type === 'BADGE_TRANSFERRED') {
+      const payload = event.payload as { from: number; to: number };
+      entries.push({
+        seq: event.seq,
+        day,
+        kind: 'sheriff',
+        text: `${payload.from} 号把警徽交给 ${payload.to} 号`,
+        anchor: anchorFor(event.seq),
+      });
+      continue;
+    }
+
+    if (event.type === 'BADGE_DESTROYED') {
+      const seat = (event.payload as { seat: number }).seat;
+      entries.push({
+        seq: event.seq,
+        day,
+        kind: 'sheriff',
+        text: `${seat} 号撕掉警徽`,
+        anchor: anchorFor(event.seq),
+      });
+      continue;
+    }
+
+    if (event.type === 'SHERIFF_ORDER_CHOSEN') {
+      const payload = event.payload as {
+        startSeat: number;
+        direction: 'clockwise' | 'counterclockwise';
+      };
+      entries.push({
+        seq: event.seq,
+        day,
+        kind: 'sheriff',
+        text: `警长决定从 ${payload.startSeat} 号开始（${directionLabel(payload.direction)}）`,
         anchor: anchorFor(event.seq),
       });
     }

@@ -5,6 +5,11 @@ import { GameRegistry } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 import { StreamBus } from '@server/stream/bus';
 import { buildTruth, canSeeTruth } from '@server/view/truth';
+import {
+  isSheriffPhase,
+  sheriffActionFor,
+  skipSheriffElectionInRegistry,
+} from '../helpers/sheriff';
 
 /**
  * RFC-013 §5 AC-9 / AC-12：真相视图只对已出局者开放（SEC-6）。
@@ -94,6 +99,11 @@ async function gameWithDeadPlayer(store: InMemoryMetaStore) {
     const r = await registry.submit(session, current, action as never, state.seq);
     if (!r.ok) break;
     current = r.record;
+  }
+
+  // RFC-022：首夜结算后先进竞选；全员不上警后才公布死讯（死亡此时才落地）。
+  if (registry.stateOf(current).phase === 'DAY_SHERIFF_SIGNUP') {
+    current = await skipSheriffElectionInRegistry(registry, session, current);
   }
 
   return { registry, session, record: current, playerSeat };
@@ -296,6 +306,7 @@ describe('出局后仍待决定时不能看真相（防作弊）', () => {
     while (stateOf().phase !== 'NIGHT_HUNTER_SHOOT') {
       const state = stateOf();
       const action = (() => {
+        if (isSheriffPhase(state.phase)) return sheriffActionFor(state);
         switch (state.phase) {
           case 'NIGHT_WOLF_CHAT': {
             const wolf = state.seats.find(

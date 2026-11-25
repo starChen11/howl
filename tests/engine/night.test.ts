@@ -13,6 +13,7 @@ import {
   roleSeat,
   run,
 } from '../fixtures/night';
+import { skipSheriffElection } from '../fixtures/sheriff';
 
 /**
  * AC-4 / AC-5（以及 AC-16 的修正版）：狼人阶段与夜晚的边界。
@@ -119,18 +120,21 @@ describe('AC-5 · 非法刀口被拒，且状态除 seq 外不变', () => {
 });
 
 describe('AC-16（修正版）· 夜晚结束后的边界', () => {
-  it('夜晚无人出局时进入白天（停在 DAY_SPEECH；DAY_ANNOUNCE 是自动阶段，不停留）', () => {
+  it('夜晚无人出局时进入白天（先竞选，再停在 DAY_SPEECH）', () => {
     const reached = reachWitch();
     const witch = roleSeat(reached.state, 'witch');
     const killTarget = reached.killTarget;
 
-    const { state: after } = run(reached.state, {
+    const { state: afterNight } = run(reached.state, {
       type: 'WITCH_ACT',
       ts: 1_200,
       seat: witch,
       potion: 'heal',
       target: killTarget,
     });
+    // RFC-022：首夜死讯公布前先竞选；全员不上警后回退到 RFC-004 的白天流程。
+    expect(afterNight.phase).toBe('DAY_SHERIFF_SIGNUP');
+    const { state: after } = skipSheriffElection(afterNight);
 
     expect(after.phase).toBe('DAY_SPEECH');
   });
@@ -162,12 +166,14 @@ describe('AC-16 · 天亮之后的阶段也不接受夜晚的 action', () => {
     const reached = reachWitch();
     const witch = roleSeat(reached.state, 'witch');
 
-    const afterNight = step(reached.state, {
-      type: 'WITCH_ACT',
-      ts: 9,
-      seat: witch,
-      potion: 'none',
-    }).state;
+    const afterNight = skipSheriffElection(
+      step(reached.state, {
+        type: 'WITCH_ACT',
+        ts: 9,
+        seat: witch,
+        potion: 'none',
+      }).state,
+    ).state;
     expect(afterNight.phase).toBe('DAY_SPEECH');
 
     const { events, state: after } = step(afterNight, {

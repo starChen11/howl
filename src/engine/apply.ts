@@ -1,6 +1,12 @@
 import type { GameState, Phase, PotionUsage, Seat, SeatId } from '@shared/domain';
 import { SEAT_IDS } from '@shared/domain';
-import type { GameEvent, GameEventType, GameStartedPayload } from '@shared/events';
+import type {
+  GameEvent,
+  GameEventType,
+  GameStartedPayload,
+  VoteRevealedPayload,
+} from '@shared/events';
+import { tallyCountedVotes } from '@shared/votes';
 
 import { InvalidEventStreamError, MissingRngStateError, UnknownEventError } from './errors';
 
@@ -98,12 +104,14 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       return base;
     case 'DAY_STARTED':
       // 消费昨夜死者（已在状态里），并把发言进度重置到本次起点。
-      return {
-        ...withoutPendingDeaths(base),
-        speech: { startSeat: event.payload.speechStartSeat, spoken: [] },
-      };
+      return applyDayStarted(base, event.payload);
     case 'SPEECH':
     case 'SPEECH_SKIPPED':
+      // 归票发言复用 `SPEECH` 事件，但**不能**写进白天的 `speech.spoken`：警长在正常轮转中
+      // 已经说过一次，再记一次会撞上 `appendSpoken` 的重复检查（RFC-022 §3.2）。
+      if (base.phase === 'DAY_SHERIFF_FINAL_SPEECH') {
+        return { ...base, sheriffFinalSpeechDone: true };
+      }
       return appendSpoken(base, event.payload.seat);
     case 'AI_THOUGHT':
       // AI 的内心独白：只以事件存在（`visibleTo: 'self:<seat>'`），不写进状态。
@@ -123,7 +131,44 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'VOTE_CAST':
       return appendVote(base, event.payload);
     case 'VOTE_REVEALED':
-      return applyVoteRevealed(base, event.payload.votes);
+      return applyVoteRevealed(base, event.payload);
+
+    /* ---- RFC-022 · 警长竞选与警徽 ---- */
+    case 'SHERIFF_ELECTION_STARTED':
+      return applySheriffElectionStarted(base);
+    case 'SHERIFF_SIGNUP':
+      return applySheriffSignup(base, event.payload);
+    case 'SHERIFF_CANDIDATES':
+      return applySheriffCandidates(base, event.payload.candidates);
+    case 'SHERIFF_SPEECH':
+    case 'SHERIFF_SPEECH_SKIPPED':
+      return appendSheriffSpoken(base, event.payload.seat);
+    case 'SHERIFF_WITHDRAWN':
+      return applySheriffWithdrawn(base, event.payload);
+    case 'SHERIFF_VOTE_CAST':
+      return appendSheriffVote(base, event.payload);
+    case 'SHERIFF_VOTE_REVEALED':
+      return applySheriffVoteRevealed(base, event.payload);
+    case 'SHERIFF_ELECTED':
+      return { ...base, sheriffSeat: event.payload.seat, badge: 'held' };
+    case 'SHERIFF_ELECTION_FAILED':
+      return {
+        ...base,
+        sheriffSeat: null,
+        badge: 'none',
+        sheriffElectionFailure: event.payload.reason,
+      };
+    case 'BADGE_TRANSFERRED':
+      return { ...base, sheriffSeat: event.payload.to, badge: 'held' };
+    case 'BADGE_DESTROYED':
+      return { ...base, sheriffSeat: null, badge: 'destroyed' };
+    case 'SHERIFF_ORDER_CHOSEN':
+      return {
+        ...base,
+        speech: { startSeat: event.payload.startSeat, spoken: [] },
+        speechDirection: event.payload.direction,
+        sheriffOrder: { startSeat: event.payload.startSeat, direction: event.payload.direction },
+      };
     case 'GAME_ENDED':
       return { ...base, phase: 'FINISHED' };
     default:
@@ -158,6 +203,20 @@ function applyPhaseChanged(state: GameState, payload: { from: Phase; to: Phase }
     }
   }
 
+  // 竞选发言有独立 cursor，不能复用白天的 `speech`（RFC-022 §13.2）。
+  if (payload.to === 'DAY_SHERIFF_SPEECH' || payload.to === 'DAY_SHERIFF_PK') {
+    next.sheriffSpeech = { spoken: [] };
+  }
+
+  if (payload.to === 'DAY_SHERIFF_FINAL_SPEECH') {
+    next.sheriffFinalSpeechDone = false;
+  }
+
+  // 进入移交阶段时记住来源：决定移交后回白天还是入夜（事件流里可重建，不靠猜）。
+  if (payload.to === 'DAY_BADGE_TRANSFER') {
+    next.badgeTransferFrom = payload.from;
+  }
+
   if (payload.to === 'NIGHT_WOLF_CHAT') {
     // 进入新的一夜：本夜暂存与「昨夜死者」都清空，`day` 递增（夜 N 开启第 N 天）。
     // 首个夜晚由 `GAME_STARTED` 直接设定，不经过这条转移，所以 `day` 仍从 1 开始。
@@ -173,6 +232,22 @@ function applyPhaseChanged(state: GameState, payload: { from: Phase; to: Phase }
     delete next.votes;
     delete next.runoff;
     delete next.lynched;
+    // 竞选、发言顺序与警徽移交都是「当天」的临时状态；警长本人与警徽状态跨天保留。
+    delete next.sheriffSignups;
+    delete next.sheriffCandidates;
+    delete next.sheriffVoters;
+    delete next.sheriffWithdrawals;
+    delete next.sheriffWithdrawn;
+    delete next.sheriffVotes;
+    delete next.sheriffRunoff;
+    delete next.sheriffSpeech;
+    delete next.sheriffFinalSpeechDone;
+    delete next.sheriffElectionFailure;
+    delete next.sheriffOrder;
+    delete next.speechDirection;
+    delete next.lastNightDeaths;
+    delete next.dayAnnounced;
+    delete next.badgeTransferFrom;
     if (state.phase !== 'LOBBY') {
       next.day = state.day + 1;
     }
@@ -208,43 +283,83 @@ function appendVote(
   return { ...state, votes: [...(state.votes ?? []), vote] };
 }
 
+/** 记一笔**竞选**发言（与白天的 `speech` cursor 完全独立）。 */
+function appendSheriffSpoken(state: GameState, seatId: SeatId): GameState {
+  const speech = state.sheriffSpeech;
+  if (speech === undefined) {
+    throw new InvalidEventStreamError(`SHERIFF_SPEECH 之前没有开始竞选，无法记录席位 ${seatId}`);
+  }
+  if (speech.spoken.includes(seatId)) {
+    throw new InvalidEventStreamError(`席位 ${seatId} 已经在竞选中发过言`);
+  }
+  return { ...state, sheriffSpeech: { ...speech, spoken: [...speech.spoken, seatId] } };
+}
+
 /**
  * 票型公布：清空票箱、决定去向。
  *
  * `runoff` / `lynched` 都是**派生字段**——从公布的票型算出来，不另存一份判断结果。
+ *
+ * 平票判定按**折算半票**（RFC-022 §3.1）。`countedVotes` 是事件里的权威折算票；旧对局的
+ * 事件流没有它，回退到原始票等权计票——两种算法的平票结果在等权时相同。
  */
-function applyVoteRevealed(
-  state: GameState,
-  votes: readonly { seat: SeatId; target: SeatId | 'abstain' }[],
-): GameState {
-  const tally = new Map<SeatId, number>();
-  for (const vote of votes) {
-    if (vote.target === 'abstain') continue;
-    tally.set(vote.target, (tally.get(vote.target) ?? 0) + 1);
-  }
-
+function applyVoteRevealed(state: GameState, payload: VoteRevealedPayload): GameState {
   const next: GameState = { ...state };
   delete next.votes;
 
-  const top = [...tally.entries()].sort((a, b) => (a[1] === b[1] ? a[0] - b[0] : b[1] - a[1]))[0];
+  const tally =
+    payload.countedVotes === undefined
+      ? (() => {
+          const counts = new Map<SeatId, number>();
+          for (const vote of payload.votes) {
+            if (vote.target === 'abstain') continue;
+            counts.set(vote.target, (counts.get(vote.target) ?? 0) + 1);
+          }
+          return [...counts.entries()]
+            .map(([target, count]) => ({ target, votes: count, halfVotes: count }))
+            .sort((a, b) =>
+              a.halfVotes === b.halfVotes ? a.target - b.target : b.halfVotes - a.halfVotes,
+            );
+        })()
+      : tallyCountedVotes(payload.countedVotes);
+
+  const top = tally[0];
   if (top === undefined) {
     delete next.runoff;
     delete next.lynched;
     return next;
   }
 
-  const tied = [...tally.entries()]
-    .filter(([, count]) => count === top[1])
-    .map(([seat]) => seat)
+  const tied = tally
+    .filter((entry) => entry.halfVotes === top.halfVotes)
+    .map((entry) => entry.target)
     .sort((a, b) => a - b);
 
   if (tied.length === 1) {
-    next.lynched = top[0];
+    next.lynched = top.target;
     delete next.runoff;
   } else {
     next.runoff = tied;
     delete next.lynched;
   }
+  return next;
+}
+
+/** `DAY_STARTED`：消费昨夜死者、重置白天发言 cursor、记录公开死讯与方向默认值。 */
+function applyDayStarted(
+  state: GameState,
+  payload: { day: number; diedLastNight: SeatId[]; speechStartSeat: SeatId },
+): GameState {
+  const next: GameState = {
+    ...withoutPendingDeaths(state),
+    speech: { startSeat: payload.speechStartSeat, spoken: [] },
+    lastNightDeaths: [...payload.diedLastNight].sort((a, b) => a - b),
+    dayAnnounced: true,
+  };
+  // 每天的方向从顺时针重新开始；警长若选了顺序，`SHERIFF_ORDER_CHOSEN` 会再覆盖。
+  delete next.speechDirection;
+  delete next.sheriffOrder;
+  delete next.sheriffFinalSpeechDone;
   return next;
 }
 
@@ -258,6 +373,96 @@ function withoutPendingDeaths(state: GameState): GameState {
 /** 往本夜暂存里合并字段；`night` 不存在时新建。 */
 function patchNight(state: GameState, patch: NonNullable<GameState['night']>): GameState {
   return { ...state, night: { ...state.night, ...patch } };
+}
+
+/* ---------------------------------------------------------------------------
+ * RFC-022 · 竞选与警徽的状态折叠
+ * ------------------------------------------------------------------------- */
+
+/** `SHERIFF_ELECTION_STARTED`：清空本轮竞选的临时状态，把警徽标成「还没有警长」。 */
+function applySheriffElectionStarted(state: GameState): GameState {
+  const next: GameState = {
+    ...state,
+    sheriffSeat: null,
+    badge: 'none',
+    sheriffSignups: [],
+    sheriffCandidates: [],
+    sheriffVoters: [],
+    sheriffWithdrawals: [],
+    sheriffWithdrawn: [],
+    sheriffVotes: [],
+    sheriffSpeech: { spoken: [] },
+  };
+  delete next.sheriffRunoff;
+  delete next.sheriffElectionFailure;
+  delete next.sheriffFinalSpeechDone;
+  delete next.sheriffOrder;
+  delete next.speechDirection;
+  return next;
+}
+
+/** `SHERIFF_SIGNUP`：记录上警表态；重复表态说明事件流被拼错了。 */
+function applySheriffSignup(state: GameState, payload: { seat: SeatId; run: boolean }): GameState {
+  if ((state.sheriffSignups ?? []).some((entry) => entry.seat === payload.seat)) {
+    throw new InvalidEventStreamError(`座位 ${payload.seat} 重复提交了上警表态`);
+  }
+  return { ...state, sheriffSignups: [...(state.sheriffSignups ?? []), payload] };
+}
+
+/** `SHERIFF_CANDIDATES`：候选人名单确定，警下投票人 = 其余全部席位。 */
+function applySheriffCandidates(state: GameState, candidates: readonly SeatId[]): GameState {
+  const sorted = [...candidates].sort((a, b) => a - b);
+  const candidateSet = new Set(sorted);
+  const voters = state.seats
+    .filter((seat) => seat.alive && !candidateSet.has(seat.seat))
+    .map((seat) => seat.seat)
+    .sort((a, b) => a - b);
+
+  return { ...state, sheriffCandidates: sorted, sheriffVoters: voters };
+}
+
+/** `SHERIFF_WITHDRAWN`：记录退水表态；只有 `withdraw: true` 才真的退出警上。 */
+function applySheriffWithdrawn(
+  state: GameState,
+  payload: { seat: SeatId; withdraw: boolean },
+): GameState {
+  if ((state.sheriffWithdrawals ?? []).some((entry) => entry.seat === payload.seat)) {
+    throw new InvalidEventStreamError(`座位 ${payload.seat} 重复提交了退水表态`);
+  }
+  if (!(state.sheriffCandidates ?? []).includes(payload.seat)) {
+    throw new InvalidEventStreamError(`座位 ${payload.seat} 没有上警，却提交了退水表态`);
+  }
+
+  const next: GameState = {
+    ...state,
+    sheriffWithdrawals: [...(state.sheriffWithdrawals ?? []), payload],
+  };
+  if (payload.withdraw) {
+    next.sheriffWithdrawn = [...(state.sheriffWithdrawn ?? []), payload.seat].sort((a, b) => a - b);
+  }
+  return next;
+}
+
+/** 记一张警长票（暗投）。 */
+function appendSheriffVote(
+  state: GameState,
+  vote: { seat: SeatId; target: SeatId | 'abstain' },
+): GameState {
+  if ((state.sheriffVotes ?? []).some((existing) => existing.seat === vote.seat)) {
+    throw new InvalidEventStreamError(`座位 ${vote.seat} 投了两次警长票`);
+  }
+  return { ...state, sheriffVotes: [...(state.sheriffVotes ?? []), vote] };
+}
+
+/** `SHERIFF_VOTE_REVEALED`：清空票箱；平票时记录 PK/重投的候选集。 */
+function applySheriffVoteRevealed(state: GameState, payload: { tied?: SeatId[] }): GameState {
+  const next: GameState = { ...state, sheriffVotes: [] };
+  if (payload.tied !== undefined && payload.tied.length > 0) {
+    next.sheriffRunoff = [...payload.tied].sort((a, b) => a - b);
+  } else {
+    delete next.sheriffRunoff;
+  }
+  return next;
 }
 
 /** `WITCH_POTION_USED`：本夜目标 + 整局药水位，两处都只在这里写。 */
@@ -285,15 +490,20 @@ function applyPlayerDied(state: GameState, seatId: import('@shared/domain').Seat
     throw new InvalidEventStreamError(`座位 ${seatId} 已经出局，PLAYER_DIED 重复`);
   }
 
-  return {
+  const next: GameState = {
     ...state,
     seats: state.seats.map((candidate) =>
       candidate.seat === seatId ? { ...candidate, alive: false, diedSeq: state.seq } : candidate,
     ),
-    // 昨夜死者按**结算顺序**累积（内部顺序；公开的 `DAY_STARTED.diedLastNight` 会重新按座位排序，C-31）。白天放逐的死亡也会进来，
-    // 但它会在下一次入夜时被清空，不会污染下一天。
-    pendingDeaths: [...(state.pendingDeaths ?? []), seatId],
   };
+
+  // 昨夜死者按**结算顺序**累积（内部顺序；公开的 `DAY_STARTED.diedLastNight` 会重新按座位排序，C-31）。
+  // 死讯已经公布之后发生的死亡（首夜延后落地的死亡、白天放逐/开枪）不再进入 `pendingDeaths`：
+  // 它们不属于下一夜的死讯，而且 `DAY_STARTED` 已经消费过本轮死讯。
+  if (state.dayAnnounced !== true) {
+    next.pendingDeaths = [...(state.pendingDeaths ?? []), seatId];
+  }
+  return next;
 }
 
 /**
@@ -332,5 +542,8 @@ function applyGameStarted(state: GameState, payload: GameStartedPayload): GameSt
     // 发牌后立即进入第一夜（RFC-003 §2.2 的阶段图以 NIGHT_WOLF_CHAT 开头）。
     phase: 'NIGHT_WOLF_CHAT',
     day: 1,
+    // RFC-022：警长竞选发生在第一天，开局时明确「还没有警长」。
+    sheriffSeat: null,
+    badge: 'none',
   };
 }

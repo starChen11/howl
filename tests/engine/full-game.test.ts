@@ -67,6 +67,15 @@ function nextAction(state: GameState, ts: number): Action | undefined {
       return hunter === undefined ? undefined : { type: 'HUNTER_SHOOT', ts, seat: hunter };
     }
 
+    case 'DAY_SHERIFF_SIGNUP': {
+      // 脚本走「全员不上警」：本局无警长，白天的发言/投票回到 RFC-004 的旧路径。
+      const seat = state.seats.find(
+        (entry) =>
+          entry.alive && !(state.sheriffSignups ?? []).some((signup) => signup.seat === entry.seat),
+      )?.seat;
+      return seat === undefined ? undefined : { type: 'SHERIFF_SIGNUP', ts, seat, run: false };
+    }
+
     case 'DAY_SPEECH': {
       // 必须问引擎「现在轮到谁」，不能用座位顺序自己挑——挑错就会被拒。
       const speaker = currentSpeaker(state);

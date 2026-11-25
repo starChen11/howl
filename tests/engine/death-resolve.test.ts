@@ -8,6 +8,7 @@ import { applyEffects } from '@engine/effects';
 import { checkWin } from '@engine/win';
 
 import { makeNightState, reachWitch, roleSeat, run } from '../fixtures/night';
+import { skipSheriffElection } from '../fixtures/sheriff';
 
 /**
  * AC-12 ~ AC-15：死亡结算、猎人开枪与效果时序（RUL-1 / RUL-8）。
@@ -419,12 +420,16 @@ describe('AC-15 · 效果时序（RUL-8 + RUL-1）', () => {
     const reached = reachWitch();
     const witch = roleSeat(reached.state, 'witch');
 
-    const { events, state: after } = run(reached.state, {
+    const acted = run(reached.state, {
       type: 'WITCH_ACT',
       ts: 1_200,
       seat: witch,
       potion: 'none',
     });
+    // 首夜死亡延后：`NIGHT_RESOLVE` 不产出 `PLAYER_DIED`，竞选结束后才落地。
+    const skipped = skipSheriffElection(acted.state);
+    const events = [...acted.events, ...skipped.events];
+    const after = skipped.state;
 
     const resolution = resolveNight({ killTarget: reached.killTarget });
     const applied = applyEffects(reached.state, resolution.effects, DEATH_APPLIERS);

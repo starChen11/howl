@@ -4,6 +4,7 @@ import type { SeatId } from '@shared/domain';
 
 import { currentSpeaker } from '@engine/phases/day';
 import { GameRegistry } from '@server/store/game-registry';
+import { isSheriffPhase, sheriffActionFor } from '../helpers/sheriff';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 
 /**
@@ -31,75 +32,80 @@ async function playToFinish(
     const anyAlive = (exclude?: SeatId) =>
       alive.find((seat) => seat.seat !== exclude)?.seat ?? ('abstain' as const);
 
-    let action: Record<string, unknown> | undefined;
-    switch (state.phase) {
-      case 'NIGHT_WOLF_CHAT': {
-        const speaker = state.seats.find(
-          (seat) =>
-            seat.alive &&
-            seat.role === 'wolf' &&
-            !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
-        )?.seat;
-        if (speaker === undefined) {
-          const notReady = state.seats.find(
+    // RFC-022：竞选 / 警徽阶段用合法默认动作推过（本夹具只求到终局）。
+    let action: Record<string, unknown> | undefined = isSheriffPhase(state.phase)
+      ? (sheriffActionFor(state) as unknown as Record<string, unknown> | undefined)
+      : undefined;
+    if (action === undefined)
+      switch (state.phase) {
+        case 'NIGHT_WOLF_CHAT': {
+          const speaker = state.seats.find(
             (seat) =>
-              seat.alive && seat.role === 'wolf' && !(state.wolfReady ?? []).includes(seat.seat),
+              seat.alive &&
+              seat.role === 'wolf' &&
+              !(state.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
           )?.seat;
-          if (notReady === undefined) return record;
-          action = { type: 'WOLF_READY', ts: 1, seat: notReady };
+          if (speaker === undefined) {
+            const notReady = state.seats.find(
+              (seat) =>
+                seat.alive && seat.role === 'wolf' && !(state.wolfReady ?? []).includes(seat.seat),
+            )?.seat;
+            if (notReady === undefined) return record;
+            action = { type: 'WOLF_READY', ts: 1, seat: notReady };
+            break;
+          }
+          action = { type: 'WOLF_CHAT', ts: 1, seat: speaker, text: '' };
           break;
         }
-        action = { type: 'WOLF_CHAT', ts: 1, seat: speaker, text: '' };
-        break;
+        case 'NIGHT_WOLVES': {
+          const wolf = roleOf('wolf');
+          const victim = alive.find((seat) => seat.role !== 'wolf')?.seat;
+          if (wolf === undefined || victim === undefined) return record;
+          action = { type: 'WOLF_KILL', ts: 1, seat: wolf, target: victim };
+          break;
+        }
+        case 'NIGHT_SEER': {
+          const seer = roleOf('seer');
+          const target = alive.find((seat) => seat.role !== 'seer')?.seat;
+          if (seer === undefined || target === undefined) return record;
+          action = { type: 'SEER_CHECK', ts: 1, seat: seer, target };
+          break;
+        }
+        case 'NIGHT_WITCH': {
+          const witch = roleOf('witch');
+          if (witch === undefined) return record;
+          action = { type: 'WITCH_ACT', ts: 1, seat: witch, potion: 'none' };
+          break;
+        }
+        case 'NIGHT_HUNTER_SHOOT':
+        case 'DAY_HUNTER_SHOOT': {
+          const hunter = state.seats.find((seat) => seat.role === 'hunter')?.seat;
+          if (hunter === undefined) return record;
+          action = { type: 'HUNTER_SHOOT', ts: 1, seat: hunter };
+          break;
+        }
+        case 'DAY_SPEECH': {
+          // 必须问引擎「现在轮到谁」——自己按座位挑会被判 NOT_YOUR_TURN。
+          const speaker = currentSpeaker(state);
+          if (speaker === undefined) return record;
+          action = { type: 'SPEECH_SKIP', ts: 1, seat: speaker };
+          break;
+        }
+        case 'DAY_VOTE':
+        case 'DAY_VOTE_RUNOFF': {
+          const voter = state.seats.find(
+            (seat) => seat.alive && !(state.votes ?? []).some((vote) => vote.seat === seat.seat),
+          )?.seat;
+          if (voter === undefined) return record;
+          const target =
+            state.phase === 'DAY_VOTE_RUNOFF' ? (state.runoff?.[0] as SeatId) : anyAlive(voter);
+          action = { type: 'VOTE', ts: 1, seat: voter, target };
+          break;
+        }
+        default:
+          break;
       }
-      case 'NIGHT_WOLVES': {
-        const wolf = roleOf('wolf');
-        const victim = alive.find((seat) => seat.role !== 'wolf')?.seat;
-        if (wolf === undefined || victim === undefined) return record;
-        action = { type: 'WOLF_KILL', ts: 1, seat: wolf, target: victim };
-        break;
-      }
-      case 'NIGHT_SEER': {
-        const seer = roleOf('seer');
-        const target = alive.find((seat) => seat.role !== 'seer')?.seat;
-        if (seer === undefined || target === undefined) return record;
-        action = { type: 'SEER_CHECK', ts: 1, seat: seer, target };
-        break;
-      }
-      case 'NIGHT_WITCH': {
-        const witch = roleOf('witch');
-        if (witch === undefined) return record;
-        action = { type: 'WITCH_ACT', ts: 1, seat: witch, potion: 'none' };
-        break;
-      }
-      case 'NIGHT_HUNTER_SHOOT':
-      case 'DAY_HUNTER_SHOOT': {
-        const hunter = state.seats.find((seat) => seat.role === 'hunter')?.seat;
-        if (hunter === undefined) return record;
-        action = { type: 'HUNTER_SHOOT', ts: 1, seat: hunter };
-        break;
-      }
-      case 'DAY_SPEECH': {
-        // 必须问引擎「现在轮到谁」——自己按座位挑会被判 NOT_YOUR_TURN。
-        const speaker = currentSpeaker(state);
-        if (speaker === undefined) return record;
-        action = { type: 'SPEECH_SKIP', ts: 1, seat: speaker };
-        break;
-      }
-      case 'DAY_VOTE':
-      case 'DAY_VOTE_RUNOFF': {
-        const voter = state.seats.find(
-          (seat) => seat.alive && !(state.votes ?? []).some((vote) => vote.seat === seat.seat),
-        )?.seat;
-        if (voter === undefined) return record;
-        const target =
-          state.phase === 'DAY_VOTE_RUNOFF' ? (state.runoff?.[0] as SeatId) : anyAlive(voter);
-        action = { type: 'VOTE', ts: 1, seat: voter, target };
-        break;
-      }
-      default:
-        return record;
-    }
+    if (action === undefined) return record;
 
     const result = await registry.submit(session, record, action as never, state.seq);
     if (!result.ok) return record;

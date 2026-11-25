@@ -58,6 +58,12 @@ export function lynchEntry(state: GameState): EventDraft[] {
     return drafts;
   }
 
+  // RFC-022 §3.3：警长被放逐后先移交/撕徽，再进入夜晚。
+  if (state.sheriffSeat === lynched) {
+    drafts.push(phaseChangedDraft('DAY_LYNCH', 'DAY_BADGE_TRANSFER'));
+    return drafts;
+  }
+
   drafts.push(...enterNight('DAY_LYNCH'));
   return drafts;
 }

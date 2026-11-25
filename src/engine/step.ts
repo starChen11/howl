@@ -10,6 +10,7 @@ import { AUTO_PHASE_ENTRIES, AUTO_PHASE_LIMIT } from './phases/auto-table';
 import { DAY_HANDLERS } from './phases/day';
 import { NIGHT_HANDLERS } from './phases/night';
 import { SELF_EXPOSE_HANDLERS } from './phases/self-expose';
+import { SHERIFF_HANDLERS } from './phases/sheriff';
 import { VOTE_HANDLERS } from './phases/vote';
 import { WOLF_CHAT_HANDLERS } from './phases/wolf-chat';
 import { DEATH_APPLIERS } from './resolve/deaths';
@@ -141,6 +142,7 @@ export const DEFAULT_HANDLERS: HandlerTable = {
   ...VOTE_HANDLERS,
   ...WOLF_CHAT_HANDLERS,
   ...SELF_EXPOSE_HANDLERS,
+  ...SHERIFF_HANDLERS,
 };
 
 /**

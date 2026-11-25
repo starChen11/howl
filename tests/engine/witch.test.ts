@@ -36,6 +36,7 @@ function passWolfChat(state: GameState): { state: GameState; events: GameEvent[]
 }
 
 import { makeNightState, reachWitch, roleSeat, run } from '../fixtures/night';
+import { skipSheriffElection } from '../fixtures/sheriff';
 import { lobbyState, startActionOf } from '../fixtures/states';
 
 /**
@@ -267,13 +268,17 @@ describe('AC-10 · 解药命中刀口：当夜无人出局（RUL-8）', () => {
     const reached = reachWitch();
     const witch = roleSeat(reached.state, 'witch');
 
-    const { events, state: after } = run(reached.state, {
+    const acted = run(reached.state, {
       type: 'WITCH_ACT',
       ts: 1_200,
       seat: witch,
       potion: 'heal',
       target: reached.killTarget,
     });
+    // 首夜死讯延后到竞选之后才公布（RFC-022 §13.1）。
+    const skipped = skipSheriffElection(acted.state);
+    const events = [...acted.events, ...skipped.events];
+    const after = skipped.state;
 
     expect(events.some((event) => event.type === 'PLAYER_DIED')).toBe(false);
     expect(after.seats.find((seat) => seat.seat === reached.killTarget)?.alive).toBe(true);
@@ -290,13 +295,16 @@ describe('AC-11 · 解药目标与刀口不同：只有刀口出局', () => {
     )?.seat;
     if (healTarget === undefined) throw new Error('没有可救的 villager');
 
-    const { events, state: after } = run(reached.state, {
+    const acted = run(reached.state, {
       type: 'WITCH_ACT',
       ts: 1_200,
       seat: witch,
       potion: 'heal',
       target: healTarget,
     });
+    const skipped = skipSheriffElection(acted.state);
+    const events = [...acted.events, ...skipped.events];
+    const after = skipped.state;
 
     const died = events.filter((event) => event.type === 'PLAYER_DIED');
     expect(died).toHaveLength(1);
@@ -347,12 +355,14 @@ describe('AC-11 · 解药目标与刀口不同：只有刀口出局', () => {
     const reached = reachWitch();
     const witch = roleSeat(reached.state, 'witch');
 
-    const { events } = run(reached.state, {
+    const acted = run(reached.state, {
       type: 'WITCH_ACT',
       ts: 1_200,
       seat: witch,
       potion: 'none',
     });
+    const skipped = skipSheriffElection(acted.state);
+    const events = [...acted.events, ...skipped.events];
 
     expect(events.some((event) => event.type === 'WITCH_POTION_USED')).toBe(false);
     const died = events.filter((event) => event.type === 'PLAYER_DIED');

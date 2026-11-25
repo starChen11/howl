@@ -2,6 +2,7 @@ import type { ProjectedContext } from '@shared/project';
 import { INJECTION_NOTICE } from '@shared/injection';
 import { escapeAngleBrackets, wrapPublicUtterance } from '@shared/injection';
 import { ROLE_LABELS } from '@shared/terms';
+import { formatHalfVotes } from '@shared/votes';
 import { personaOf, styleOf } from '@engine/personas';
 
 import { RULES_TEXT, winConditionText } from './rules';
@@ -56,12 +57,29 @@ function renderEvent(event: ProjectedContext['publicEvents'][number]): string {
     case 'SPEECH_SKIPPED':
       return `${(event.payload as { seat: number }).seat} 号选择了跳过发言。`;
     case 'VOTE_REVEALED': {
-      const votes = (event.payload as { votes: { seat: number; target: number | 'abstain' }[] })
-        .votes;
-      const parts = votes.map((vote) =>
+      const payload = event.payload as {
+        votes: { seat: number; target: number | 'abstain' }[];
+        countedVotes?: { seat: number; target: number | 'abstain'; halfVotes: number }[];
+      };
+      const parts = payload.votes.map((vote) =>
         vote.target === 'abstain' ? `${vote.seat} 号弃权` : `${vote.seat} 号投 ${vote.target} 号`,
       );
-      return `投票结果：${parts.join('，')}。`;
+      // 警长 1.5 票（RFC-022 §13.4）：原票之外再给出折算后的票权，模型才能算对平票。
+      const counted = payload.countedVotes;
+      if (counted === undefined) return `投票结果：${parts.join('，')}。`;
+      const tally: Record<number, number> = {};
+      for (const vote of counted) {
+        if (vote.target === 'abstain') continue;
+        tally[vote.target] = (tally[vote.target] ?? 0) + vote.halfVotes;
+      }
+      const summary = Object.entries(tally)
+        .map(([target, halfVotes]) => ({ target: Number(target), halfVotes }))
+        .sort((a, b) =>
+          a.halfVotes === b.halfVotes ? a.target - b.target : b.halfVotes - a.halfVotes,
+        )
+        .map((entry) => `${entry.target} 号 ${formatHalfVotes(entry.halfVotes)} 票`)
+        .join('，');
+      return `投票结果：${parts.join('，')}；折算票：${summary}。`;
     }
     case 'DAY_STARTED': {
       const payload = event.payload as { diedLastNight: number[] };
@@ -75,6 +93,86 @@ function renderEvent(event: ProjectedContext['publicEvents'][number]): string {
       return `${(event.payload as { seat: number }).seat} 号出局。`;
     case 'SELF_EXPOSE':
       return `${(event.payload as { seat: number }).seat} 号自曝是 ${ROLE_LABELS.wolf}。`;
+    /* ---- RFC-022 · 竞选与警徽 ---- */
+    case 'SHERIFF_ELECTION_STARTED':
+      return '警长竞选开始：所有人依次表态是否上警。';
+    case 'SHERIFF_SIGNUP': {
+      const payload = event.payload as { seat: number; run: boolean };
+      return `${payload.seat} 号${payload.run ? '上警' : '选择不上警'}。`;
+    }
+    case 'SHERIFF_CANDIDATES': {
+      const payload = event.payload as { candidates: number[] };
+      return payload.candidates.length === 0
+        ? '没有人上警，本局没有警长。'
+        : `警上候选人：${payload.candidates.join('、')} 号。`;
+    }
+    case 'SHERIFF_SPEECH': {
+      const payload = event.payload as { seat: number; text: string };
+      const wrapped = wrapPublicUtterance({
+        seat: payload.seat as ProjectedContext['self']['seat'],
+        text: payload.text,
+      });
+      return wrapped.ok
+        ? `（竞选发言）${wrapped.text}`
+        : `${payload.seat} 号竞选发言（过长，已省略）`;
+    }
+    case 'SHERIFF_SPEECH_SKIPPED':
+      return `${(event.payload as { seat: number }).seat} 号跳过竞选发言。`;
+    case 'SHERIFF_WITHDRAWN': {
+      const payload = event.payload as { seat: number; withdraw: boolean };
+      return `${payload.seat} 号${payload.withdraw ? '退水' : '留在警上'}。`;
+    }
+    case 'SHERIFF_VOTE_CAST': {
+      const payload = event.payload as { seat: number; target: number | 'abstain' };
+      return payload.target === 'abstain'
+        ? `${payload.seat} 号在警长投票中弃权（只有你能看到）。`
+        : `${payload.seat} 号把警长票投给了 ${payload.target} 号（只有你能看到）。`;
+    }
+    case 'SHERIFF_VOTE_REVEALED': {
+      const payload = event.payload as {
+        votes: { seat: number; target: number | 'abstain' }[];
+        round: 'initial' | 'runoff';
+        tied?: number[];
+      };
+      const tally = payload.votes
+        .map((vote) =>
+          vote.target === 'abstain' ? `${vote.seat}→弃权` : `${vote.seat}→${vote.target}`,
+        )
+        .join('、');
+      const suffix =
+        payload.tied === undefined
+          ? ''
+          : `；平票（${payload.tied.join('、')}）${payload.round === 'initial' ? '，进入 PK 发言' : ''}`;
+      return `警长票型：${tally}${suffix}。`;
+    }
+    case 'SHERIFF_ELECTED':
+      return `${(event.payload as { seat: number }).seat} 号当选警长（放逐票 1.5 票）。`;
+    case 'SHERIFF_ELECTION_FAILED': {
+      const reason = (event.payload as { reason: string }).reason;
+      const label =
+        reason === 'self-exposed'
+          ? '竞选期间有人自曝，警徽被吞'
+          : reason === 'double-tie'
+            ? '重投再次平票'
+            : reason === 'no-valid-votes'
+              ? '没有有效票'
+              : reason === 'all-withdrawn'
+                ? '候选人全部退水'
+                : reason === 'no-voters'
+                  ? '没有警下投票人'
+                  : '无人上警';
+      return `警长竞选没有结果：${label}，本局无警长。`;
+    }
+    case 'BADGE_TRANSFERRED': {
+      const payload = event.payload as { from: number; to: number };
+      return `${payload.from} 号把警徽移交给 ${payload.to} 号。`;
+    }
+    case 'BADGE_DESTROYED':
+      return `${(event.payload as { seat: number }).seat} 号撕毁了警徽，本局不再有警长。`;
+    case 'SHERIFF_ORDER_CHOSEN': {
+      const payload = event.payload as { startSeat: number; direction: string };
+      return `警长决定今天从 ${payload.startSeat} 号开始，${payload.direction === 'clockwise' ? '顺时针' : '逆时针'}发言。`;
+    }
     case 'WOLF_CHAT_POSTED': {
       const payload = event.payload as { seat: number; text: string };
       // 夜聊文本来自**玩家的输入**（玩家当狼时会打字）。不转义就等于把一段可能含
@@ -112,6 +210,46 @@ function renderEvent(event: ProjectedContext['publicEvents'][number]): string {
   }
 }
 
+/** 待决事项的中文提示（RFC-022 的新决策点）。 */
+const PENDING_HINTS: Readonly<Record<string, string>> = {
+  'sheriff-signup': '上警表态用 signup（上警）或 no-signup（不上警）',
+  'sheriff-speech': '竞选发言用 speak 或 skip',
+  'sheriff-withdraw': '退水用 withdraw，留在警上用 stay',
+  'sheriff-vote': '警长投票用 vote 指向候选人，或 abstain 弃权',
+  'sheriff-pk': 'PK 发言用 speak 或 skip',
+  'sheriff-runoff': '重投用 vote，只能投并列者，不能弃权',
+  'badge-transfer': '移交警徽用 vote 指向存活玩家，撕徽用 tear',
+  'sheriff-order': '顺序用 order：target 是发言起点，direction 取 clockwise 或 counterclockwise',
+  'sheriff-final-speech': '警长归票发言用 speak 或 skip',
+};
+
+/** 把竞选状态渲染成一行（候选 / 警下 / 自己的身份）。 */
+function sheriffLines(ctx: ProjectedContext): string[] {
+  if (ctx.sheriffSeat === undefined && ctx.sheriff === undefined) return [];
+
+  const lines: string[] = [];
+  if (ctx.sheriffSeat === undefined || ctx.sheriffSeat === null) {
+    lines.push('当前没有警长。');
+  } else {
+    lines.push(`当前警长：${ctx.sheriffSeat} 号（放逐票按 1.5 票计）。`);
+  }
+  if (ctx.badge === 'destroyed') lines.push('警徽已经被撕毁，本局不再有警长。');
+
+  const election = ctx.sheriff;
+  if (election !== undefined && (election.phase !== null || election.candidates.length > 0)) {
+    const candidates =
+      election.candidates.length === 0
+        ? '无'
+        : election.candidates
+            .map((seat) => `${seat} 号${election.withdrawn.includes(seat) ? '（已退水）' : ''}`)
+            .join('、');
+    const voters = election.voters.length === 0 ? '无' : election.voters.join('、');
+    lines.push(`警上候选人：${candidates}；警下投票人：${voters}。`);
+    lines.push(`你自己的位置：${election.isCandidate ? '警上' : '警下'}。`);
+  }
+  return lines;
+}
+
 /** 把知情清单渲染成用户消息。 */
 export function buildUserMessage(ctx: ProjectedContext): string {
   const alive = ctx.aliveSeats.join('、');
@@ -122,6 +260,7 @@ export function buildUserMessage(ctx: ProjectedContext): string {
     `现在是第 ${ctx.day} 天，阶段是 ${ctx.phase}。`,
     `存活席位：${alive}；已出局：${dead}。`,
   ];
+  lines.push(...sheriffLines(ctx));
 
   if (ctx.knowledge.teammates.length > 0) {
     lines.push(`你的狼队友：${ctx.knowledge.teammates.join('、')}。`);
@@ -147,14 +286,32 @@ export function buildUserMessage(ctx: ProjectedContext): string {
     lines.push('你被出局了，现在可以开枪带走一人（也可以选择不开）。');
   }
   if (ctx.legalTargets.length > 0) {
-    lines.push(`本阶段可以指向：${ctx.legalTargets.join('、')}。`);
+    lines.push(
+      `本阶段可以指向：${ctx.legalTargets.map((target) => (target === 'abstain' ? '弃权' : `${target} 号`)).join('、')}。`,
+    );
   }
-  lines.push(`当前需要你做出：${ctx.pending ?? '无'} 决策。`);
+  if (ctx.sheriffOrderOptions !== undefined && ctx.sheriffOrderOptions.length > 0) {
+    lines.push(
+      `可选发言顺序：${ctx.sheriffOrderOptions
+        .map(
+          (option) =>
+            `从 ${option.startSeat} 号开始（${option.direction === 'clockwise' ? '顺时针' : '逆时针'}）`,
+        )
+        .join('；')}。`,
+    );
+  }
+  const pendingHint = ctx.pending === null ? undefined : PENDING_HINTS[ctx.pending];
+  lines.push(
+    `当前需要你做出：${ctx.pending ?? '无'} 决策${pendingHint === undefined ? '' : `（${pendingHint}）`}。`,
+  );
   lines.push(
     '狼队讨论限时 50 秒、投票限时 10 秒。讨论中可以继续 chat，或输出 action=ready 表示准备完成（全员准备会提前进入投票）。',
   );
   lines.push(
-    '可选动作：kill（夜里=投票给某个刀口）、check、heal、poison、none、vote、abstain、speak、skip、shoot、expose、chat、ready。',
+    '可选动作：kill、check、heal、poison、none、vote、abstain、speak、skip、shoot、expose、chat、ready。',
+  );
+  lines.push(
+    '警长相关动作：signup（上警）、no-signup（不上警）、withdraw（退水）、stay（留在警上）、order（定发言顺序，需 target 与 direction）、tear（撕徽）；警下投票仍用 vote / abstain。',
   );
 
   if (ctx.publicEvents.length > 0) {

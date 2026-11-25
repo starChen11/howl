@@ -199,3 +199,116 @@ describe('猎人可以选择不开枪', () => {
     });
   });
 });
+
+describe('RFC-022 · 警长相关动作', () => {
+  const seat = 3 as SeatId;
+
+  it('上警 / 不上警 → SHERIFF_SIGNUP', () => {
+    const ctx = { seat, phase: 'DAY_SHERIFF_SIGNUP' as const, day: 1, legalTargets: [] };
+    expect(toAction({ action: 'signup', reason: '想上警' }, ctx, 1)).toEqual({
+      action: { type: 'SHERIFF_SIGNUP', ts: 1, seat, run: true },
+    });
+    expect(toAction({ action: 'no-signup', reason: '不参选' }, ctx, 1)).toEqual({
+      action: { type: 'SHERIFF_SIGNUP', ts: 1, seat, run: false },
+    });
+  });
+
+  it('退水 / 留在警上 → SHERIFF_WITHDRAW', () => {
+    const ctx = { seat, phase: 'DAY_SHERIFF_WITHDRAW' as const, day: 1, legalTargets: [] };
+    expect(toAction({ action: 'withdraw', reason: '退水' }, ctx, 1)).toEqual({
+      action: { type: 'SHERIFF_WITHDRAW', ts: 1, seat, withdraw: true },
+    });
+    expect(toAction({ action: 'stay', reason: '继续选' }, ctx, 1)).toEqual({
+      action: { type: 'SHERIFF_WITHDRAW', ts: 1, seat, withdraw: false },
+    });
+  });
+
+  it('警下投票映射成 SHERIFF_VOTE；重投不能弃权', () => {
+    const ctx = {
+      seat: 5 as SeatId,
+      phase: 'DAY_SHERIFF_VOTE' as const,
+      day: 1,
+      legalTargets: [2, 3, 'abstain'] as (SeatId | 'abstain')[],
+    };
+    expect(toAction({ action: 'vote', reason: '投 2', target: 2 }, ctx, 1)).toEqual({
+      action: { type: 'SHERIFF_VOTE', ts: 1, seat: 5, target: 2 },
+    });
+    expect(toAction({ action: 'abstain', reason: '都不满意' }, ctx, 1)).toEqual({
+      action: { type: 'SHERIFF_VOTE', ts: 1, seat: 5, target: 'abstain' },
+    });
+    expect(
+      toAction(
+        { action: 'abstain', reason: '想弃权' },
+        { ...ctx, phase: 'DAY_SHERIFF_RUNOFF' as const, legalTargets: [2, 3] },
+        1,
+      ),
+    ).toEqual({ reject: expect.stringContaining('不能弃权') });
+  });
+
+  it('警徽移交：vote → 目标，tear → 撕徽，abstain 被拒', () => {
+    const ctx = {
+      seat,
+      phase: 'DAY_BADGE_TRANSFER' as const,
+      day: 1,
+      legalTargets: [2, 4] as (SeatId | 'abstain')[],
+    };
+    expect(toAction({ action: 'vote', reason: '交给 4', target: 4 }, ctx, 1)).toEqual({
+      action: { type: 'BADGE_TRANSFER', ts: 1, seat, target: 4 },
+    });
+    expect(toAction({ action: 'tear', reason: '撕掉' }, ctx, 1)).toEqual({
+      action: { type: 'BADGE_TRANSFER', ts: 1, seat, target: 'tear' },
+    });
+    expect(toAction({ action: 'abstain', reason: '不处理' }, ctx, 1)).toEqual({
+      reject: expect.stringContaining('不能弃权'),
+    });
+  });
+
+  it('定序：带方向时按合法选项翻译，非法起点被拒', () => {
+    const ctx = {
+      seat: 2 as SeatId,
+      phase: 'DAY_SHERIFF_ORDER' as const,
+      day: 1,
+      legalTargets: [3, 8] as (SeatId | 'abstain')[],
+      orderOptions: [
+        { startSeat: 3 as SeatId, direction: 'clockwise' as const },
+        { startSeat: 8 as SeatId, direction: 'counterclockwise' as const },
+      ],
+    };
+    expect(
+      toAction(
+        { action: 'order', reason: '死右', target: 8, direction: 'counterclockwise' },
+        ctx,
+        1,
+      ),
+    ).toEqual({
+      action: {
+        type: 'SHERIFF_ORDER',
+        ts: 1,
+        seat: 2,
+        startSeat: 8,
+        direction: 'counterclockwise',
+      },
+    });
+    expect(toAction({ action: 'order', reason: '乱选', target: 9 }, ctx, 1)).toEqual({
+      reject: expect.stringContaining('不在本阶段的合法清单里'),
+    });
+  });
+
+  it('竞选发言用 speak/skip，竞选期间可以自曝', () => {
+    const ctx = {
+      seat,
+      phase: 'DAY_SHERIFF_SPEECH' as const,
+      day: 1,
+      legalTargets: [],
+    };
+    expect(toAction({ action: 'speak', reason: '拉票', speech: '请投我' }, ctx, 1)).toMatchObject({
+      action: { type: 'SPEECH', text: '请投我' },
+    });
+    expect(toAction({ action: 'skip', reason: '过' }, ctx, 1)).toEqual({
+      action: { type: 'SPEECH_SKIP', ts: 1, seat },
+    });
+    expect(toAction({ action: 'expose', reason: '自曝' }, ctx, 1)).toEqual({
+      action: { type: 'SELF_EXPOSE', ts: 1, seat },
+    });
+  });
+});

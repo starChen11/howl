@@ -21,8 +21,17 @@ export const DecisionSchema = z.object({
     'expose',
     'chat',
     'ready',
+    // RFC-022 的警长动作。
+    'signup',
+    'no-signup',
+    'withdraw',
+    'stay',
+    'order',
+    'tear',
   ]),
   target: z.number().int().min(1).max(9).optional(),
+  /** 定发言顺序的方向；只在 `order` 时有意义。 */
+  direction: z.enum(['clockwise', 'counterclockwise']).optional(),
   // 理由超长只截断，不整条作废：模型多说两句不该让这一轮行动丢失。
   reason: z
     .string()

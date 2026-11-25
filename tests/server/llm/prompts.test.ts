@@ -292,3 +292,90 @@ describe('RUL-13 · 提示词包含狼队票型', () => {
     expect(message).toContain('讨论限时 50 秒');
   });
 });
+
+describe('RFC-022 · 警长/竞选上下文进入提示', () => {
+  const sheriffCtx: ProjectedContext = {
+    ...CTX,
+    phase: 'DAY_SHERIFF_VOTE',
+    pending: 'sheriff-vote',
+    legalTargets: [2, 4, 'abstain'],
+    sheriffSeat: null,
+    badge: 'none',
+    sheriff: {
+      phase: 'vote',
+      candidates: [2, 4],
+      voters: [1, 3, 5],
+      withdrawn: [4],
+      signups: [
+        { seat: 1, run: false },
+        { seat: 2, run: true },
+      ],
+      runoff: [],
+      isCandidate: false,
+      isVoter: true,
+    },
+    publicEvents: [
+      {
+        gameId: 'g',
+        seq: 1,
+        ts: 1,
+        type: 'SHERIFF_SIGNUP',
+        visibleTo: 'public',
+        payload: { seat: 2, run: true },
+      },
+      {
+        gameId: 'g',
+        seq: 2,
+        ts: 2,
+        type: 'SHERIFF_CANDIDATES',
+        visibleTo: 'public',
+        payload: { candidates: [2, 4] },
+      },
+      {
+        gameId: 'g',
+        seq: 3,
+        ts: 3,
+        type: 'SHERIFF_ELECTED',
+        visibleTo: 'public',
+        payload: { seat: 2 },
+      },
+    ] as never,
+  };
+
+  it('候选人/警下/自己的位置/1.5 票与待决提示都在提示里', () => {
+    const message = buildUserMessage(sheriffCtx);
+
+    expect(message).toContain('警上候选人：2 号、4 号（已退水）');
+    expect(message).toContain('警下投票人：1、3、5');
+    expect(message).toContain('你自己的位置：警下');
+    expect(message).toContain('放逐票 1.5 票');
+    expect(message).toContain('当前需要你做出：sheriff-vote 决策');
+    expect(message).toContain('abstain 弃权');
+    // 事件正文也要进来，不能只显示事件类型。
+    expect(message).toContain('2 号上警');
+    expect(message).toContain('2 号当选警长');
+  });
+
+  it('警长发言顺序选项与归票提示对 AI 可见', () => {
+    if (sheriffCtx.sheriff === undefined) throw new Error('夹具缺少 sheriff');
+    const orderCtx: ProjectedContext = {
+      ...sheriffCtx,
+      phase: 'DAY_SHERIFF_ORDER',
+      pending: 'sheriff-order',
+      legalTargets: [3, 8],
+      sheriffSeat: 2,
+      badge: 'held',
+      sheriff: { ...sheriffCtx.sheriff, phase: 'result' },
+      sheriffOrderOptions: [
+        { startSeat: 3, direction: 'clockwise' },
+        { startSeat: 8, direction: 'counterclockwise' },
+      ],
+    };
+    const message = buildUserMessage(orderCtx);
+
+    expect(message).toContain('当前警长：2 号');
+    expect(message).toContain('从 3 号开始（顺时针）');
+    expect(message).toContain('从 8 号开始（逆时针）');
+    expect(message).toContain('direction 取 clockwise 或 counterclockwise');
+  });
+});

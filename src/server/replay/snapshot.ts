@@ -183,6 +183,137 @@ export function buildTimeline(state: GameState, events: readonly EventEnvelope[]
       case 'SELF_EXPOSE':
         entries.push({ seq: event.seq, day, phase, text: `${String(payload['seat'])} 号自曝` });
         break;
+
+      /* ---- RFC-022 · 警长竞选 / 警徽（全部写入复盘，不丢数据） ---- */
+      case 'SHERIFF_ELECTION_STARTED':
+        entries.push({ seq: event.seq, day, phase, text: '警长竞选开始' });
+        break;
+      case 'SHERIFF_SIGNUP':
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text: `${String(payload['seat'])} 号${payload['run'] === true ? '上警' : '选择不上警'}`,
+        });
+        break;
+      case 'SHERIFF_CANDIDATES': {
+        const candidates = payload['candidates'] as number[];
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text:
+            candidates.length === 0
+              ? '没有人上警，本局无警长'
+              : `警上候选人：${candidates.join('、')} 号`,
+        });
+        break;
+      }
+      case 'SHERIFF_SPEECH':
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text: `${String(payload['seat'])} 号竞选发言：${String(payload['text'])}`,
+        });
+        break;
+      case 'SHERIFF_SPEECH_SKIPPED':
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text: `${String(payload['seat'])} 号跳过竞选发言`,
+        });
+        break;
+      case 'SHERIFF_WITHDRAWN':
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text: `${String(payload['seat'])} 号${payload['withdraw'] === true ? '退水' : '留在警上'}`,
+        });
+        break;
+      case 'SHERIFF_VOTE_CAST':
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text:
+            payload['target'] === 'abstain'
+              ? `${String(payload['seat'])} 号在警长投票中弃权`
+              : `${String(payload['seat'])} 号投 ${String(payload['target'])} 号（警长票）`,
+        });
+        break;
+      case 'SHERIFF_VOTE_REVEALED': {
+        const votes = payload['votes'] as { seat: number; target: number | 'abstain' }[];
+        const tally = votes
+          .map((vote) => `${vote.seat}→${vote.target === 'abstain' ? '弃权' : vote.target}`)
+          .join('、');
+        const tied = payload['tied'] as number[] | undefined;
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text:
+            tied === undefined
+              ? `警长票型：${tally}`
+              : `警长票型：${tally}；平票（${tied.join('、')}）`,
+        });
+        break;
+      }
+      case 'SHERIFF_ELECTED':
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text: `${String(payload['seat'])} 号当选警长（放逐票 1.5 票）`,
+        });
+        break;
+      case 'SHERIFF_ELECTION_FAILED': {
+        const reason = String(payload['reason']);
+        const label =
+          reason === 'self-exposed'
+            ? '竞选期间自曝，警徽被吞'
+            : reason === 'double-tie'
+              ? '重投再次平票'
+              : reason === 'no-valid-votes'
+                ? '没有有效票'
+                : reason === 'all-withdrawn'
+                  ? '候选人全部退水'
+                  : reason === 'no-voters'
+                    ? '没有警下投票人'
+                    : '无人上警';
+        entries.push({ seq: event.seq, day, phase, text: `警长竞选失败：${label}，本局无警长` });
+        break;
+      }
+      case 'BADGE_TRANSFERRED': {
+        const { from, to } = payload as { from: number; to: number };
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text: `${from} 号把警徽移交给 ${to} 号`,
+        });
+        break;
+      }
+      case 'BADGE_DESTROYED':
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text: `${String(payload['seat'])} 号撕毁警徽`,
+        });
+        break;
+      case 'SHERIFF_ORDER_CHOSEN':
+        entries.push({
+          seq: event.seq,
+          day,
+          phase,
+          text: `警长选择从 ${String(payload['startSeat'])} 号开始，${
+            payload['direction'] === 'clockwise' ? '顺时针' : '逆时针'
+          }发言`,
+        });
+        break;
       case 'DEGRADED':
         entries.push({ seq: event.seq, day, phase, text: `${String(payload['seat'])} 号发言降级` });
         break;
@@ -217,18 +348,37 @@ export function buildThoughts(events: readonly EventEnvelope[]): ThoughtEntry[] 
         phase?: string;
         decisionAction?: string;
         target?: number | 'abstain';
+        detail?: string;
       };
-      const kind: ThoughtEntry['kind'] = payload.phase?.startsWith('NIGHT')
+      const phase = payload.phase ?? '';
+      const votePhases = new Set([
+        'DAY_VOTE',
+        'DAY_VOTE_RUNOFF',
+        'DAY_SHERIFF_VOTE',
+        'DAY_SHERIFF_RUNOFF',
+        'DAY_BADGE_TRANSFER',
+      ]);
+      const kind: ThoughtEntry['kind'] = phase.startsWith('NIGHT')
         ? 'night-action'
-        : payload.phase === 'DAY_VOTE' || payload.phase === 'DAY_VOTE_RUNOFF'
+        : votePhases.has(phase)
           ? 'vote'
           : 'speech';
-      const chose =
-        payload.target === undefined
-          ? ''
-          : payload.target === 'abstain'
+      let chose = '';
+      if (payload.decisionAction === 'SHERIFF_ORDER' && payload.target !== undefined) {
+        chose = `从 ${payload.target} 号开始${payload.detail === undefined ? '' : `（${payload.detail}）`}`;
+      } else if (payload.decisionAction === 'BADGE_TRANSFER') {
+        chose =
+          payload.target === undefined ? (payload.detail ?? '') : `移交给 ${payload.target} 号`;
+      } else if (payload.target !== undefined) {
+        chose =
+          payload.target === 'abstain'
             ? '弃权'
-            : `${payload.decisionAction === 'VOTE' ? '投' : '选择'} ${payload.target} 号`;
+            : payload.decisionAction === 'SHERIFF_VOTE' || payload.decisionAction === 'VOTE'
+              ? `投 ${payload.target} 号`
+              : `选择 ${payload.target} 号`;
+      } else if (payload.detail !== undefined) {
+        chose = payload.detail;
+      }
       const thought: ThoughtEntry = {
         seq: event.seq,
         seat: payload.seat,

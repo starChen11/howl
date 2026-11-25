@@ -38,9 +38,12 @@ export const FACTION_OF = {
 } as const satisfies Record<Role, Faction>;
 
 /**
- * 对局阶段，共 16 个取值：
- * `LOBBY`、7 个 `NIGHT_*`、`DAY_ANNOUNCE` / `DAY_SPEECH` / `DAY_VOTE` /
- * `DAY_VOTE_RUNOFF` / `DAY_LYNCH` / `DAY_HUNTER_SHOOT`、`FINISHED`。
+ * 对局阶段，共 26 个取值。
+ *
+ * 首日顺序（RFC-022）：`NIGHT_RESOLVE → DAY_SHERIFF_SIGNUP → DAY_SHERIFF_SPEECH →
+ * DAY_SHERIFF_WITHDRAW → DAY_SHERIFF_VOTE → (DAY_SHERIFF_PK → DAY_SHERIFF_RUNOFF) →
+ * DAY_SHERIFF_RESULT → DAY_ANNOUNCE → (NIGHT_HUNTER_SHOOT) → (DAY_BADGE_TRANSFER) →
+ * DAY_SHERIFF_ORDER → DAY_SPEECH → DAY_SHERIFF_FINAL_SPEECH → DAY_VOTE`。
  */
 export const PHASES = [
   'LOBBY',
@@ -51,8 +54,18 @@ export const PHASES = [
   'NIGHT_WITCH',
   'NIGHT_RESOLVE',
   'NIGHT_HUNTER_SHOOT',
+  'DAY_SHERIFF_SIGNUP',
+  'DAY_SHERIFF_SPEECH',
+  'DAY_SHERIFF_WITHDRAW',
+  'DAY_SHERIFF_VOTE',
+  'DAY_SHERIFF_PK',
+  'DAY_SHERIFF_RUNOFF',
+  'DAY_SHERIFF_RESULT',
   'DAY_ANNOUNCE',
+  'DAY_BADGE_TRANSFER',
+  'DAY_SHERIFF_ORDER',
   'DAY_SPEECH',
+  'DAY_SHERIFF_FINAL_SPEECH',
   'DAY_VOTE',
   'DAY_PK_SPEECH',
   'DAY_VOTE_RUNOFF',
@@ -61,6 +74,33 @@ export const PHASES = [
   'FINISHED',
 ] as const;
 export type Phase = (typeof PHASES)[number];
+
+/** 警徽状态。`none` = 本局从未有警长 / 竞选失败；`destroyed` = 曾有警长但被撕徽。 */
+export const SHERIFF_BADGE_STATES = ['none', 'held', 'destroyed'] as const;
+export type SheriffBadgeState = (typeof SHERIFF_BADGE_STATES)[number];
+
+/** 发言方向。由警长选择的起点与方向一起写进 `SHERIFF_ORDER_CHOSEN`，不靠位置猜。 */
+export const SPEECH_DIRECTIONS = ['clockwise', 'counterclockwise'] as const;
+export type SpeechDirection = (typeof SPEECH_DIRECTIONS)[number];
+
+/**
+ * 竞选没有产生警长的原因。
+ *
+ * 用封闭枚举而不是自由字符串：UI 与复盘要按原因显示不同文案，拼写漂移会在运行时静默。
+ */
+export const SHERIFF_ELECTION_FAILURE_REASONS = [
+  'no-candidates',
+  'all-withdrawn',
+  'no-voters',
+  'no-valid-votes',
+  'double-tie',
+  'self-exposed',
+] as const;
+export type SheriffElectionFailureReason = (typeof SHERIFF_ELECTION_FAILURE_REASONS)[number];
+
+/** 警长投票的轮次。首轮可弃权，重投只能投并列者（RUL-2 的警长版）。 */
+export const SHERIFF_VOTE_ROUNDS = ['initial', 'runoff'] as const;
+export type SheriffVoteRound = (typeof SHERIFF_VOTE_ROUNDS)[number];
 
 export interface Seat {
   seat: SeatId;
@@ -145,4 +185,48 @@ export interface GameState {
   /** 已被放逐的席位（`VOTE_REVEALED` 唯一最高票时写入，`DAY_LYNCH` 的自动推进读它）。 */
   lynched?: SeatId;
   // 注：无 stalemateDays 之类的平局兜底字段。RUL-10 已移除该规则（见 RULES.md §6）。
+
+  /* ------------------------------------------------------------------------
+   * 警长与警徽（RFC-022）。全部是 `applyEvent` 折叠出来的派生字段，可完整重建。
+   * --------------------------------------------------------------------- */
+
+  /**
+   * 当前警长。`null` 表示本局没有警长（尚未选出 / 竞选失败 / 撕徽），
+   * `undefined` 表示事件流里还没出现过任何警长信息（旧对局或开局前）。
+   */
+  sheriffSeat?: SeatId | null;
+  /** 警徽状态。缺省视为 `none`。 */
+  badge?: SheriffBadgeState;
+
+  /** 上警表态（含「不上警」）。公开信息，同时用于判断是否 9 人都表过态。 */
+  sheriffSignups?: { seat: SeatId; run: boolean }[];
+  /** 上过警的席位（含后来退水的）。这是「警上」集合，退水者仍不能投警长票。 */
+  sheriffCandidates?: SeatId[];
+  /** 从未上警的席位。只有他们能投警长票（RFC-022 §2.2）。 */
+  sheriffVoters?: SeatId[];
+  /** 退水表态（含「不退水」）。 */
+  sheriffWithdrawals?: { seat: SeatId; withdraw: boolean }[];
+  /** 已退水的席位。 */
+  sheriffWithdrawn?: SeatId[];
+  /** 本轮警长票箱（`SHERIFF_VOTE_CAST` 折叠而来），唱票后清空。 */
+  sheriffVotes?: { seat: SeatId; target: SeatId | 'abstain' }[];
+  /** 平票 PK 的候选集：首轮并列者。重投只能投他们。 */
+  sheriffRunoff?: SeatId[];
+  /** 竞选发言 cursor（与白天的 `speech` 完全独立，RFC-022 §13.2）。 */
+  sheriffSpeech?: { spoken: SeatId[] };
+  /** 警长在 `DAY_SHERIFF_FINAL_SPEECH` 是否已经完成归票发言。 */
+  sheriffFinalSpeechDone?: boolean;
+  /** 竞选失败原因；`self-exposed` 会改变天亮后的去向（先公布死讯再入夜）。 */
+  sheriffElectionFailure?: SheriffElectionFailureReason;
+  /** 警长选定的当天发言顺序。 */
+  sheriffOrder?: { startSeat: SeatId; direction: SpeechDirection };
+  /** 发言方向。缺省为顺时针；`DAY_STARTED` 会重置，警长选择会覆盖。 */
+  speechDirection?: SpeechDirection;
+
+  /** 最后一次 `DAY_STARTED` 公布的昨夜死者（按座位升序）。警长选起点时要用。 */
+  lastNightDeaths?: SeatId[];
+  /** 本天是否已经公布过死讯（首夜死亡延后落地后，开枪阶段要据此判断天亮是否已发生）。 */
+  dayAnnounced?: boolean;
+  /** 进入 `DAY_BADGE_TRANSFER` 时来自哪个阶段：决定移交后回白天还是入夜。 */
+  badgeTransferFrom?: Phase;
 }

@@ -5,6 +5,7 @@ import { InMemoryMetaStore } from '@server/store/meta-store';
 import { StreamBus } from '@server/stream/bus';
 import { speak } from '@server/llm/speak';
 import { currentSpeaker } from '@engine/phases/day';
+import { skipSheriffElectionInRegistry } from '../helpers/sheriff';
 import type { StreamMessage } from '@shared/stream';
 
 /**
@@ -79,6 +80,11 @@ async function setup() {
     const result = await registry.submit(session, current, action as never, state.seq);
     if (!result.ok) break;
     current = result.record;
+  }
+
+  // RFC-022：首夜结算后必须先走完竞选，才能到 `DAY_SPEECH`。全员不上警保留旧语义。
+  if (registry.stateOf(current).phase === 'DAY_SHERIFF_SIGNUP') {
+    current = await skipSheriffElectionInRegistry(registry, session, current);
   }
 
   const speaker = currentSpeaker(registry.stateOf(current));

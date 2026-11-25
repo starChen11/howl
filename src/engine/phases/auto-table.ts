@@ -4,6 +4,7 @@ import type { AutoPhaseEntry } from './auto';
 import { dayAnnounceEntry } from './day';
 import { lynchEntry } from './lynch';
 import { resolveNightEntry } from './night';
+import { sheriffResultEntry } from './sheriff';
 
 /**
  * 自动阶段登记表。
@@ -14,6 +15,7 @@ import { resolveNightEntry } from './night';
  */
 export const AUTO_PHASE_ENTRIES: Partial<Record<Phase, AutoPhaseEntry>> = {
   NIGHT_RESOLVE: resolveNightEntry,
+  DAY_SHERIFF_RESULT: sheriffResultEntry,
   DAY_ANNOUNCE: dayAnnounceEntry,
   DAY_LYNCH: lynchEntry,
 };

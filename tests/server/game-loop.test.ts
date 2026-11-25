@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildApp } from '@server/app';
 import { ChannelRegistry } from '@server/channels/session';
 import { GameLoop } from '@server/game-loop';
+import { defaultActionFor, nextActor, seatToSpeak } from '@server/orchestrator';
 import { scriptedAgent } from '@server/ai/agent';
 import { GameRegistry } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
@@ -54,6 +55,24 @@ describe('AC-15 · 一局能从开局跑到 FINISHED', () => {
       const record = await registry.getGame(gameId);
       if (record === undefined) return;
       const state = registry.stateOf(record);
+      const playerSeat = state.seats.find((seat) => seat.isPlayer)?.seat;
+      const isSheriffPhase =
+        state.phase.startsWith('DAY_SHERIFF') || state.phase === 'DAY_BADGE_TRANSFER';
+
+      // RFC-022：玩家在竞选/警徽阶段的默认动作由服务端算（UI 接入前，测试也走同一条路）。
+      if (isSheriffPhase && playerSeat !== undefined) {
+        const actor = seatToSpeak(state) ?? nextActor(state);
+        if (actor !== playerSeat) return;
+        const action = defaultActionFor(state, playerSeat);
+        if (action === undefined) return;
+        await app.inject({
+          method: 'POST',
+          url: `/api/games/${gameId}/actions`,
+          headers: { cookie },
+          payload: { action, expectedVersion: record.events.length },
+        });
+        return;
+      }
 
       if (state.phase === 'DAY_VOTE' || state.phase === 'DAY_VOTE_RUNOFF') {
         const voters = state.seats.filter((seat) => seat.alive).map((seat) => seat.seat);

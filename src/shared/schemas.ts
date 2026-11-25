@@ -1,7 +1,15 @@
 import { z } from 'zod';
 
 import { ACTION_TYPES, WITCH_POTIONS } from './actions';
-import { PHASES, ROLES, SEAT_IDS, WIN_MODES } from './domain';
+import {
+  PHASES,
+  ROLES,
+  SEAT_IDS,
+  SHERIFF_ELECTION_FAILURE_REASONS,
+  SHERIFF_VOTE_ROUNDS,
+  SPEECH_DIRECTIONS,
+  WIN_MODES,
+} from './domain';
 import { GAME_EVENT_TYPES, SELF_VISIBILITY_PREFIX } from './events';
 
 /**
@@ -26,6 +34,9 @@ export const phaseSchema = z.enum(PHASES);
 export const deathCauseSchema = z.enum(['wolf', 'poison', 'lynch', 'shoot']);
 export const winModeSchema = z.enum(WIN_MODES);
 export const witchPotionSchema = z.enum(WITCH_POTIONS);
+export const speechDirectionSchema = z.enum(SPEECH_DIRECTIONS);
+export const sheriffVoteRoundSchema = z.enum(SHERIFF_VOTE_ROUNDS);
+export const sheriffElectionFailureReasonSchema = z.enum(SHERIFF_ELECTION_FAILURE_REASONS);
 
 /** `self:<seat>` 的合法集合由 `SEAT_IDS` 派生，不存在两个地方各写一份座位表的可能。 */
 export const SELF_VISIBILITY_PATTERN = new RegExp(
@@ -131,6 +142,37 @@ export const ActionSchema = z.discriminatedUnion('type', [
     ts: timestampSchema,
     seat: seatIdSchema,
   }),
+  z.object({
+    type: z.literal('SHERIFF_SIGNUP'),
+    ts: timestampSchema,
+    seat: seatIdSchema,
+    run: z.boolean(),
+  }),
+  z.object({
+    type: z.literal('SHERIFF_WITHDRAW'),
+    ts: timestampSchema,
+    seat: seatIdSchema,
+    withdraw: z.boolean(),
+  }),
+  z.object({
+    type: z.literal('SHERIFF_VOTE'),
+    ts: timestampSchema,
+    seat: seatIdSchema,
+    target: z.union([seatIdSchema, z.literal('abstain')]),
+  }),
+  z.object({
+    type: z.literal('BADGE_TRANSFER'),
+    ts: timestampSchema,
+    seat: seatIdSchema,
+    target: z.union([seatIdSchema, z.literal('tear')]),
+  }),
+  z.object({
+    type: z.literal('SHERIFF_ORDER'),
+    ts: timestampSchema,
+    seat: seatIdSchema,
+    startSeat: seatIdSchema,
+    direction: speechDirectionSchema,
+  }),
 ]);
 
 /**
@@ -221,8 +263,18 @@ export const VoteCastPayloadSchema = z.object({
   target: seatIdSchema.or(z.literal('abstain')),
 });
 
+/** 折算票（RFC-022 §13.4）：每一位投票者的原始目标与半票权重。 */
+export const CountedVoteSchema = z.object({
+  seat: seatIdSchema,
+  target: seatIdSchema.or(z.literal('abstain')),
+  halfVotes: z.number().int().nonnegative(),
+});
+
 export const VoteRevealedPayloadSchema = z.object({
   votes: z.array(z.object({ seat: seatIdSchema, target: seatIdSchema.or(z.literal('abstain')) })),
+  // RFC-022 扩展：旧对局的事件流里没有这两个字段。
+  countedVotes: z.array(CountedVoteSchema).optional(),
+  sheriffSeat: seatIdSchema.nullable().optional(),
 });
 
 export const WolfChatPostedPayloadSchema = z.object({
@@ -232,6 +284,62 @@ export const WolfChatPostedPayloadSchema = z.object({
 });
 
 export const SelfExposePayloadSchema = z.object({ seat: seatIdSchema });
+
+/* ---- RFC-022 · 警长竞选与警徽的事件 payload ---- */
+
+export const SheriffElectionStartedPayloadSchema = z.object({
+  day: z.number().int().min(1),
+});
+
+export const SheriffSignupPayloadSchema = z.object({
+  seat: seatIdSchema,
+  run: z.boolean(),
+});
+
+export const SheriffCandidatesPayloadSchema = z.object({
+  candidates: z.array(seatIdSchema),
+});
+
+export const SheriffSpeechPayloadSchema = z.object({
+  seat: seatIdSchema,
+  text: z.string(),
+});
+
+export const SheriffSpeechSkippedPayloadSchema = z.object({ seat: seatIdSchema });
+
+export const SheriffWithdrawnPayloadSchema = z.object({
+  seat: seatIdSchema,
+  withdraw: z.boolean(),
+});
+
+export const SheriffVoteCastPayloadSchema = z.object({
+  seat: seatIdSchema,
+  target: seatIdSchema.or(z.literal('abstain')),
+});
+
+export const SheriffVoteRevealedPayloadSchema = z.object({
+  votes: z.array(z.object({ seat: seatIdSchema, target: seatIdSchema.or(z.literal('abstain')) })),
+  round: sheriffVoteRoundSchema,
+  tied: z.array(seatIdSchema).optional(),
+});
+
+export const SheriffElectedPayloadSchema = z.object({ seat: seatIdSchema });
+
+export const SheriffElectionFailedPayloadSchema = z.object({
+  reason: sheriffElectionFailureReasonSchema,
+});
+
+export const BadgeTransferredPayloadSchema = z.object({
+  from: seatIdSchema,
+  to: seatIdSchema,
+});
+
+export const BadgeDestroyedPayloadSchema = z.object({ seat: seatIdSchema });
+
+export const SheriffOrderChosenPayloadSchema = z.object({
+  startSeat: seatIdSchema,
+  direction: speechDirectionSchema,
+});
 
 export const DayStartedPayloadSchema = z.object({
   day: z.number().int().min(1),
@@ -254,6 +362,8 @@ export const AiThoughtPayloadSchema = z.object({
   phase: phaseSchema.optional(),
   decisionAction: z.string().optional(),
   target: z.union([z.number().int().min(1).max(9), z.literal('abstain')]).optional(),
+  /** 无 target 的警长决策（上警 / 退水 / 撕徽 / 定序方向）的可读选择。 */
+  detail: z.string().optional(),
 });
 
 /** 降级标记（RFC-010）：被降级的席位。 */
@@ -311,4 +421,17 @@ export const PAYLOAD_SCHEMAS = {
   WOLF_VOTE_CONFIRMED: WolfVoteConfirmedPayloadSchema,
   WOLF_VOTE_CAST: WolfVoteCastPayloadSchema,
   WOLF_VOTE_REVEALED: WolfVoteRevealedPayloadSchema,
+  SHERIFF_ELECTION_STARTED: SheriffElectionStartedPayloadSchema,
+  SHERIFF_SIGNUP: SheriffSignupPayloadSchema,
+  SHERIFF_CANDIDATES: SheriffCandidatesPayloadSchema,
+  SHERIFF_SPEECH: SheriffSpeechPayloadSchema,
+  SHERIFF_SPEECH_SKIPPED: SheriffSpeechSkippedPayloadSchema,
+  SHERIFF_WITHDRAWN: SheriffWithdrawnPayloadSchema,
+  SHERIFF_VOTE_CAST: SheriffVoteCastPayloadSchema,
+  SHERIFF_VOTE_REVEALED: SheriffVoteRevealedPayloadSchema,
+  SHERIFF_ELECTED: SheriffElectedPayloadSchema,
+  SHERIFF_ELECTION_FAILED: SheriffElectionFailedPayloadSchema,
+  BADGE_TRANSFERRED: BadgeTransferredPayloadSchema,
+  BADGE_DESTROYED: BadgeDestroyedPayloadSchema,
+  SHERIFF_ORDER_CHOSEN: SheriffOrderChosenPayloadSchema,
 } as const;

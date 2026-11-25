@@ -4,6 +4,7 @@ import { currentSpeaker } from '@engine/phases/day';
 import { step } from '@engine/step';
 
 import { nightStart, roleSeat, run } from './night';
+import { skipSheriffElection } from './sheriff';
 
 /**
  * 白天测试夹具：从开局沿**真实路径**走到 `DAY_SPEECH`。
@@ -16,7 +17,12 @@ export interface DayRun {
   killTarget: SeatId | null;
 }
 
-/** 走完第一夜，停在 `DAY_SPEECH`。`heal: true` 时当夜无人出局。 */
+/**
+ * 走完第一夜，停在 `DAY_SPEECH`。`heal: true` 时当夜无人出局。
+ *
+ * RFC-022 起首日晚上的必经流程是「竞选 → 死讯 → 发言」；默认夹具让全员不上警，
+ * 于是本局无警长，发言顺序回退到 RFC-004 的旧规则。
+ */
 export function reachDay(seed = 20_261_117, options: { heal?: boolean } = {}): DayRun {
   const atWolves = nightStart(seed);
   const wolf = roleSeat(atWolves, 'wolf');
@@ -48,8 +54,13 @@ export function reachDay(seed = 20_261_117, options: { heal?: boolean } = {}): D
     ...(options.heal === true ? { target: killTarget } : {}),
   } as never);
 
+  const day =
+    afterWitch.state.phase === 'DAY_SHERIFF_SIGNUP'
+      ? skipSheriffElection(afterWitch.state).state
+      : afterWitch.state;
+
   return {
-    state: afterWitch.state,
+    state: day,
     killTarget: options.heal === true ? null : killTarget,
   };
 }
@@ -126,7 +137,11 @@ export function twoDeaths(): {
     target: poisonTarget,
   });
 
-  const started = afterWitch.events.find((event) => event.type === 'DAY_STARTED');
+  // 首夜死亡延后到 `DAY_ANNOUNCE` 才公告；先走完竞选（全员不上警）。
+  const skipped = skipSheriffElection(afterWitch.state);
+  const started = [...afterWitch.events, ...skipped.events].find(
+    (event) => event.type === 'DAY_STARTED',
+  );
   if (started?.type !== 'DAY_STARTED') throw new Error('没有 DAY_STARTED');
 
   return {

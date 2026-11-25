@@ -1,6 +1,8 @@
 import type { GameState, SeatId } from '@shared/domain';
 import type { PendingDecision } from '@shared/project';
 
+import { activeCandidatesOf, sheriffOrderOptions, votersOf } from '@engine/phases/sheriff';
+
 /**
  * 本阶段允许指向的目标集合（RFC-007 §2.2 / §2.9）。
  *
@@ -68,7 +70,41 @@ export function legalTargetsOf(
     case 'chat':
       return [];
 
+    /* ---- RFC-022 · 竞选 ---- */
+
+    // 上警 / 退水 / 竞选发言 / 归票发言都不需要「指向某人」。
+    case 'sheriff-signup':
+    case 'sheriff-speech':
+    case 'sheriff-withdraw':
+    case 'sheriff-pk':
+    case 'sheriff-final-speech':
+      return [];
+
+    case 'sheriff-vote':
+      // 只有从未上警的玩家能投；候选人不可投。首轮可以弃权（RFC-022 §2.2）。
+      // 竞选发生在死讯公布前，引擎里也还没有任何死亡，所以直接用候选人集合是安全的。
+      return [...activeCandidatesOf(state), 'abstain'];
+
+    case 'sheriff-runoff':
+      // 重投只能投平票者，且**不能弃权**（RFC-022 §2.2）。
+      return [...(state.sheriffRunoff ?? [])].sort((a, b) => a - b);
+
+    case 'badge-transfer':
+      // 移交发生在死亡已经公布之后：用引擎真值，不能给已出局的人接警徽。
+      return state.seats
+        .filter((seat) => seat.alive && seat.seat !== observer)
+        .map((seat) => seat.seat);
+
+    case 'sheriff-order':
+      // 方向由 `sheriffOrderOptions` 表达；这里的「目标」只是合法的发言起点。
+      return sheriffOrderOptions(state).map((option) => option.startSeat);
+
     default:
       return [];
   }
+}
+
+/** 观察者是否是本次竞选的警下投票人（给 UI / prompt 判断，不参与合法性校验）。 */
+export function isSheriffVoter(state: GameState, observer: SeatId): boolean {
+  return votersOf(state).includes(observer);
 }

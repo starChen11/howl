@@ -551,19 +551,19 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 
 | AC | 计划测试 | 层级 | Exists? | 优先级 |
 |---|---|---|---|---|
-| 1 | 首夜结算后、死讯前进入竞选；投影不含首夜死者 | integration | planned | Must |
-| 2 | 9 人上警/不上警、警上按座位发言 | engine/integration | planned | Must |
-| 3 | 退水者无投票权；只有从未上警者可投 | engine | planned | Must |
-| 4 | 平票 PK、二次平票无警长 | engine | planned | Must |
-| 5 | 无人上警/全员上警/无有效票 → 无警长 | engine | planned | Must |
-| 6 | 1.5 票半票整数计票与票型显示 | engine/unit | planned | Must |
-| 7 | 警长定发言起点/方向并最后发言 | engine | planned | Must |
-| 8 | 无警长回退 RFC-004 顺序 | engine | planned | Must |
-| 9 | 警长夜间死亡：死讯后移交/撕徽再发言 | integration | planned | Must |
-| 10 | 警长白天被放逐/被枪：死亡后移交 | integration | planned | Must |
-| 11 | 移交只能存活他人；撕徽后无警长 | engine | planned | Must |
-| 12 | 首夜死者可竞选；当选后死亡按第 9 条 | engine/integration | planned | Must |
-| 13 | 竞选期狼人自曝 → 吞警徽入夜 | engine | planned | Must |
-| 14 | 新相位超时动作（弃权/不竞选/不发言/撕徽） | unit | planned | Must |
-| 15 | 事件流与复盘记录竞选/票权/移交 | integration | planned | Must |
-| 16 | 脚本与真实模型都能走完整流程，不卡死 | e2e/manual | planned | Must |
+| 1 | 首夜结算后、死讯前进入竞选；投影不含首夜死者 | integration | existing | Must |
+| 2 | 9 人上警/不上警、警上按座位发言 | engine/integration | existing | Must |
+| 3 | 退水者无投票权；只有从未上警者可投 | engine | existing | Must |
+| 4 | 平票 PK、二次平票无警长 | engine | existing | Must |
+| 5 | 无人上警/全员上警/无有效票 → 无警长 | engine | existing | Must |
+| 6 | 1.5 票半票整数计票与票型显示 | engine/unit | existing | Must |
+| 7 | 警长定发言起点/方向并最后发言 | engine | existing | Must |
+| 8 | 无警长回退 RFC-004 顺序 | engine | existing | Must |
+| 9 | 警长夜间死亡：死讯后移交/撕徽再发言 | integration | existing | Must |
+| 10 | 警长白天被放逐/被枪：死亡后移交 | integration | existing | Must |
+| 11 | 移交只能存活他人；撕徽后无警长 | engine | existing | Must |
+| 12 | 首夜死者可竞选；当选后死亡按第 9 条 | engine/integration | existing | Must |
+| 13 | 竞选期狼人自曝 → 吞警徽入夜 | engine | existing | Must |
+| 14 | 新相位超时动作（弃权/不竞选/不发言/撕徽） | unit | existing | Must |
+| 15 | 事件流与复盘记录竞选/票权/移交 | integration | existing | Must |
+| 16 | 脚本与真实模型都能走完整流程，不卡死 | e2e/manual | existing | Must |

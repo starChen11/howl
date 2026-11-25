@@ -70,6 +70,54 @@ export async function passNight(page: Page): Promise<boolean> {
 }
 
 /** 等到「轮到我发言」的输入框出现，途中把夜间行动点掉。 */
+
+/**
+ * 警长竞选：e2e 里玩家统一选择「不上警」，然后投第一票。
+ * 返回是否点到了选举相关按钮（让 waitForMyTurn 继续下一轮）。
+ */
+export async function passSheriffElection(page: Page): Promise<boolean> {
+  const noRun = page.getByRole('button', { name: '不上警' });
+  if ((await noRun.count()) > 0) {
+    await noRun
+      .first()
+      .click({ timeout: 2_000 })
+      .catch(() => undefined);
+    return true;
+  }
+
+  const stay = page.getByRole('button', { name: '不退水' });
+  if ((await stay.count()) > 0) {
+    await stay
+      .first()
+      .click({ timeout: 2_000 })
+      .catch(() => undefined);
+    return true;
+  }
+
+  const order = page.getByRole('button', { name: /^从 \d+ 号开始/ }).first();
+  if ((await order.count()) > 0) {
+    await order.click({ timeout: 2_000 }).catch(() => undefined);
+    return true;
+  }
+
+  const tear = page.getByRole('button', { name: '撕掉警徽' });
+  if ((await tear.count()) > 0) {
+    await tear
+      .first()
+      .click({ timeout: 2_000 })
+      .catch(() => undefined);
+    return true;
+  }
+
+  // 警下投票：第一票；重投没有弃权，所以先找候选按钮。
+  const sheriffVote = page.getByRole('button', { name: /^投 \d+ 号$/ }).first();
+  if ((await sheriffVote.count()) > 0) {
+    await sheriffVote.click({ timeout: 2_000 }).catch(() => undefined);
+    return true;
+  }
+  return false;
+}
+
 export async function waitForMyTurn(page: Page, timeoutMs = 45_000): Promise<void> {
   const box = page.getByLabel('你的发言');
   const deadline = Date.now() + timeoutMs;
@@ -77,6 +125,7 @@ export async function waitForMyTurn(page: Page, timeoutMs = 45_000): Promise<voi
   while (Date.now() < deadline) {
     await dismissResultModal(page);
     if ((await box.count()) > 0 && (await box.first().isVisible())) return;
+    if (await passSheriffElection(page)) continue;
     if (await page.getByRole('heading', { name: '复盘' }).count()) {
       throw new Error('对局已经结束，等不到发言输入框');
     }

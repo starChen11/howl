@@ -7,6 +7,7 @@ import { project } from '@server/project';
 import { step } from '@engine/step';
 
 import { lobbyState, startActionOf } from '../../fixtures/states';
+import { skipSheriffElection } from '../../helpers/sheriff';
 import { seatOfAliveRole, seatOfRole } from '../../helpers/roles';
 
 /**
@@ -198,6 +199,13 @@ describe('AC-6 · canShoot 只在开枪阶段为真', () => {
     });
     const witch = seatOfAliveRole(current, 'witch');
     current = push(current, { type: 'WITCH_ACT', ts: 5, seat: witch, potion: 'none' });
+
+    // RFC-022：首夜先竞选；全员不上警后公布死讯，才轮到大难不死的猎人开枪。
+    if (current.phase === 'DAY_SHERIFF_SIGNUP') {
+      const skipped = skipSheriffElection(current);
+      events.push(...skipped.events);
+      current = skipped.state;
+    }
 
     expect(current.phase).toBe('NIGHT_HUNTER_SHOOT');
 

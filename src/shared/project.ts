@@ -1,4 +1,4 @@
-import type { GameState, Phase, Role, SeatId } from './domain';
+import type { GameState, Phase, Role, SeatId, SheriffBadgeState, SpeechDirection } from './domain';
 import type { EventEnvelope } from './events';
 
 /**
@@ -19,7 +19,44 @@ export type PendingDecision =
   | 'vote'
   | 'shoot'
   | 'chat'
+  // RFC-022 新增决策点。服务端尚未接入时可以不产出这些值（向后兼容）。
+  | 'sheriff-signup'
+  | 'sheriff-speech'
+  | 'sheriff-withdraw'
+  | 'sheriff-vote'
+  | 'sheriff-pk'
+  | 'sheriff-runoff'
+  | 'badge-transfer'
+  | 'sheriff-order'
+  | 'sheriff-final-speech'
   | null;
+
+/** 竞选的公开阶段。`null` 表示当前不在竞选。 */
+export type SheriffElectionStep =
+  'signup' | 'speech' | 'withdraw' | 'vote' | 'pk' | 'runoff' | 'result' | null;
+
+/**
+ * 竞选的公开视图（RFC-022 §13.6）。
+ *
+ * **不包含** `sheriffVotes`：警长票在唱票前是暗投，只能在事件层按 `self:<seat>` 可见性
+ * 分发。这里只放全场都看得到的东西。
+ */
+export interface SheriffElectionView {
+  phase: SheriffElectionStep;
+  /** 上过警的席位（含后来退水的）。 */
+  candidates: SeatId[];
+  /** 从未上警、因而有警长投票权的席位。 */
+  voters: SeatId[];
+  /** 已退水的席位。 */
+  withdrawn: SeatId[];
+  /** 上警表态（`run: false` 也是表态，复盘要能还原）。 */
+  signups: { seat: SeatId; run: boolean }[];
+  /** 首轮平票的并列者；重投只能投他们。 */
+  runoff: SeatId[];
+  /** 观察者自己是否警上 / 是否有警长投票权。 */
+  isCandidate: boolean;
+  isVoter: boolean;
+}
 
 export interface ProjectInput {
   state: GameState;
@@ -64,5 +101,22 @@ export interface ProjectedContext {
   wolfVoteOpen?: boolean;
   /** 狼队投票的候选（重投时只有并列者）。 */
   wolfCandidates?: SeatId[];
+  /**
+   * 警长与警徽（RFC-022 §13.6）。
+   *
+   * 这些字段对**所有观察者**可见：警长是公开标志，不是身份牌。服务端投影正在接入
+   * （RFC-022 的编排层部分），因此当前保持可选，旧投影器不填也不会破坏类型。
+   */
+  sheriffSeat?: SeatId | null;
+  badge?: SheriffBadgeState;
+  /** 竞选公开视图。不在竞选时为 `phase: null`，字段仍可存在。 */
+  sheriff?: SheriffElectionView;
+  /**
+   * 警长今天可选的发言顺序（RFC-022 §3.2）。
+   *
+   * 只在 `DAY_SHERIFF_ORDER` 填充：动作要同时给起点与方向，只靠 `legalTargets`
+   * 表达不了方向，AI 会输出引擎拒绝的组合。
+   */
+  sheriffOrderOptions?: { startSeat: SeatId; direction: SpeechDirection }[];
   pending: PendingDecision;
 }

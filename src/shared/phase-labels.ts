@@ -25,14 +25,34 @@ export function phaseLabel(phase: string): string {
       return '夜间结算';
     case 'NIGHT_HUNTER_SHOOT':
       return `${ROLE_LABELS.hunter}开枪`;
+    case 'DAY_SHERIFF_SIGNUP':
+      return '上警';
+    case 'DAY_SHERIFF_SPEECH':
+      return '竞选发言';
+    case 'DAY_SHERIFF_WITHDRAW':
+      return '退水';
+    case 'DAY_SHERIFF_VOTE':
+      return '警下投票';
+    case 'DAY_SHERIFF_PK':
+      return '警长 PK 发言';
+    case 'DAY_SHERIFF_RUNOFF':
+      return '警长重投';
+    case 'DAY_SHERIFF_RESULT':
+      return '警长结果';
     case 'DAY_ANNOUNCE':
       return '天亮公布';
-    case 'DAY_PK_SPEECH':
-      return 'PK 发言';
+    case 'DAY_BADGE_TRANSFER':
+      return '警徽移交';
+    case 'DAY_SHERIFF_ORDER':
+      return '警长定序';
     case 'DAY_SPEECH':
       return '轮流发言';
+    case 'DAY_SHERIFF_FINAL_SPEECH':
+      return '警长归票';
     case 'DAY_VOTE':
       return '投票';
+    case 'DAY_PK_SPEECH':
+      return 'PK 发言';
     case 'DAY_VOTE_RUNOFF':
       return '平票重投';
     case 'DAY_LYNCH':

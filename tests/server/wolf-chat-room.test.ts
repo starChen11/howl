@@ -4,6 +4,7 @@ import { GameRegistry } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 import { runGame } from '@server/orchestrator';
 import { scriptedAgent } from '@server/ai/agent';
+import { DEFAULT_PHASE_TIMERS } from '@server/config/phase-timers';
 
 /**
  * RFC-018 / RUL-14：狼队讨论是限时聊天室。
@@ -38,6 +39,7 @@ describe('RUL-14 · 讨论与投票的时限', () => {
       wolfReadyMs: 0,
       wolfVoteMs: 20,
       phaseTimers: {
+        ...DEFAULT_PHASE_TIMERS,
         wolfChatMs: 20,
         wolfVoteMs: 20,
         seerMs: 20,
@@ -47,6 +49,15 @@ describe('RUL-14 · 讨论与投票的时限', () => {
         pkSpeechMs: 20,
         dayVoteMs: 20,
         dayVoteRunoffMs: 20,
+        sheriffSignupMs: 20,
+        sheriffSpeechMs: 20,
+        sheriffWithdrawMs: 20,
+        sheriffVoteMs: 20,
+        sheriffPkMs: 20,
+        sheriffRunoffMs: 20,
+        badgeTransferMs: 20,
+        sheriffOrderMs: 20,
+        sheriffFinalSpeechMs: 20,
       },
       maxSteps: 8,
     });

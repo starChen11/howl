@@ -148,6 +148,70 @@ export const scriptedAgent: Decider = async ({ seat, ctx, phase }) => {
         ? { action: undefined }
         : { action: { type: 'VOTE', ts, seat: seat as never, target: choice as never } };
     }
+
+    /* ---- RFC-022：警长竞选 / 警徽 ---- */
+
+    case 'DAY_SHERIFF_SIGNUP': {
+      // 脚本 AI 也要提供确定性策略：约一半席位会上警，保证竞选流程真的被走到。
+      const run = fnv(`${ctx.self.seat}|${ctx.day}|signup`) % 2 === 0;
+      return { action: { type: 'SHERIFF_SIGNUP', ts, seat: seat as never, run } };
+    }
+    case 'DAY_SHERIFF_SPEECH':
+      return { action: { type: 'SPEECH', ts, seat: seat as never, text: '我上警，请把票给我。' } };
+    case 'DAY_SHERIFF_PK':
+      return {
+        action: { type: 'SPEECH', ts, seat: seat as never, text: '平票了，我再说一次我的判断。' },
+      };
+    case 'DAY_SHERIFF_WITHDRAW': {
+      // 默认不退水；约四分之一会退水，覆盖退水路径。
+      const withdraw = fnv(`${ctx.self.seat}|${ctx.day}|withdraw`) % 4 === 0;
+      return { action: { type: 'SHERIFF_WITHDRAW', ts, seat: seat as never, withdraw } };
+    }
+    case 'DAY_SHERIFF_VOTE':
+      return {
+        action:
+          target === undefined || target === 'abstain'
+            ? { type: 'SHERIFF_VOTE', ts, seat: seat as never, target: 'abstain' }
+            : { type: 'SHERIFF_VOTE', ts, seat: seat as never, target: target as never },
+      };
+    case 'DAY_SHERIFF_RUNOFF': {
+      const tied = ctx.legalTargets
+        .filter((candidate) => typeof candidate === 'number')
+        .map((candidate) => Number(candidate));
+      const choice = tied[Math.min(tied.length - 1, (ctx.day * 13 + seat) % tied.length)];
+      return choice === undefined
+        ? { action: undefined }
+        : { action: { type: 'SHERIFF_VOTE', ts, seat: seat as never, target: choice as never } };
+    }
+    case 'DAY_SHERIFF_FINAL_SPEECH':
+      return {
+        action: { type: 'SPEECH', ts, seat: seat as never, text: '警长归票：听清楚再投。' },
+      };
+    case 'DAY_SHERIFF_ORDER': {
+      const options = ctx.sheriffOrderOptions ?? [];
+      const option =
+        options[Math.min(options.length - 1, fnv(`${ctx.day}|${seat}|order`) % options.length)];
+      return option === undefined
+        ? { action: undefined }
+        : {
+            action: {
+              type: 'SHERIFF_ORDER',
+              ts,
+              seat: seat as never,
+              startSeat: option.startSeat as never,
+              direction: option.direction,
+            },
+          };
+    }
+    case 'DAY_BADGE_TRANSFER':
+      // 默认撕徽；有合法目标时随机移交给一个存活玩家（不会是自己，投影已排除）。
+      return {
+        action:
+          target === undefined || target === 'abstain'
+            ? { type: 'BADGE_TRANSFER', ts, seat: seat as never, target: 'tear' }
+            : { type: 'BADGE_TRANSFER', ts, seat: seat as never, target: target as never },
+      };
+
     case 'NIGHT_HUNTER_SHOOT':
     case 'DAY_HUNTER_SHOOT':
       // 出局后的开枪决定；没有目标就选择不开枪（规则允许）。
@@ -215,6 +279,9 @@ export function createLlmAgent(input: {
             phase: phase as never,
             day: ctx.day,
             legalTargets: ctx.legalTargets,
+            ...(ctx.sheriffOrderOptions === undefined
+              ? {}
+              : { orderOptions: ctx.sheriffOrderOptions }),
           },
           Date.now(),
         );

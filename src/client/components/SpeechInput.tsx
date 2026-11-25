@@ -3,23 +3,34 @@ import { useState } from 'react';
 import { SPEECH_MAX_CHARS, charCount } from '@shared/speech';
 
 /**
- * 玩家输入区（RFC-011 §2.2 / RFC-012 §2.2）。
+ * 玩家输入区（RFC-011 §2.2 / RFC-012 §2.2 / RFC-022 §7）。
  *
  * - 300 字上限按 Unicode 算（与后端同一函数）；
  * - 引导提示**不代填**；
- * - 倒计时只是显示，服务端才是权威。
+ * - 倒计时只是显示，服务端才是权威；
+ * - 竞选发言、PK 发言与警长归票发言复用同一个输入框，只换标题与提示（不复制一套逻辑）。
  */
 export function SpeechInput({
   remaining,
   onSubmit,
   onSkip,
   onDraft,
+  heading = '你的发言',
+  hint = '可以说说：你怀疑谁、为什么；你相信谁、为什么。',
+  submitLabel = '发言',
+  skipLabel = '过',
 }: {
   remaining: number;
   onSubmit: (text: string) => void;
   onSkip: () => void;
   /** 草稿同步（节流由调用方负责）。 */
   onDraft?: (text: string) => void;
+  /** 输入区标题。竞选 / PK / 归票会传入不同的标题。 */
+  heading?: string;
+  /** 输入区提示。 */
+  hint?: string;
+  submitLabel?: string;
+  skipLabel?: string;
 }) {
   const [text, setText] = useState('');
   const count = charCount(text);
@@ -38,13 +49,13 @@ export function SpeechInput({
       }}
     >
       <label className="input__label" htmlFor="speech">
-        你的发言
+        {heading}
       </label>
       <p className="input__meta">
         {count}/{SPEECH_MAX_CHARS} 字 · {remaining} 秒
       </p>
       <p className="input__hint" id="speech-hint">
-        可以说说：你怀疑谁、为什么；你相信谁、为什么。
+        {hint}
       </p>
       <textarea
         id="speech"
@@ -68,10 +79,10 @@ export function SpeechInput({
       />
       <div className="input__actions">
         <button type="submit" className="button button--primary" disabled={over}>
-          发言
+          {submitLabel}
         </button>
         <button type="button" className="button" onClick={onSkip}>
-          过
+          {skipLabel}
         </button>
       </div>
       {over ? (

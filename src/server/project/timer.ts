@@ -44,10 +44,22 @@ export function phaseTimer(
 
   // 白天发言是「每人 120 秒」：当前发言人的计时从上一句发言/跳过结束时重新开始，
   // 而不是从整个白天发言阶段开始时一直倒计时。
+  // RFC-022 的竞选发言与 PK 发言用独立的 `SHERIFF_SPEECH*` 事件，同样按人重新计时。
   if (phase === 'DAY_SPEECH' || phase === 'DAY_PK_SPEECH') {
     for (let index = phaseStartIndex + 1; index < record.events.length; index += 1) {
       const event = record.events[index];
       if (event !== undefined && (event.type === 'SPEECH' || event.type === 'SPEECH_SKIPPED')) {
+        startedAt = event.ts;
+      }
+    }
+  }
+  if (phase === 'DAY_SHERIFF_SPEECH' || phase === 'DAY_SHERIFF_PK') {
+    for (let index = phaseStartIndex + 1; index < record.events.length; index += 1) {
+      const event = record.events[index];
+      if (
+        event !== undefined &&
+        (event.type === 'SHERIFF_SPEECH' || event.type === 'SHERIFF_SPEECH_SKIPPED')
+      ) {
         startedAt = event.ts;
       }
     }

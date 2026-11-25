@@ -28,13 +28,20 @@ const VALID_ACTIONS = [
   { type: 'SPEECH_SKIP', ts: 0, seat: 2 },
   { type: 'VOTE', ts: 0, seat: 3, target: 'abstain' },
   { type: 'SELF_EXPOSE', ts: 0, seat: 1 },
+  { type: 'SHERIFF_SIGNUP', ts: 0, seat: 1, run: true },
+  { type: 'SHERIFF_WITHDRAW', ts: 0, seat: 1, withdraw: false },
+  { type: 'SHERIFF_VOTE', ts: 0, seat: 2, target: 1 },
+  { type: 'SHERIFF_VOTE', ts: 0, seat: 2, target: 'abstain' },
+  { type: 'BADGE_TRANSFER', ts: 0, seat: 1, target: 3 },
+  { type: 'BADGE_TRANSFER', ts: 0, seat: 1, target: 'tear' },
+  { type: 'SHERIFF_ORDER', ts: 0, seat: 1, startSeat: 2, direction: 'clockwise' },
 ];
 
 describe('ACTION_TYPES 与 Action 的类型集合一致（评审 N2）', () => {
   it('双向精确相等：多一个少一个都编译失败', () => {
     expectTypeOf<Action['type']>().toEqualTypeOf<(typeof ACTION_TYPES)[number]>();
-    expect(ACTION_TYPES).toHaveLength(13);
-    expect(new Set(ACTION_TYPES).size).toBe(13);
+    expect(ACTION_TYPES).toHaveLength(18);
+    expect(new Set(ACTION_TYPES).size).toBe(18);
   });
 });
 
@@ -46,7 +53,7 @@ describe('AC-5 · potion 的三个取值', () => {
 });
 
 describe('ActionSchema', () => {
-  it('十个动作类型的合法载荷全部通过', () => {
+  it('全部动作类型的合法载荷都能通过', () => {
     for (const action of VALID_ACTIONS) {
       const result = ActionSchema.safeParse(action);
       expect(result.success, `${action.type} 被拒：${JSON.stringify(result.error?.issues)}`).toBe(

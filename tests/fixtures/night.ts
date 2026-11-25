@@ -61,6 +61,48 @@ export function nightStart(seed = 20_261_117): GameState {
   return current;
 }
 
+/**
+ * 从 `LOBBY` 走到 `NIGHT_WOLVES`，并**收集完整事件流**。
+ *
+ * `nightStart` 只返回状态，适合大多数断言；需要 `replay` 的测试必须从 `GAME_STARTED`
+ * 开始，所以额外提供这个版本。
+ */
+export function nightTrace(seed = 20_261_117): {
+  state: GameState;
+  events: ReturnType<typeof step>['events'];
+} {
+  const lobby = lobbyState({ seed });
+  const started = step(lobby, startActionOf(lobby));
+  let current = started.state;
+  const events = [...started.events];
+
+  for (let guard = 0; guard < 10 && current.phase === 'NIGHT_WOLF_CHAT'; guard += 1) {
+    const speaker = current.seats.find(
+      (seat) =>
+        seat.alive &&
+        seat.role === 'wolf' &&
+        !(current.wolfChat ?? []).some((entry) => entry.seat === seat.seat),
+    )?.seat;
+    if (speaker === undefined) break;
+    const result = step(current, { type: 'WOLF_CHAT', ts: 1, seat: speaker, text: '' });
+    current = result.state;
+    events.push(...result.events);
+  }
+
+  for (let guard = 0; guard < 10 && current.phase === 'NIGHT_WOLF_CHAT'; guard += 1) {
+    const wolf = current.seats.find(
+      (seat) =>
+        seat.alive && seat.role === 'wolf' && !(current.wolfReady ?? []).includes(seat.seat),
+    )?.seat;
+    if (wolf === undefined) break;
+    const result = step(current, { type: 'WOLF_READY', ts: 1, seat: wolf });
+    current = result.state;
+    events.push(...result.events);
+  }
+
+  return { state: current, events };
+}
+
 /** 占位：让测试代码的意图更清楚。 */
 export function run(state: GameState, action: Action): NightRun {
   const result = step(state, action);

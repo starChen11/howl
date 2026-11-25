@@ -9,6 +9,7 @@ import { step } from '@engine/step';
 
 import { reachDay, speakAll } from '../fixtures/day';
 import { twoDeaths } from '../fixtures/day';
+import { skipSheriffElection } from '../fixtures/sheriff';
 import { FIXTURE_ROLES, lobbyState, startActionOf, stateWithRoles } from '../fixtures/states';
 
 /** 让每只存活 wolf 各报一句，直到进入 `NIGHT_WOLVES`。返回事件。 */
@@ -237,6 +238,11 @@ describe('AC-3 · 无死者时起点由 rng 决定，且可重放', () => {
     const witch = current.seats.find((seat) => seat.role === 'witch')?.seat;
     if (witch === undefined) throw new Error('没有 witch');
     push({ type: 'WITCH_ACT', ts: 4, seat: witch, potion: 'none' } as never);
+
+    // RFC-022：首夜死讯公布前先走竞选；全员不上警后 DAY_ANNOUNCE 才产出 DAY_STARTED。
+    const skipped = skipSheriffElection(current);
+    current = skipped.state;
+    events.push(...skipped.events);
 
     const started = events.find((event) => event.type === 'DAY_STARTED');
     expect(started?.type).toBe('DAY_STARTED');

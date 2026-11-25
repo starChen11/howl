@@ -14,6 +14,7 @@ import { InMemoryMetaStore } from '@server/store/meta-store';
 import { HttpInputChannel } from '@server/channels/http';
 import { SseOutputChannel } from '@server/channels/sse';
 import { StreamBus } from '@server/stream/bus';
+import { skipSheriffElectionInRegistry } from '../helpers/sheriff';
 
 /**
  * RFC-011 §5 AC-5 / 6 / 7 / 11 / 12 / 13：通道与发言规则。
@@ -175,6 +176,8 @@ describe('AC-12 · 新通道实现不需要改引擎', () => {
       if (!result.ok) break;
       current = result.record;
     }
+    // RFC-022：首夜结算后先进竞选；全员不上警 → 公布死讯 → 继续白天流程。
+    current = await skipSheriffElectionInRegistry(registry, session, current);
 
     for (let guard = 0; guard < 40; guard += 1) {
       const state = registry.stateOf(current);
@@ -419,6 +422,8 @@ describe('AC-9 · 路由接受发言时通知挂起通道（正向用例）', ()
       if (!result.ok) break;
       current = result.record;
     }
+    // RFC-022：首夜结算后先进竞选；全员不上警 → 公布死讯 → 继续白天流程。
+    current = await skipSheriffElectionInRegistry(registry, session, current);
     expect(stateOf().phase).toBe('DAY_SPEECH');
     const firstSpeaker = (stateOf().speech?.startSeat ?? 1) as number;
 
@@ -492,6 +497,8 @@ describe('AC-9 · 路由接受发言时通知挂起通道（正向用例）', ()
       if (!result.ok) break;
       current = result.record;
     }
+    // RFC-022：首夜结算后先进竞选；全员不上警 → 公布死讯 → 继续白天流程。
+    current = await skipSheriffElectionInRegistry(registry, session, current);
 
     const speaker = (stateOf().speech?.startSeat ?? 1) as number;
     expect(speaker).toBe(firstSpeaker);
@@ -602,6 +609,8 @@ describe('C-115 · 弃权与空输入必须接上通道', () => {
       if (!r.ok) break;
       current = r.record;
     }
+    // RFC-022：首夜结算后先进竞选；全员不上警 → 公布死讯 → 继续白天流程。
+    current = await skipSheriffElectionInRegistry(registry, session, current);
 
     const firstSpeaker = (stateOf().speech?.startSeat ?? 1) as number;
     current = await registry.createGame(session, {
@@ -672,6 +681,8 @@ describe('C-115 · 弃权与空输入必须接上通道', () => {
       if (!r.ok) break;
       current = r.record;
     }
+    // RFC-022：首夜结算后先进竞选；全员不上警 → 公布死讯 → 继续白天流程。
+    current = await skipSheriffElectionInRegistry(registry, session, current);
 
     const speaker = (stateOf().speech?.startSeat ?? 1) as number;
     const pending = channels
@@ -782,7 +793,8 @@ describe('B-R9-1 · 端到端：玩家是最后一位发言者时不重复提交
       }
       for (const type of ['WOLF_KILL', 'SEER_CHECK', 'WITCH_ACT', 'HUNTER_SHOOT'] as const) {
         const state = stateOf();
-        if (state.phase === 'DAY_SPEECH') break;
+        // 首夜结算后是竞选（不是夜晚）：不能在这里补交夜间的动作。
+        if (!state.phase.startsWith('NIGHT')) break;
         const actor =
           type === 'WOLF_KILL'
             ? state.seats.find((seat) => seat.alive && seat.role === 'wolf')?.seat
@@ -803,6 +815,9 @@ describe('B-R9-1 · 端到端：玩家是最后一位发言者时不重复提交
         if (!r.ok) break;
         current = r.record;
       }
+
+      // RFC-022：首夜结算后先走竞选，再回到白天。
+      current = await skipSheriffElectionInRegistry(registry, session, current);
 
       // 说满一圈，只剩最后一位
       while (stateOf().phase === 'DAY_SPEECH') {

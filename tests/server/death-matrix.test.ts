@@ -5,6 +5,7 @@ import { runGame } from '@server/orchestrator';
 import { GameRegistry } from '@server/store/game-registry';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 import { canSeeTruth } from '@server/view/truth';
+import { isSheriffPhase, sheriffActionFor } from '../helpers/sheriff';
 
 /**
  * 出局后的能力矩阵（用户要求：每种角色 × 每种死法都要有据可查）。
@@ -55,7 +56,8 @@ async function submitNight(
     ) {
       return current;
     }
-    const action = plan(state);
+    // RFC-022：首日先走竞选（这里一律「全员不上警」）。
+    const action = isSheriffPhase(state.phase) ? sheriffActionFor(state) : plan(state);
     if (action === undefined) return current;
 
     const result = await setup.registry.submit(setup.session, current, action, state.seq);
@@ -269,6 +271,7 @@ describe('矩阵：猎人被放逐 → 白天开枪（此时不能看真相）',
       if (state.phase === 'DAY_HUNTER_SHOOT' || state.phase === 'FINISHED') break;
 
       const action = (() => {
+        if (isSheriffPhase(state.phase)) return sheriffActionFor(state);
         switch (state.phase) {
           case 'NIGHT_WOLF_CHAT': {
             const wolf = state.seats.find(

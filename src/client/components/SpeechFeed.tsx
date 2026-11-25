@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * 发言流（RFC-012 §2.1 / §4）。
+ * 发言流（RFC-012 §2.1 / §4；RFC-022 §7 的竞选发言列表）。
  *
  * 滚动跟随只在用户已经在底部时启用；否则会把正在往上翻的人顶走。
  */
@@ -10,6 +10,8 @@ export interface SpeechLine {
   seat: number;
   text: string;
   degraded?: boolean;
+  /** 阶段标签，例如「竞选发言」。普通白天发言不显示。 */
+  tag?: string;
 }
 
 export function SpeechFeed({
@@ -43,6 +45,7 @@ export function SpeechFeed({
             className={`feed__line${line.id === highlightSeq ? ' feed__line--highlight' : ''}`}
             data-seq={line.id}
           >
+            {line.tag === undefined ? null : <span className="feed__tag">{line.tag}</span>}
             <span className="feed__seat">{line.seat} 号</span>
             <span className="feed__text">{line.text}</span>
             {line.degraded === true ? <span className="feed__degraded">（模型降级）</span> : null}

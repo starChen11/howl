@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { dismissResultModal, waitForMyTurn } from './helpers';
+import { dismissResultModal, passSheriffElection, waitForMyTurn } from './helpers';
 
 /**
  * RFC-012 §5 AC-1 / AC-8 / AC-9 / AC-10 / AC-11。
@@ -197,7 +197,7 @@ test.describe('整局界面', () => {
     await box.press('Enter');
 
     // 投票按钮出现后，**真的按 Tab** 走过去并按 Enter（不能用 .focus() 作弊）
-    const voteButton = page.getByRole('button', { name: /投 \d+ 号/ }).first();
+    const voteButton = page.getByRole('button', { name: /^投 \d+ 号$/ }).first();
     await expect(voteButton).toBeVisible({ timeout: 25_000 });
 
     let reached = false;
@@ -269,6 +269,10 @@ test.describe('复盘（RFC-014）', () => {
           pending: string | null;
           self: { seat: number };
           legalTargets: (number | string)[];
+          sheriffOrderOptions?: {
+            startSeat: number;
+            direction: 'clockwise' | 'counterclockwise';
+          }[];
         };
       };
       if (body.view.phase === 'FINISHED') break;
@@ -310,6 +314,46 @@ test.describe('复盘（RFC-014）', () => {
           break;
         case 'shoot':
           await act(body.version, { type: 'HUNTER_SHOOT', ts, seat });
+          break;
+        case 'sheriff-signup':
+          await act(body.version, { type: 'SHERIFF_SIGNUP', ts, seat, run: false });
+          break;
+        case 'sheriff-speech':
+        case 'sheriff-pk':
+        case 'sheriff-final-speech':
+          await act(body.version, { type: 'SPEECH_SKIP', ts, seat });
+          break;
+        case 'sheriff-withdraw':
+          await act(body.version, { type: 'SHERIFF_WITHDRAW', ts, seat, withdraw: false });
+          break;
+        case 'sheriff-vote':
+          await act(body.version, {
+            type: 'SHERIFF_VOTE',
+            ts,
+            seat,
+            target: typeof target === 'number' ? target : 'abstain',
+          });
+          break;
+        case 'sheriff-runoff':
+          if (typeof target === 'number') {
+            await act(body.version, { type: 'SHERIFF_VOTE', ts, seat, target });
+          }
+          break;
+        case 'sheriff-order': {
+          const option = body.view.sheriffOrderOptions?.[0];
+          if (option !== undefined) {
+            await act(body.version, {
+              type: 'SHERIFF_ORDER',
+              ts,
+              seat,
+              startSeat: option.startSeat,
+              direction: option.direction,
+            });
+          }
+          break;
+        }
+        case 'badge-transfer':
+          await act(body.version, { type: 'BADGE_TRANSFER', ts, seat, target: 'tear' });
           break;
         default:
           await page.waitForTimeout(50);
@@ -367,6 +411,14 @@ test.describe('猎人出局（回归：曾经卡死）', () => {
     await page.goto('/?seed=2');
     await expect(page.locator('.app')).toBeVisible();
     await dismissResultModal(page);
+
+    // 首夜死讯公布前先过警长竞选；之后才进入猎人开枪。
+    for (let guard = 0; guard < 40; guard += 1) {
+      await dismissResultModal(page);
+      if ((await page.getByRole('button', { name: '不开枪' }).count()) > 0) break;
+      if (await passSheriffElection(page)) continue;
+      await page.waitForTimeout(100);
+    }
 
     // 出局后出现开枪选择（不是只剩「打开真相视图」）
     await expect(page.getByRole('button', { name: '不开枪' })).toBeVisible({ timeout: 30_000 });

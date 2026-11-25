@@ -51,7 +51,8 @@ export const TERMS = {
   },
   sheriff: {
     label: '警长 / 警徽流',
-    definition: 'v1 不实现，见 PRD Scope 的「v1 明确不做」',
+    definition:
+      '首夜死讯公布前竞选产生的公开标志（不是身份牌）：放逐票 1.5、决定发言顺序并最后归票，死亡后可移交警徽或撕徽',
   },
   slaughterSide: {
     label: '屠边',

@@ -1,7 +1,10 @@
 import type { Action } from '@shared/actions';
 import type { InputChannel, OutputChannel } from '@shared/channels';
+import type { GameState, SpeechDirection } from '@shared/domain';
 import type { EventEnvelope } from '@shared/events';
 import type { PendingDecision, ProjectedContext } from '@shared/project';
+
+import { sheriffOrderOptions } from '@engine/phases/sheriff';
 
 import { loadPhaseTimers, timeoutForPhase, type PhaseTimers } from './config/phase-timers';
 import { degradeSentence } from './llm/degrade';
@@ -69,19 +72,47 @@ export interface OrchestratorResult {
 }
 
 /**
- * 非发言阶段「该谁行动」。
+ * 编排层需要读取的对局状态切片（结构化，测试可以只造需要的字段）。
  *
- * 夜间按角色依次行动；白天投票按存活顺序找第一个还没投的人。
- * 找不到就返回 `undefined`（编排层据此停下，而不是瞎猜一个席位）。
+ * 刻意不直接用 `GameState`：`nextActor` / `seatToSpeak` 是纯派生查询，单元测试经常
+ * 只造三五个字段；绑死完整状态会逼测试伪造整局。
  */
-export function nextActor(state: {
+export interface ActorState {
   phase: string;
   day?: number;
   seats: { seat: number; alive: boolean; role: string }[];
   wolfChat?: { seat: number }[];
   wolfVotes?: { seat: number; confirmed?: boolean }[];
   votes?: { seat: number }[];
-}): number | undefined {
+  runoff?: number[];
+  speech?: { startSeat: number; spoken: number[] };
+  speechDirection?: SpeechDirection;
+  /* ---- RFC-022 警长/警徽（都是引擎折叠出来的公开派生字段） ---- */
+  sheriffSeat?: number | null;
+  sheriffSignups?: { seat: number; run: boolean }[];
+  sheriffCandidates?: number[];
+  sheriffWithdrawals?: { seat: number; withdraw: boolean }[];
+  sheriffVoters?: number[];
+  sheriffVotes?: { seat: number; target: number | 'abstain' }[];
+  sheriffSpeech?: { spoken: number[] };
+  sheriffRunoff?: number[];
+  sheriffFinalSpeechDone?: boolean;
+  sheriffOrder?: { startSeat: number; direction: SpeechDirection };
+}
+
+/** 按座位升序排列（警长相关集合在状态里不一定有序）。 */
+function bySeat(a: number, b: number): number {
+  return a - b;
+}
+
+/**
+ * 非发言阶段「该谁行动」。
+ *
+ * 夜间按角色依次行动；白天投票按存活顺序找第一个还没投的人；
+ * RFC-022 的竞选 / 警徽相位按各自的 cursor 找人。
+ * 找不到就返回 `undefined`（编排层据此停下，而不是瞎猜一个席位）。
+ */
+export function nextActor(state: ActorState): number | undefined {
   const alive = state.seats.filter((seat) => seat.alive);
 
   switch (state.phase) {
@@ -114,6 +145,51 @@ export function nextActor(state: {
       const voted = new Set((state.votes ?? []).map((vote) => vote.seat));
       return alive.find((seat) => !voted.has(seat.seat))?.seat;
     }
+
+    /* ---- RFC-022：竞选 ---- */
+
+    case 'DAY_SHERIFF_SIGNUP': {
+      const signed = new Set((state.sheriffSignups ?? []).map((entry) => entry.seat));
+      return alive.find((seat) => !signed.has(seat.seat))?.seat;
+    }
+    case 'DAY_SHERIFF_SPEECH':
+    case 'DAY_SHERIFF_PK': {
+      const eligible =
+        state.phase === 'DAY_SHERIFF_PK'
+          ? (state.sheriffRunoff ?? [])
+          : (state.sheriffCandidates ?? []);
+      const spoken = new Set(state.sheriffSpeech?.spoken ?? []);
+      return [...eligible].sort(bySeat).find((seat) => !spoken.has(seat));
+    }
+    case 'DAY_SHERIFF_WITHDRAW': {
+      const decided = new Set((state.sheriffWithdrawals ?? []).map((entry) => entry.seat));
+      return [...(state.sheriffCandidates ?? [])].sort(bySeat).find((seat) => !decided.has(seat));
+    }
+    case 'DAY_SHERIFF_VOTE':
+    case 'DAY_SHERIFF_RUNOFF': {
+      const cast = new Set((state.sheriffVotes ?? []).map((vote) => vote.seat));
+      return [...(state.sheriffVoters ?? [])].sort(bySeat).find((seat) => !cast.has(seat));
+    }
+
+    /* ---- RFC-022：警徽与警长权力 ---- */
+
+    case 'DAY_BADGE_TRANSFER': {
+      // 只有「已经死亡的警长」能移交/撕徽；活着的人不该拿到这个决策。
+      const sheriff = state.sheriffSeat ?? null;
+      if (sheriff === null) return undefined;
+      return state.seats.some((seat) => seat.seat === sheriff && !seat.alive) ? sheriff : undefined;
+    }
+    case 'DAY_SHERIFF_ORDER':
+    case 'DAY_SHERIFF_FINAL_SPEECH': {
+      const sheriff = state.sheriffSeat ?? null;
+      if (sheriff === null) return undefined;
+      if (!state.seats.some((seat) => seat.seat === sheriff && seat.alive)) return undefined;
+      if (state.phase === 'DAY_SHERIFF_FINAL_SPEECH' && state.sheriffFinalSpeechDone === true) {
+        return undefined;
+      }
+      return sheriff;
+    }
+
     default:
       return undefined;
   }
@@ -145,15 +221,51 @@ export function pendingForPhase(phase: string): PendingDecision | null {
     case 'NIGHT_HUNTER_SHOOT':
     case 'DAY_HUNTER_SHOOT':
       return 'shoot';
+
+    /* ---- RFC-022 ---- */
+    case 'DAY_SHERIFF_SIGNUP':
+      return 'sheriff-signup';
+    case 'DAY_SHERIFF_SPEECH':
+      return 'sheriff-speech';
+    case 'DAY_SHERIFF_WITHDRAW':
+      return 'sheriff-withdraw';
+    case 'DAY_SHERIFF_VOTE':
+      return 'sheriff-vote';
+    case 'DAY_SHERIFF_PK':
+      return 'sheriff-pk';
+    case 'DAY_SHERIFF_RUNOFF':
+      return 'sheriff-runoff';
+    case 'DAY_BADGE_TRANSFER':
+      return 'badge-transfer';
+    case 'DAY_SHERIFF_ORDER':
+      return 'sheriff-order';
+    case 'DAY_SHERIFF_FINAL_SPEECH':
+      return 'sheriff-final-speech';
+
     default:
       return null;
   }
 }
 
+/** 需要「说一句话」的相位。AI 的流式输出与降级都按这一集合判断。 */
+const SPEECH_PHASES: ReadonlySet<string> = new Set<string>([
+  'DAY_SPEECH',
+  'DAY_PK_SPEECH',
+  'DAY_SHERIFF_SPEECH',
+  'DAY_SHERIFF_PK',
+  'DAY_SHERIFF_FINAL_SPEECH',
+]);
+
+/** 该相位是否靠「发言」推进（含竞选发言与警长归票发言）。 */
+export function isSpeechPhase(phase: string): boolean {
+  return SPEECH_PHASES.has(phase);
+}
+
 /**
- * 玩家亲自行动的相位（RFC-012 AC-11）。
+ * 玩家亲自行动的相位（RFC-012 AC-11 / RFC-022 §5）。
  *
- * 发言与两种投票都要等玩家；夜间动作仍由注入的 `decide` 代劳（目标选择属 RFC-013）。
+ * 发言、各种投票、竞选表态、警徽移交与发言顺序都要等玩家；
+ * 夜间动作仍由注入的 `decide` 代劳（目标选择属 RFC-013）。
  */
 export function isPlayerPhase(phase: string): boolean {
   return (
@@ -170,17 +282,37 @@ export function isPlayerPhase(phase: string): boolean {
     phase === 'NIGHT_WITCH' ||
     // 出局后的开枪决定仍然属于玩家——哪怕他已经死了。
     phase === 'NIGHT_HUNTER_SHOOT' ||
-    phase === 'DAY_HUNTER_SHOOT'
+    phase === 'DAY_HUNTER_SHOOT' ||
+    // RFC-022：竞选、警徽、定序、归票。
+    phase === 'DAY_SHERIFF_SIGNUP' ||
+    phase === 'DAY_SHERIFF_SPEECH' ||
+    phase === 'DAY_SHERIFF_WITHDRAW' ||
+    phase === 'DAY_SHERIFF_VOTE' ||
+    phase === 'DAY_SHERIFF_PK' ||
+    phase === 'DAY_SHERIFF_RUNOFF' ||
+    phase === 'DAY_BADGE_TRANSFER' ||
+    phase === 'DAY_SHERIFF_ORDER' ||
+    phase === 'DAY_SHERIFF_FINAL_SPEECH'
   );
 }
 
 /** 从状态推出「现在该谁说话」；不是发言阶段返回 `undefined`。 */
-export function seatToSpeak(state: {
-  phase: string;
-  speech?: { startSeat: number; spoken: number[] };
-  seats: { seat: number; alive: boolean }[];
-  runoff?: number[];
-}): number | undefined {
+export function seatToSpeak(state: ActorState): number | undefined {
+  // 竞选发言 / PK 发言 / 警长归票各有自己的 cursor，不复用白天的 `speech`（RFC-022 §13.2）。
+  if (state.phase === 'DAY_SHERIFF_SPEECH' || state.phase === 'DAY_SHERIFF_PK') {
+    const eligible =
+      state.phase === 'DAY_SHERIFF_PK'
+        ? (state.sheriffRunoff ?? [])
+        : (state.sheriffCandidates ?? []);
+    const spoken = new Set(state.sheriffSpeech?.spoken ?? []);
+    return [...eligible].sort(bySeat).find((seat) => !spoken.has(seat));
+  }
+  if (state.phase === 'DAY_SHERIFF_FINAL_SPEECH') {
+    const sheriff = state.sheriffSeat ?? null;
+    if (sheriff === null || state.sheriffFinalSpeechDone === true) return undefined;
+    return state.seats.some((seat) => seat.seat === sheriff && seat.alive) ? sheriff : undefined;
+  }
+
   if (
     (state.phase !== 'DAY_SPEECH' && state.phase !== 'DAY_PK_SPEECH') ||
     state.speech === undefined
@@ -194,11 +326,69 @@ export function seatToSpeak(state: {
     .map((seat) => seat.seat);
   const spoken = new Set(state.speech.spoken);
   // 从起点开始按存活顺序找第一个还没说的人（发言顺序由引擎的 startSeat 决定）。
-  const ordered = [
-    ...alive.slice(alive.indexOf(state.speech.startSeat)),
-    ...alive.slice(0, alive.indexOf(state.speech.startSeat)),
-  ];
-  return ordered.find((seat) => !spoken.has(seat));
+  const pivot = alive.indexOf(state.speech.startSeat);
+  const rotated = pivot === -1 ? alive : [...alive.slice(pivot), ...alive.slice(0, pivot)];
+  // 警长可以选逆时针（RFC-022 §3.2）；顺序必须与引擎 `speechOrder` 完全一致，
+  // 否则编排层会把「当前该 4 号」错算成 7 号，提交后被引擎拒绝。
+  if (state.phase === 'DAY_SPEECH' && state.speechDirection === 'counterclockwise') {
+    const first = rotated[0];
+    return first === undefined
+      ? undefined
+      : [first, ...rotated.slice(1).reverse()].find((seat) => !spoken.has(seat));
+  }
+  return rotated.find((seat) => !spoken.has(seat));
+}
+
+/**
+ * 新相位的「合法默认动作」（RFC-022 §13.5）。
+ *
+ * AI 没给出动作、或玩家超时/跳过时用它收尾，避免整局停在某个新相位上。
+ * 返回 `undefined` 表示这个相位没有默认动作（编排层按旧逻辑停下）。
+ */
+export function defaultActionFor(
+  state: ActorState,
+  seat: number,
+  ts = Date.now(),
+): Action | undefined {
+  switch (state.phase) {
+    case 'NIGHT_HUNTER_SHOOT':
+    case 'DAY_HUNTER_SHOOT':
+      return { type: 'HUNTER_SHOOT', ts, seat: seat as never };
+    case 'DAY_SHERIFF_SIGNUP':
+      return { type: 'SHERIFF_SIGNUP', ts, seat: seat as never, run: false };
+    case 'DAY_SHERIFF_SPEECH':
+    case 'DAY_SHERIFF_PK':
+    case 'DAY_SHERIFF_FINAL_SPEECH':
+      return { type: 'SPEECH_SKIP', ts, seat: seat as never };
+    case 'DAY_SHERIFF_WITHDRAW':
+      return { type: 'SHERIFF_WITHDRAW', ts, seat: seat as never, withdraw: false };
+    case 'DAY_SHERIFF_VOTE':
+      return { type: 'SHERIFF_VOTE', ts, seat: seat as never, target: 'abstain' };
+    case 'DAY_SHERIFF_RUNOFF': {
+      const tied = [...(state.sheriffRunoff ?? [])].sort(bySeat);
+      const first = tied[0];
+      return first === undefined
+        ? undefined
+        : { type: 'SHERIFF_VOTE', ts, seat: seat as never, target: first as never };
+    }
+    case 'DAY_BADGE_TRANSFER':
+      return { type: 'BADGE_TRANSFER', ts, seat: seat as never, target: 'tear' };
+    case 'DAY_SHERIFF_ORDER': {
+      // 没有可选顺序时由调用方停下，不猜一个非法起点。
+      const option = sheriffOrderOptions(state as unknown as GameState)[0];
+      return option === undefined
+        ? undefined
+        : {
+            type: 'SHERIFF_ORDER',
+            ts,
+            seat: seat as never,
+            startSeat: option.startSeat as never,
+            direction: option.direction,
+          };
+    }
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -297,7 +487,8 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
 
     const playerPhase = isPlayerPhase(state.phase);
     const isAi = seat !== record.playerSeat;
-    if (isAi && (state.phase === 'DAY_SPEECH' || state.phase === 'DAY_PK_SPEECH')) {
+    const speechPhase = isSpeechPhase(state.phase);
+    if (isAi && speechPhase) {
       deps.output.thinking?.(seat as never, (record.events?.length ?? 0) + 1);
     }
     let degraded = false;
@@ -310,7 +501,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
           seat,
           ctx: ctxFor(seat),
           phase: state.phase,
-          ...(state.phase === 'DAY_SPEECH' || state.phase === 'DAY_PK_SPEECH'
+          ...(speechPhase
             ? {
                 onSpeechDelta: (text: string) =>
                   deps.output.emit({
@@ -323,7 +514,7 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
             : {}),
         });
       } catch {
-        if (state.phase === 'DAY_SPEECH' || state.phase === 'DAY_PK_SPEECH') {
+        if (speechPhase) {
           degraded = true;
           action = {
             action: {
@@ -338,26 +529,20 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
         }
       }
     }
+    // RFC-022 §13.5：AI 没给动作时用合法默认动作收尾（上警=不上、退水=不退、
+    // 警下投票=弃权、重投=第一个并列者、定序=第一个合法选项、归票=跳过、移交=撕徽）。
+    // 玩家超时/跳过已经在 `playerAction` 里翻译成同一个默认动作。
+    if (action.action === undefined) {
+      const fallback = defaultActionFor(state, seat);
+      if (fallback !== undefined) action = { action: fallback };
+    }
     if (action.action === undefined) {
       // 玩家已被路由抢先确认/投票：重读后继续，不要停在旧回合上。
       if (state.phase === 'NIGHT_WOLVES' || state.phase === 'NIGHT_WOLF_RUNOFF') {
         steps += 1;
         continue;
       }
-      // 有行动者却没有动作：开枪阶段可以由我们替它放弃（规则允许）；
-      // 其他相位说明 AI 没给出动作，不能静默停在这里。
-      if (state.phase === 'NIGHT_HUNTER_SHOOT' || state.phase === 'DAY_HUNTER_SHOOT') {
-        const decline = await registry.submit(
-          session,
-          (await registry.getGame(record.gameId)) ?? record,
-          { type: 'HUNTER_SHOOT', ts: Date.now(), seat: seat as never },
-          registry.stateOf((await registry.getGame(record.gameId)) ?? record).seq,
-        );
-        if (!decline.ok) break;
-        record = decline.record;
-        steps += 1;
-        continue;
-      }
+      // 有行动者却没有动作：说明 AI 没给出动作，不能静默停在这里。
       break;
     }
 
@@ -374,8 +559,20 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     const alreadyActed =
       ((state.phase === 'DAY_VOTE' || state.phase === 'DAY_VOTE_RUNOFF') &&
         (latestState.votes ?? []).some((vote) => vote.seat === seat)) ||
-      ((state.phase === 'DAY_SPEECH' || state.phase === 'DAY_PK_SPEECH') &&
-        (latestState.speech?.spoken ?? []).includes(seat as never)) ||
+      ((state.phase === 'DAY_SPEECH' ||
+        state.phase === 'DAY_PK_SPEECH' ||
+        state.phase === 'DAY_SHERIFF_SPEECH' ||
+        state.phase === 'DAY_SHERIFF_PK') &&
+        (state.phase === 'DAY_SHERIFF_SPEECH' || state.phase === 'DAY_SHERIFF_PK'
+          ? (latestState.sheriffSpeech?.spoken ?? []).includes(seat as never)
+          : (latestState.speech?.spoken ?? []).includes(seat as never))) ||
+      (state.phase === 'DAY_SHERIFF_FINAL_SPEECH' && latestState.sheriffFinalSpeechDone === true) ||
+      (state.phase === 'DAY_SHERIFF_SIGNUP' &&
+        (latestState.sheriffSignups ?? []).some((entry) => entry.seat === seat)) ||
+      (state.phase === 'DAY_SHERIFF_WITHDRAW' &&
+        (latestState.sheriffWithdrawals ?? []).some((entry) => entry.seat === seat)) ||
+      ((state.phase === 'DAY_SHERIFF_VOTE' || state.phase === 'DAY_SHERIFF_RUNOFF') &&
+        (latestState.sheriffVotes ?? []).some((vote) => vote.seat === seat)) ||
       (state.phase === 'NIGHT_WOLVES' &&
         (latestState.wolfVotes ?? []).some(
           (vote) => vote.seat === seat && vote.confirmed !== false,
@@ -442,9 +639,14 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
       // 让其余 AI 把这一轮走完。
       if (
         seat === record.playerSeat &&
-        ['ALREADY_VOTED', 'ALREADY_SPOKEN', 'NOT_YOUR_TURN', 'ALREADY_READY'].includes(
-          payload.code ?? '',
-        )
+        [
+          'ALREADY_VOTED',
+          'ALREADY_SPOKEN',
+          'ALREADY_SIGNED_UP',
+          'ALREADY_WITHDREW',
+          'NOT_YOUR_TURN',
+          'ALREADY_READY',
+        ].includes(payload.code ?? '')
       ) {
         record = result.record;
         steps += 1;
@@ -454,12 +656,11 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
     }
 
     record = result.record;
-    if (
-      isAi &&
-      (state.phase === 'DAY_SPEECH' || state.phase === 'DAY_PK_SPEECH') &&
-      action.action?.type === 'SPEECH'
-    ) {
-      const speechEvent = result.events.find((event) => event.type === 'SPEECH');
+    if (isAi && speechPhase && action.action?.type === 'SPEECH') {
+      // 竞选发言的事件是 `SHERIFF_SPEECH`（RFC-022 §13.2），白天/归票仍是 `SPEECH`。
+      const speechEvent = result.events.find(
+        (event) => event.type === 'SPEECH' || event.type === 'SHERIFF_SPEECH',
+      );
       if (speechEvent !== undefined) {
         deps.output.emit({
           seat: seat as never,
@@ -484,6 +685,31 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
 
     // 推理落盘（RFC-014 AC-3）：只写结构化 `reason`，供复盘逐条比对。
     if (action.thought !== undefined) {
+      const decided = action.action;
+      const rawTarget = 'target' in decided ? decided.target : undefined;
+      // `AI_THOUGHT.target` 只接座位或弃权；`tear` 之类的选择走 `detail`（RFC-022 复盘）。
+      const thoughtTarget =
+        typeof rawTarget === 'number'
+          ? rawTarget
+          : rawTarget === 'abstain'
+            ? 'abstain'
+            : decided.type === 'SHERIFF_ORDER'
+              ? decided.startSeat
+              : undefined;
+      const detail =
+        decided.type === 'SHERIFF_SIGNUP'
+          ? decided.run
+            ? '上警'
+            : '不上警'
+          : decided.type === 'SHERIFF_WITHDRAW'
+            ? decided.withdraw
+              ? '退水'
+              : '留在警上'
+            : decided.type === 'BADGE_TRANSFER' && decided.target === 'tear'
+              ? '撕毁警徽'
+              : decided.type === 'SHERIFF_ORDER'
+                ? `方向：${decided.direction}`
+                : undefined;
       record = await registry.appendEvents(record, [
         {
           gameId: record.gameId,
@@ -496,8 +722,9 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
             decisionSeq: result.version,
             seat,
             phase: state.phase,
-            decisionAction: action.action.type,
-            ...('target' in action.action ? { target: action.action.target } : {}),
+            decisionAction: decided.type,
+            ...(thoughtTarget === undefined ? {} : { target: thoughtTarget }),
+            ...(detail === undefined ? {} : { detail }),
             ...(action.thought.claim === undefined ? {} : { claim: action.thought.claim }),
           },
         } as EventEnvelope,
@@ -513,6 +740,33 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
 
   return { record, steps, skipped };
 }
+
+/**
+ * 玩家输入里表示「上警 / 退水」的词。
+ *
+ * 通道只传文本，所以这里定义唯一的文本协议：路由把按钮点击翻译成这些词，
+ * 未来 UI 换文案时两条路径仍然一致。
+ */
+const RUN_WORDS: ReadonlySet<string> = new Set([
+  'run',
+  'yes',
+  'y',
+  '1',
+  'true',
+  '上警',
+  '竞选',
+  '参与',
+]);
+const WITHDRAW_WORDS: ReadonlySet<string> = new Set([
+  'withdraw',
+  'quit',
+  'yes',
+  'y',
+  '1',
+  'true',
+  '退水',
+  '退出',
+]);
 
 /** 玩家轮：问输入通道，把结果翻译成 action（AC-6 / AC-7）。 */
 async function playerAction(
@@ -544,9 +798,16 @@ async function playerAction(
       seat: seat as never,
       timeoutMs: timeoutForPhase(phase, deps.phaseTimers ?? loadPhaseTimers()) ?? 60_000,
       kind:
-        phase === 'DAY_VOTE' || phase === 'DAY_VOTE_RUNOFF'
+        phase === 'DAY_VOTE' ||
+        phase === 'DAY_VOTE_RUNOFF' ||
+        phase === 'DAY_SHERIFF_VOTE' ||
+        phase === 'DAY_SHERIFF_RUNOFF' ||
+        phase === 'DAY_BADGE_TRANSFER'
           ? 'vote'
-          : phase.startsWith('NIGHT')
+          : phase.startsWith('NIGHT') ||
+              phase === 'DAY_SHERIFF_SIGNUP' ||
+              phase === 'DAY_SHERIFF_WITHDRAW' ||
+              phase === 'DAY_SHERIFF_ORDER'
             ? 'action'
             : 'speech',
     }),
@@ -674,6 +935,99 @@ async function playerAction(
       action: Number.isNaN(parsed)
         ? { type: 'HUNTER_SHOOT', ts: now(), seat: seat as never }
         : { type: 'HUNTER_SHOOT', ts: now(), seat: seat as never, target: parsed as never },
+    };
+  }
+
+  /* ---- RFC-022：竞选 / 警徽 ---- */
+
+  if (phase === 'DAY_SHERIFF_SIGNUP') {
+    // 文本协议：`run` / `yes` / `1` / `上警` / `竞选` 表示上警；其余（含超时、跳过）默认不上警。
+    const run =
+      input.kind !== 'skip' &&
+      input.kind !== 'timeout' &&
+      RUN_WORDS.has(input.text.trim().toLowerCase());
+    return { action: { type: 'SHERIFF_SIGNUP', ts: now(), seat: seat as never, run } };
+  }
+
+  if (phase === 'DAY_SHERIFF_WITHDRAW') {
+    // 默认不退水（RFC-022 §13.5）；只有明确说「退水」才退。
+    const withdraw =
+      input.kind !== 'skip' &&
+      input.kind !== 'timeout' &&
+      WITHDRAW_WORDS.has(input.text.trim().toLowerCase());
+    return { action: { type: 'SHERIFF_WITHDRAW', ts: now(), seat: seat as never, withdraw } };
+  }
+
+  if (phase === 'DAY_SHERIFF_VOTE' || phase === 'DAY_SHERIFF_RUNOFF') {
+    const parsed = input.kind === 'skip' ? Number.NaN : Number.parseInt(input.text, 10);
+    const legal = ctx.legalTargets.filter((target) => typeof target === 'number').map(Number);
+
+    if (phase === 'DAY_SHERIFF_RUNOFF') {
+      // 重投不能弃权：跳过/非法输入 → 第一个并列者（RFC-022 §13.5）。
+      const target = legal.includes(parsed) ? parsed : legal[0];
+      if (target === undefined) return { action: undefined };
+      return {
+        action: { type: 'SHERIFF_VOTE', ts: now(), seat: seat as never, target: target as never },
+      };
+    }
+
+    // 首轮可以弃权；非候选目标按弃权处理，避免把必被拒绝的动作交给引擎。
+    const target = legal.includes(parsed) ? parsed : 'abstain';
+    return {
+      action: {
+        type: 'SHERIFF_VOTE',
+        ts: now(),
+        seat: seat as never,
+        target: target as never,
+      },
+    };
+  }
+
+  if (phase === 'DAY_BADGE_TRANSFER') {
+    const text = input.kind === 'skip' ? 'tear' : input.text.trim().toLowerCase();
+    if (text === '' || text === 'tear' || text === '撕徽' || text === '撕警徽') {
+      return { action: { type: 'BADGE_TRANSFER', ts: now(), seat: seat as never, target: 'tear' } };
+    }
+    const parsed = Number.parseInt(text, 10);
+    const legal = ctx.legalTargets.filter((target) => typeof target === 'number').map(Number);
+    return {
+      action: {
+        type: 'BADGE_TRANSFER',
+        ts: now(),
+        seat: seat as never,
+        // 默认撕徽：非法目标不交给引擎（超时语义 → 撕徽，RFC-022 §13.5）。
+        target: (legal.includes(parsed) ? parsed : 'tear') as never,
+      },
+    };
+  }
+
+  if (phase === 'DAY_SHERIFF_ORDER') {
+    const raw = input.kind === 'skip' ? '' : input.text;
+    const [rawStart, rawDirection] = raw.split(':');
+    const start = Number.parseInt(rawStart ?? '', 10);
+    const direction =
+      rawDirection?.trim() === 'counterclockwise' || rawDirection?.trim() === '逆时针'
+        ? 'counterclockwise'
+        : rawDirection?.trim() === 'clockwise' || rawDirection?.trim() === '顺时针'
+          ? 'clockwise'
+          : undefined;
+    const options = ctx.sheriffOrderOptions ?? [];
+    const matched =
+      options.find(
+        (option) =>
+          option.startSeat === start && (direction === undefined || option.direction === direction),
+      ) ?? options.find((option) => option.startSeat === start);
+    // 没有合法输入时沿用无警长默认（引擎算出的第一个合法选项，RFC-022 §13.5）。
+    const chosen = matched ?? options[0];
+    if (chosen === undefined) return { action: undefined };
+    return {
+      action: {
+        type: 'SHERIFF_ORDER',
+        ts: now(),
+        seat: seat as never,
+        startSeat: chosen.startSeat as never,
+        direction: chosen.direction,
+      },
     };
   }
 

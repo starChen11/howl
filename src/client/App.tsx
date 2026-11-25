@@ -2,7 +2,20 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import type { GameViewResponse } from './api';
 import { ApiClient } from './api';
-import { boardAnnouncement, buildBoard, speakingSeat } from './game-state';
+import {
+  boardAnnouncement,
+  buildBoard,
+  effectiveBadge,
+  effectiveSheriffSeat,
+  hasCastSheriffVote,
+  hasPendingSheriffChoice,
+  isSheriffElectionPhase,
+  maskDeathsDuringElection,
+  ownWithdrawalDecision,
+  sheriffElectionOf,
+  sheriffOrderOptions,
+  shouldHideDeaths,
+} from './game-state';
 import { IdCard } from './components/IdCard';
 import { VoteInput } from './components/VoteInput';
 import { ShootInput } from './components/ShootInput';
@@ -26,6 +39,13 @@ import { StatusBar } from './components/StatusBar';
 import { OnboardingHints } from './components/OnboardingHints';
 import { ResultModal } from './components/ResultModal';
 import { PhaseClock } from './components/PhaseClock';
+import {
+  BadgeTransferPanel,
+  SheriffOrderPicker,
+  SheriffSignup,
+  SheriffVoteInput,
+  SheriffWithdraw,
+} from './components/SheriffPanel';
 import { latestKeyResult } from './key-result';
 import { streamReducer, initialStreamState, type StreamState } from './use-stream';
 
@@ -73,8 +93,12 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
     }
   }, [api, gameId]);
 
-  // 还有待决定（例如出局后的开枪）时不开放真相视图：否则可以直接按身份挑人。
-  const deciding = view?.view.pending !== null && view?.view.pending !== undefined;
+  // 还有待决定（例如出局后的开枪、死亡警长选警徽去向）时不开放真相视图：
+  // 否则可以直接按身份挑人。服务端尚未为警长动作产出 `pending` 时，用相位 + 警长字段兜底。
+  const deciding =
+    view !== null &&
+    ((view.view.pending !== null && view.view.pending !== undefined) ||
+      hasPendingSheriffChoice(view.view));
   useEffect(() => {
     if (deciding && truth.enabled) setTruth({ enabled: false });
   }, [deciding, truth.enabled]);
@@ -120,8 +144,17 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
     [api, gameId],
   );
 
-  const board = useMemo(() => (view === null ? null : buildBoard(view.view)), [view]);
-  const panelEntries = useMemo(() => (view === null ? [] : buildPanelEntries(view.view)), [view]);
+  // 首夜竞选期间，投影里即使提前出现了死亡也不能进界面（RFC-022 §13.1）。
+  // 这里统一算一份「可展示」的视图，下面所有渲染都读它。
+  const safeView = useMemo(
+    () => (view === null ? null : maskDeathsDuringElection(view.view)),
+    [view],
+  );
+  const board = useMemo(() => (safeView === null ? null : buildBoard(safeView)), [safeView]);
+  const panelEntries = useMemo(
+    () => (safeView === null ? [] : buildPanelEntries(safeView)),
+    [safeView],
+  );
 
   const restart = useCallback(() => {
     setRestarting(true);
@@ -152,20 +185,26 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
   // 读屏公告只在「阶段 / 天数 / 轮到谁」变化时更新；跟着倒计时每秒刷会淹掉读屏（C-123）。
   const [announcement, setAnnouncement] = useState('');
   const announcementKey =
-    view === null ? '' : `${view.view.phase}|${view.view.day}|${board?.speakingSeat ?? 'x'}`;
+    safeView === null ? '' : `${safeView.phase}|${safeView.day}|${board?.speakingSeat ?? 'x'}`;
   useEffect(() => {
-    if (view === null) return;
+    if (safeView === null) return;
     // 播报里不放倒计时：它每秒都变，会把读屏刷屏。
-    setAnnouncement(boardAnnouncement(view.view));
+    setAnnouncement(boardAnnouncement(safeView));
   }, [announcementKey]);
 
   const lines: SpeechLine[] = useMemo(() => {
-    if (view === null) return [];
-    const committed = view.view.publicEvents
-      .filter((event) => event.type === 'SPEECH')
+    if (safeView === null) return [];
+    const committed = safeView.publicEvents
+      .filter((event) => event.type === 'SPEECH' || event.type === 'SHERIFF_SPEECH')
       .map((event) => {
         const payload = event.payload as { seat: number; text: string };
-        return { id: event.seq, seat: payload.seat, text: payload.text };
+        return {
+          id: event.seq,
+          seat: payload.seat,
+          text: payload.text,
+          // 竞选发言与白天发言分开显示，避免把竞选进度误读成第一天的正式发言。
+          ...(event.type === 'SHERIFF_SPEECH' ? { tag: '竞选发言' } : {}),
+        };
       })
       // 同一个人连续两条完全相同的正文只保留一条（引擎正常不会产生；
       // 这里兜住流式/重连造成的重复渲染）。
@@ -184,7 +223,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
       liveLine !== undefined &&
       committed.some((line) => line.seat === liveLine.seat && line.text === liveLine.text);
     return duplicated ? committed : [...committed, ...live];
-  }, [view, stream]);
+  }, [safeView, stream]);
 
   if (view === null || board === null) {
     if (replay !== null) {
@@ -211,23 +250,47 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
   }
 
   const ctx = view.view;
+  const display = safeView ?? maskDeathsDuringElection(ctx);
+  const election = sheriffElectionOf(display);
+  const sheriffSeat = effectiveSheriffSeat(display);
+  const badge = effectiveBadge(display);
+  const orderOptions = sheriffOrderOptions(display);
+  const selfSeat = ctx.self.seat;
+  const electionActive = isSheriffElectionPhase(ctx.phase);
+  const badgeTransferMine =
+    ctx.phase === 'DAY_BADGE_TRANSFER' && sheriffSeat === selfSeat && !ctx.self.alive;
+  const orderMine = ctx.phase === 'DAY_SHERIFF_ORDER' && sheriffSeat === selfSeat && ctx.self.alive;
+  const withdrawalDecision = ownWithdrawalDecision(ctx);
+  const castSheriffVote = hasCastSheriffVote(ctx);
+
   const keyResult =
-    latestKeyResult(ctx.publicEvents, ctx.day) ??
+    latestKeyResult(display.publicEvents, display.day) ??
     // 第一夜由 GAME_STARTED 直接进入，没有 PHASE_CHANGED 事件；这里补一条。
-    ((ctx.phase === 'NIGHT' || ctx.phase === 'NIGHT_WOLF_CHAT') && ctx.day === 1
+    ((display.phase === 'NIGHT' || display.phase === 'NIGHT_WOLF_CHAT') && display.day === 1
       ? {
           seq: 1,
-          title: dayLabel(ctx.day, ctx.phase),
+          title: dayLabel(display.day, display.phase),
           body: `天黑请闭眼，${ROLE_LABELS.wolf}开始行动。`,
           tone: 'info' as const,
         }
       : null);
-  const speaking = speakingSeat(ctx);
-  const myTurn = speaking === ctx.self.seat;
+  const speaking = board.speakingSeat;
+  const myTurn = speaking === selfSeat;
+  const speechCopy = speechCopyFor(ctx.phase);
 
   const expose = async () => {
     const result = await api.submit(gameId, {
       action: { type: 'SELF_EXPOSE', ts: Date.now(), seat: ctx.self.seat },
+      expectedVersion: view.version,
+    });
+    if (!result.ok) setError(result.error.message);
+    await refresh();
+  };
+
+  /** 警长类动作共用的提交路径（座位、时间戳、版本号都只有一处）。 */
+  const sheriffAction = async (action: Record<string, unknown>) => {
+    const result = await api.submit(gameId, {
+      action: { ...action, ts: Date.now(), seat: selfSeat } as never,
       expectedVersion: view.version,
     });
     if (!result.ok) setError(result.error.message);
@@ -286,6 +349,10 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
     await refresh();
   };
 
+  const sheriffVote = async (target: number) => {
+    await sheriffAction({ type: 'SHERIFF_VOTE', target: target < 0 ? 'abstain' : target });
+  };
+
   const skip = async () => {
     const result = await api.submit(gameId, {
       action: { type: 'SPEECH_SKIP', ts: Date.now(), seat: ctx.self.seat },
@@ -303,10 +370,12 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         aliveCount={board.aliveCount}
         remaining={remaining}
         speakingSeat={board.speakingSeat}
+        sheriffSeat={sheriffSeat}
+        badge={badge}
       />
       <main className="app__main">
         <div className="app__side">
-          <IdCard ctx={ctx} />
+          <IdCard ctx={display} />
           <SeatGrid seats={board.seats} />
           <EventPanel entries={panelEntries} onJump={jumpTo} />
           <Notepad gameId={gameId} />
@@ -320,10 +389,10 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         {ctx.phase === 'FINISHED' || remaining === null ? null : (
           <PhaseClock remaining={remaining} />
         )}
-        {ctx.self.alive || ctx.pending !== null ? null : (
+        {display.self.alive || ctx.pending !== null || badgeTransferMine ? null : (
           <SpectatorBar truthEnabled={truth.enabled} onToggleTruth={() => void onToggleTruth()} />
         )}
-        {truth.enabled && truthData !== null ? (
+        {shouldHideDeaths(ctx) || !truth.enabled || truthData === null ? null : (
           <section className="truth" aria-label="真相视图">
             <h2>真相视图</h2>
             <ul>
@@ -365,13 +434,57 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
               ))}
             </ul>
           </section>
+        )}
+        {ctx.phase === 'DAY_SHERIFF_SIGNUP' && display.self.alive ? (
+          <SheriffSignup
+            election={election}
+            selfSeat={selfSeat}
+            onSignup={(run) => void sheriffAction({ type: 'SHERIFF_SIGNUP', run })}
+          />
         ) : null}
-        {ctx.self.alive && myTurn ? (
+        {ctx.phase === 'DAY_SHERIFF_WITHDRAW' ? (
+          <SheriffWithdraw
+            candidates={election.candidates}
+            withdrawn={election.withdrawn}
+            selfSeat={selfSeat}
+            decided={withdrawalDecision}
+            onWithdraw={(withdraw) => void sheriffAction({ type: 'SHERIFF_WITHDRAW', withdraw })}
+          />
+        ) : null}
+        {(ctx.phase === 'DAY_SHERIFF_VOTE' || ctx.phase === 'DAY_SHERIFF_RUNOFF') &&
+        election.isVoter &&
+        display.self.alive &&
+        !castSheriffVote ? (
+          <SheriffVoteInput
+            election={election}
+            selfSeat={selfSeat}
+            onVote={(target) => void sheriffVote(target)}
+          />
+        ) : null}
+        {orderMine ? (
+          <SheriffOrderPicker
+            options={orderOptions}
+            onChoose={(startSeat, direction) =>
+              void sheriffAction({ type: 'SHERIFF_ORDER', startSeat, direction })
+            }
+          />
+        ) : null}
+        {badgeTransferMine ? (
+          <BadgeTransferPanel
+            targets={ctx.aliveSeats.filter((seat) => seat !== selfSeat)}
+            onTransfer={(target) => void sheriffAction({ type: 'BADGE_TRANSFER', target })}
+          />
+        ) : null}
+        {display.self.alive && myTurn ? (
           <SpeechInput
             remaining={remaining ?? 0}
             onSubmit={submit}
             onSkip={skip}
             onDraft={syncDraft}
+            heading={speechCopy.heading}
+            hint={speechCopy.hint}
+            submitLabel={speechCopy.submitLabel}
+            skipLabel={speechCopy.skipLabel}
           />
         ) : null}
         {ctx.pending === 'chat' ||
@@ -481,7 +594,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
             onShoot={(target) => void shoot(target)}
           />
         ) : null}
-        {ctx.self.alive && (ctx.phase === 'DAY_VOTE' || ctx.phase === 'DAY_VOTE_RUNOFF') ? (
+        {display.self.alive && (ctx.phase === 'DAY_VOTE' || ctx.phase === 'DAY_VOTE_RUNOFF') ? (
           <VoteInput
             targets={ctx.legalTargets
               .filter(
@@ -496,14 +609,14 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
             onVote={vote}
           />
         ) : null}
-        {ctx.self.alive &&
-        ctx.self.role === 'wolf' &&
-        (ctx.phase === 'DAY_SPEECH' ||
-          ctx.phase === 'DAY_PK_SPEECH' ||
-          ctx.phase === 'DAY_VOTE') ? (
+        {display.self.alive && ctx.self.role === 'wolf' && canSelfExpose(ctx.phase) ? (
           <SelfExposeButton onExpose={() => void expose()} />
         ) : null}
-        <p className="app__hint">轮到你时可以说说你的怀疑；不认识的词可以在下方的说明里查。</p>
+        <p className="app__hint">
+          {electionActive
+            ? '竞选阶段：上警的人发言，警下的人投票选出警长。'
+            : '轮到你时可以说说你的怀疑；不认识的词可以在下方的说明里查。'}
+        </p>
         <OnboardingHints role={ctx.self.role} goal="先听一两轮，再决定信谁。" />
       </footer>
       {error === null ? null : (
@@ -515,6 +628,57 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         <ResultModal result={keyResult} onClose={() => setDismissedResultSeq(keyResult.seq)} />
       ) : null}
     </div>
+  );
+}
+
+interface SpeechCopy {
+  heading: string;
+  hint: string;
+  submitLabel: string;
+  skipLabel: string;
+}
+
+/** 竞选 / PK / 归票复用同一个输入框，只换文案（RFC-022 §7）。 */
+function speechCopyFor(phase: string): SpeechCopy {
+  switch (phase) {
+    case 'DAY_SHERIFF_SPEECH':
+      return {
+        heading: '竞选发言',
+        hint: '你是警上候选人：说说你为什么适合当警长，以及你打算怎么带队。',
+        submitLabel: '发言',
+        skipLabel: '跳过',
+      };
+    case 'DAY_SHERIFF_PK':
+      return {
+        heading: 'PK 发言',
+        hint: '平票了：再说一轮，争取警下的票。',
+        submitLabel: '发言',
+        skipLabel: '跳过',
+      };
+    case 'DAY_SHERIFF_FINAL_SPEECH':
+      return {
+        heading: '警长归票发言',
+        hint: '所有人都说完了。这是你额外的一次归票发言，说完就进入投票。',
+        submitLabel: '归票发言',
+        skipLabel: '跳过',
+      };
+    default:
+      return {
+        heading: '你的发言',
+        hint: '可以说说：你怀疑谁、为什么；你相信谁、为什么。',
+        submitLabel: '发言',
+        skipLabel: '过',
+      };
+  }
+}
+
+/** 自曝在竞选期间也能提交（RFC-022 §2.2）；归票阶段引擎只收发言。 */
+function canSelfExpose(phase: string): boolean {
+  return (
+    phase === 'DAY_SPEECH' ||
+    phase === 'DAY_PK_SPEECH' ||
+    phase === 'DAY_VOTE' ||
+    isSheriffElectionPhase(phase)
   );
 }
 

@@ -99,6 +99,46 @@ export function scriptedPlayerAction(
       };
     }
 
+    /* ---- RFC-022：警长竞选 / 警徽 ---- */
+    case 'sheriff-signup':
+      return { type: 'SHERIFF_SIGNUP', ts: Date.now(), seat, run: rng() < 0.5 };
+    case 'sheriff-speech':
+    case 'sheriff-pk':
+    case 'sheriff-final-speech':
+      return { type: 'SPEECH_SKIP', ts: Date.now(), seat };
+    case 'sheriff-withdraw':
+      return { type: 'SHERIFF_WITHDRAW', ts: Date.now(), seat, withdraw: rng() < 0.25 };
+    case 'sheriff-vote': {
+      const canAbstain = ctx.legalTargets.some((target) => target === 'abstain');
+      const target = pick(targets, rng);
+      if (target === undefined) {
+        return canAbstain
+          ? { type: 'SHERIFF_VOTE', ts: Date.now(), seat, target: 'abstain' }
+          : undefined;
+      }
+      return { type: 'SHERIFF_VOTE', ts: Date.now(), seat, target };
+    }
+    case 'sheriff-runoff': {
+      const target = pick(targets, rng);
+      return target === undefined
+        ? undefined
+        : { type: 'SHERIFF_VOTE', ts: Date.now(), seat, target };
+    }
+    case 'badge-transfer':
+      return { type: 'BADGE_TRANSFER', ts: Date.now(), seat, target: 'tear' };
+    case 'sheriff-order': {
+      const option = pick(ctx.sheriffOrderOptions ?? [], rng);
+      return option === undefined
+        ? undefined
+        : {
+            type: 'SHERIFF_ORDER',
+            ts: Date.now(),
+            seat,
+            startSeat: option.startSeat,
+            direction: option.direction,
+          };
+    }
+
     default:
       // `null`（没有待决策）时，由编排层自己处理；这里不猜。
       return undefined;
@@ -162,6 +202,45 @@ export function legalActionFor(
       const target = pickOne();
       if (target === undefined) return { type: 'WITCH_ACT', ts: Date.now(), seat, potion: 'none' };
       return { type: 'WITCH_ACT', ts: Date.now(), seat, potion: 'poison', target };
+    }
+
+    /* ---- RFC-022：假 AI 也要覆盖全部新决策点，否则 selfplay 会停在竞选 ---- */
+    case 'sheriff-signup':
+      return { type: 'SHERIFF_SIGNUP', ts: Date.now(), seat, run: rng() < 0.5 };
+    case 'sheriff-speech':
+    case 'sheriff-pk':
+    case 'sheriff-final-speech':
+      return { type: 'SPEECH_SKIP', ts: Date.now(), seat };
+    case 'sheriff-withdraw':
+      return { type: 'SHERIFF_WITHDRAW', ts: Date.now(), seat, withdraw: rng() < 0.25 };
+    case 'sheriff-vote': {
+      if (ctx.legalTargets.some((target) => target === 'abstain')) {
+        return { type: 'SHERIFF_VOTE', ts: Date.now(), seat, target: 'abstain' };
+      }
+      const target = pickOne();
+      return target === undefined
+        ? undefined
+        : { type: 'SHERIFF_VOTE', ts: Date.now(), seat, target };
+    }
+    case 'sheriff-runoff': {
+      const target = pickOne();
+      return target === undefined
+        ? undefined
+        : { type: 'SHERIFF_VOTE', ts: Date.now(), seat, target };
+    }
+    case 'badge-transfer':
+      return { type: 'BADGE_TRANSFER', ts: Date.now(), seat, target: 'tear' };
+    case 'sheriff-order': {
+      const option = pick(ctx.sheriffOrderOptions ?? [], rng);
+      return option === undefined
+        ? undefined
+        : {
+            type: 'SHERIFF_ORDER',
+            ts: Date.now(),
+            seat,
+            startSeat: option.startSeat,
+            direction: option.direction,
+          };
     }
     default:
       return undefined;

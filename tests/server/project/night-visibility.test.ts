@@ -7,6 +7,7 @@ import { project } from '@server/project';
 import { step } from '@engine/step';
 
 import { lobbyState, startActionOf } from '../../fixtures/states';
+import { skipSheriffElection } from '../../helpers/sheriff';
 import { seatOfAliveRole, seatOfRole } from '../../helpers/roles';
 
 /**
@@ -21,7 +22,7 @@ import { seatOfAliveRole, seatOfRole } from '../../helpers/roles';
  */
 
 /** 跑到指定阶段，返回状态与完整事件流。 */
-function runTo(target: 'NIGHT_SEER' | 'NIGHT_WITCH' | 'NIGHT_HUNTER_SHOOT') {
+function runTo(target: 'NIGHT_SEER' | 'NIGHT_WITCH' | 'NIGHT_HUNTER_SHOOT' | 'DAY_SHERIFF_SIGNUP') {
   const lobby = lobbyState({ seed: 20_261_117 });
   const events: ReturnType<typeof step>['events'] = [];
   const push = (state: typeof lobby, action: Parameters<typeof step>[1]) => {
@@ -75,6 +76,16 @@ function runTo(target: 'NIGHT_SEER' | 'NIGHT_WITCH' | 'NIGHT_HUNTER_SHOOT') {
 
   const witch = seatOfAliveRole(current, 'witch');
   current = push(current, { type: 'WITCH_ACT', ts: 5, seat: witch, potion: 'none' });
+
+  // 竞选阶段本身也是「死讯未公布」的观察窗口：死亡只是被算出来，还没落地。
+  if (current.phase === target) return { state: current, events };
+
+  // RFC-022：首夜结算后先进竞选；全员不上警 → 公布死讯 → 首夜猎人开枪。
+  if (current.phase === 'DAY_SHERIFF_SIGNUP') {
+    const skipped = skipSheriffElection(current);
+    events.push(...skipped.events);
+    current = skipped.state;
+  }
   return { state: current, events };
 }
 
@@ -91,23 +102,27 @@ describe('C-28 · 夜里只告诉观察者「天黑了」', () => {
     }
   });
 
-  it('当夜死者不出现在 deadSeats 里（等天亮公布）', () => {
-    const { state, events } = runTo('NIGHT_HUNTER_SHOOT');
-    const hunter = seatOfRole(state, 'hunter');
-
-    // 引擎里他确实已经出局
-    expect(state.seats.find((seat) => seat.seat === hunter)?.alive).toBe(false);
+  it('竞选期间死者不落地（死讯还没公布）', () => {
+    // 首夜死亡在 `NIGHT_RESOLVE` 只算出来、不落地（RFC-022 §13.1）；竞选期间
+    // 9 个人在引擎与投影里都仍然 alive。
+    const { state, events } = runTo('DAY_SHERIFF_SIGNUP');
+    expect(state.night?.killTarget).toBeDefined();
 
     for (const observer of SEAT_IDS) {
       const ctx = project({ state, events, observer, pending: null });
-      expect(ctx.deadSeats, `observer=${observer}`).not.toContain(hunter);
+      expect(ctx.deadSeats, `observer=${observer}`).toEqual([]);
+      expect(ctx.aliveSeats).toHaveLength(9);
     }
   });
 
   it('天亮之后，当夜死者才出现在 deadSeats', () => {
+    // 首夜猎人被刀：竞选 → 公布死讯 → 开枪（RFC-022 §11 的用户裁决）。
     const { state, events } = runTo('NIGHT_HUNTER_SHOOT');
-    // 让 hunter 放弃开枪 → 进入白天
     const hunter = seatOfRole(state, 'hunter');
+    // 死讯已在 `DAY_ANNOUNCE` 公布，此时投影应该已经知道 hunter 出局。
+    const before = project({ state, events, observer: 1, pending: null });
+    expect(before.deadSeats).toContain(hunter);
+
     const shot = step(state, { type: 'HUNTER_SHOOT', ts: 6, seat: hunter });
     const full = [...events, ...shot.events];
     expect(shot.state.phase).toBe('DAY_SPEECH');
@@ -119,26 +134,24 @@ describe('C-28 · 夜里只告诉观察者「天黑了」', () => {
 });
 
 describe('C-28 · aliveSeats 与 legalTargets 的口径', () => {
-  it('夜里当夜死者仍算「活着」（观察者还不知道他死了）', () => {
-    const { state, events } = runTo('NIGHT_HUNTER_SHOOT');
-    const hunter = seatOfRole(state, 'hunter');
-    if (state.seats.find((seat) => seat.seat === hunter)?.alive !== false) {
-      throw new Error('夹具前提不成立：hunter 应当已出局');
-    }
+  it('竞选期间当夜死者仍算「活着」（死亡还没落地）', () => {
+    // 首夜死亡延后到公布才落地：竞选期间引擎里 9 人仍然 alive，投影自然也是 9 人。
+    const { state, events } = runTo('DAY_SHERIFF_SIGNUP');
+    const killed = state.night?.killTarget;
+    expect(killed).toBeDefined();
 
     const ctx = project({ state, events, observer: 1, pending: null });
-    expect(ctx.aliveSeats).toContain(hunter);
+    expect(ctx.aliveSeats).toContain(killed);
   });
 
-  it('夜里的夜间目标用「已知存活」：当夜死者仍在候选里（否则目标消失=泄漏）', () => {
-    const { state, events } = runTo('NIGHT_HUNTER_SHOOT');
-    const hunter = seatOfRole(state, 'hunter');
-    // 引擎里他已经出局，但观察者还不知道——所以他还应在候选名单里
-    expect(state.seats.find((seat) => seat.seat === hunter)?.alive).toBe(false);
+  it('竞选期间的夜间目标用「已知存活」：当夜死者仍在候选里（否则目标消失=泄漏）', () => {
+    const { state, events } = runTo('DAY_SHERIFF_SIGNUP');
+    const killed = state.night?.killTarget;
+    expect(killed).toBeDefined();
 
     // 用夜间技能（查验）代表夜间目标；白天投票在公布后改用引擎真值。
     const ctx = project({ state, events, observer: 1, pending: 'check' });
-    expect(ctx.legalTargets).toContain(hunter);
+    expect(ctx.legalTargets).toContain(killed);
   });
 
   it('legalTargets 不含观察者自己', () => {

@@ -4,6 +4,7 @@ import { buildApp } from '@server/app';
 import { StreamBus } from '@server/stream/bus';
 import { currentSpeaker } from '@engine/phases/day';
 import { GameRegistry } from '@server/store/game-registry';
+import { skipSheriffElectionInRegistry } from '../helpers/sheriff';
 import { InMemoryMetaStore } from '@server/store/meta-store';
 import { IncrementalDecoder, consumeStream, parseSseLine } from '@server/llm/stream';
 import { encodeSseFrame, parseSseData } from '@shared/stream';
@@ -79,6 +80,11 @@ async function advanceToDay(
     const result = await registry.submit(session, current, action as never, state.seq);
     if (!result.ok) break;
     current = result.record;
+  }
+
+  // RFC-022：首夜结算后先走竞选（全员不上警），再回到白天。
+  if (registry.stateOf(current).phase === 'DAY_SHERIFF_SIGNUP') {
+    current = await skipSheriffElectionInRegistry(registry, session, current);
   }
 
   return current;

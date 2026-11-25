@@ -32,7 +32,7 @@ test('主路径：开始一局 → 发言 → 投票', async ({ page }) => {
 
   // 进入投票后投一票
   await dismissResultModal(page);
-  const voteButton = page.getByRole('button', { name: /投 \d+ 号/ }).first();
+  const voteButton = page.getByRole('button', { name: /^投 \d+ 号$/ }).first();
   await expect(voteButton).toBeVisible({ timeout: 30_000 });
   await voteButton.click();
 

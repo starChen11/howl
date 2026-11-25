@@ -137,6 +137,7 @@ body {
 .seat__button {
   width: 100%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 8px;
@@ -174,6 +175,20 @@ body {
   margin-left: auto;
   font-size: 0.8rem;
   color: var(--accent);
+}
+
+.seat__badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ok);
+}
+
+.seat__tag {
+  font-size: 0.75rem;
+  color: var(--muted);
+  border: 1px solid var(--surface-2);
+  border-radius: 999px;
+  padding: 0 6px;
 }
 
 /* 发言流 */
@@ -273,6 +288,11 @@ body {
   border-color: var(--accent);
 }
 
+.button--danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -350,6 +370,11 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.vote__hint {
+  margin: 0 0 8px;
+  color: var(--muted);
 }
 
 /* 只给读屏的文本 */
@@ -683,6 +708,69 @@ body {
   background: #1f2933;
   border-color: #1f2933;
   color: #fffdf8;
+}
+
+/* 警长竞选 / 定序 / 警徽移交（RFC-022 §7） */
+.sheriff {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px;
+  min-width: 0;
+}
+
+.sheriff__hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.sheriff__status {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.sheriff__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.sheriff__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.sheriff__facts div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sheriff__facts dt {
+  color: var(--muted);
+}
+
+.sheriff__facts dd {
+  margin: 0;
+}
+
+.order__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.feed__tag {
+  font-size: 0.75rem;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 0 6px;
 }
 
 /* 本阶段大号倒计时：固定在操作区顶部，滚动时不消失。 */

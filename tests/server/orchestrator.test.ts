@@ -7,6 +7,7 @@ import { StreamBus } from '@server/stream/bus';
 import { SseOutputChannel } from '@server/channels/sse';
 import { runGame } from '@server/orchestrator';
 import { scriptedAgent } from '@server/ai/agent';
+import { skipSheriffElectionInRegistry } from '../helpers/sheriff';
 
 /**
  * RFC-011 §5 AC-9 / AC-10 / AC-11：编排层在服务端，用 stub 通道跑完整局。
@@ -170,6 +171,8 @@ describe('C-101 · 玩家轮真的会问输入通道', () => {
       if (!result.ok) break;
       current = result.record;
     }
+    // RFC-022：首夜结算后先走竞选（全员不上警 → 无警长），再进入白天。
+    current = await skipSheriffElectionInRegistry(registry, session, current);
     expect(registry.stateOf(current).phase).toBe('DAY_SPEECH');
 
     // debug
@@ -348,6 +351,8 @@ describe('C-110 · 玩家 skip 与超时在事件流上可见', () => {
       if (!result.ok) break;
       current = result.record;
     }
+    // RFC-022：首夜结算后先走竞选（全员不上警 → 无警长），再进入白天。
+    current = await skipSheriffElectionInRegistry(registry, session, current);
 
     // 用一个「按需返回」的输入通道：跳过一轮，再来一轮带文本
     const answers: PlayerInput[] = [{ kind: 'skip' }];
@@ -463,6 +468,8 @@ describe('C-110 · 超时提交的文本进入事件流', () => {
       if (!result.ok) break;
       current = result.record;
     }
+    // RFC-022：首夜结算后先走竞选（全员不上警 → 无警长），再进入白天。
+    current = await skipSheriffElectionInRegistry(registry, session, current);
 
     const result = await runGame({
       registry,
@@ -633,6 +640,8 @@ describe('C-127 · 平票重投时玩家亲自投票', () => {
       if (!r.ok) break;
       current = r.record;
     }
+    // RFC-022：首夜结算后先走竞选（全员不上警 → 无警长），再进入白天。
+    current = await skipSheriffElectionInRegistry(registry, session, current);
 
     // 说完整圈，进入投票
     while (stateOf().phase === 'DAY_SPEECH') {

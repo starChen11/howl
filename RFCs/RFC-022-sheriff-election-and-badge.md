@@ -258,3 +258,122 @@ NIGHT_RESOLVE（首夜结算，死讯仍保密）
 
 RFC-022 的前置 RFC-002/004/006/007/012/014/021 仍是 `Spec changed`，RFC-003/013/015 也被实际影响。
 在这些 delta 未实现/复核前，不写实现代码；需要决定是否允许「RFC-022 作为统一实现载体」一次性落地并随后整体评审。
+
+## 14. Implementation Notes（2026-11-26）
+
+**Status**: Implemented（等待 /review-rfc）
+
+### 实现范围
+
+- 引擎与共享契约：10 个新相位、5 个动作、13 类事件、半票整数计票、警长竞选/移交/定序/归票；
+- 首夜死亡延后到 `DAY_ANNOUNCE`，竞选期投影与真相不泄露死亡；猎人开枪在死讯公布后；
+- 服务端编排、AI 动作、投影、prompt、工具路由、复盘/真相全部接入；
+- 前端上警/退水/警下投票/PK/定序/移交/归票面板，警长标识与 1.5 票展示，首夜死亡遮蔽；
+- E2E helper 支持跳过竞选；主路径、手机布局、键盘、猎人、复盘 e2e 全部通过。
+
+### 偏离/补充
+
+- RFC 原写「9 个相位」，实际为 10 个（含 `DAY_SHERIFF_FINAL_SPEECH`）；已全部实现。
+- 额外增加 `SHERIFF_SPEECH` / `SHERIFF_SPEECH_SKIPPED` 事件（竞选发言独立 cursor）。
+- `DAY_SHERIFF_ORDER` 超时默认没有「旧合法默认」时，选第一个合法选项；记录为 deviation。
+- 首夜死亡事件在 `DAY_STARTED` 之后以 server 可见事件落地；公开死讯仍只有 `diedLastNight`。
+- `AI_THOUGHT.detail`、`TruthView.sheriff` 为向后兼容 additive 字段。
+- 竞选期自曝在所有竞选可行动子阶段允许；`DAY_SHERIFF_FINAL_SPEECH` 不允许自曝（按 RFC 表格）。
+
+### 验证
+
+| 命令 | 结果 |
+|---|---|
+| `pnpm typecheck` | exit 0（root/server/client） |
+| `vitest --project unit --project client` | 96 files / 958 tests passed |
+| `vitest --project meta` | 7 files / 35 tests passed |
+| `pnpm test:e2e` | 16 tests passed |
+| `pnpm lint` / `format:check` / `build` | 全部 exit 0 |
+
+### 改动文件
+
+```text
+src/client/App.tsx
+src/client/components/EventPanel.tsx
+src/client/components/SeatGrid.tsx
+src/client/components/SheriffPanel.tsx
+src/client/components/SpeechFeed.tsx
+src/client/components/SpeechInput.tsx
+src/client/components/StatusBar.tsx
+src/client/components/VoteInput.tsx
+src/client/game-state.ts
+src/client/styles/global.css
+src/engine/apply.ts
+src/engine/phases/auto-table.ts
+src/engine/phases/day.ts
+src/engine/phases/lynch.ts
+src/engine/phases/night.ts
+src/engine/phases/self-expose.ts
+src/engine/phases/sheriff.ts
+src/engine/phases/vote.ts
+src/engine/step.ts
+src/engine/transitions.ts
+src/server/ai/agent.ts
+src/server/config/phase-timers.ts
+src/server/llm/prompts/base.ts
+src/server/llm/schema.ts
+src/server/llm/to-action.ts
+src/server/orchestrator.ts
+src/server/project/index.ts
+src/server/project/targets.ts
+src/server/project/timer.ts
+src/server/replay/snapshot.ts
+src/server/routes/games.ts
+src/server/selfplay/runner.ts
+src/server/selfplay/scripted-player.ts
+src/server/view/truth.ts
+src/shared/actions.ts
+src/shared/api.ts
+src/shared/domain.ts
+src/shared/events.ts
+src/shared/phase-labels.ts
+src/shared/project.ts
+src/shared/schemas.ts
+src/shared/terms.ts
+src/shared/truth.ts
+src/shared/votes.ts
+tests/client/game-state-sheriff.test.ts
+tests/client/sheriff.test.tsx
+tests/e2e/browsers.spec.ts
+tests/e2e/game.spec.ts
+tests/e2e/helpers.ts
+tests/engine/day.test.ts
+tests/engine/death-resolve.test.ts
+tests/engine/full-game.test.ts
+tests/engine/night-visibility.test.ts
+tests/engine/night.test.ts
+tests/engine/sheriff.test.ts
+tests/engine/transitions.test.ts
+tests/engine/witch.test.ts
+tests/fixtures/day.ts
+tests/fixtures/night.ts
+tests/fixtures/sheriff.ts
+tests/helpers/sheriff.ts
+tests/server/channels.test.ts
+tests/server/death-matrix.test.ts
+tests/server/finished-game.test.ts
+tests/server/game-loop.test.ts
+tests/server/llm/prompts.test.ts
+tests/server/llm/to-action.test.ts
+tests/server/orchestrator.test.ts
+tests/server/project/knowledge.test.ts
+tests/server/project/night-visibility.test.ts
+tests/server/release-and-entry.test.ts
+tests/server/sheriff-integration.test.ts
+tests/server/sheriff-projection.test.ts
+tests/server/speak.test.ts
+tests/server/stream.test.ts
+tests/server/truth.test.ts
+tests/server/wolf-chat-room.test.ts
+tests/shared/actions.test.ts
+tests/shared/domain.test.ts
+tests/shared/events.test.ts
+tests/shared/schemas.test.ts
+tests/shared/terms.test.ts
+tests/shared/votes.test.ts
+```

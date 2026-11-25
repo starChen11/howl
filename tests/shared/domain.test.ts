@@ -20,8 +20,18 @@ const EXPECTED_PHASES = [
   'NIGHT_WITCH',
   'NIGHT_RESOLVE',
   'NIGHT_HUNTER_SHOOT',
+  'DAY_SHERIFF_SIGNUP',
+  'DAY_SHERIFF_SPEECH',
+  'DAY_SHERIFF_WITHDRAW',
+  'DAY_SHERIFF_VOTE',
+  'DAY_SHERIFF_PK',
+  'DAY_SHERIFF_RUNOFF',
+  'DAY_SHERIFF_RESULT',
   'DAY_ANNOUNCE',
+  'DAY_BADGE_TRANSFER',
+  'DAY_SHERIFF_ORDER',
   'DAY_SPEECH',
+  'DAY_SHERIFF_FINAL_SPEECH',
   'DAY_VOTE',
   'DAY_PK_SPEECH',
   'DAY_VOTE_RUNOFF',
@@ -31,19 +41,19 @@ const EXPECTED_PHASES = [
 ] as const;
 
 describe('AC-5 · Phase 的取值集合', () => {
-  it('恰好 16 个取值，且与 RFC 列出的取值逐项一致', () => {
-    expect(PHASES).toHaveLength(16);
+  it('恰好 26 个取值，且与 RFC 列出的取值逐项一致', () => {
+    expect(PHASES).toHaveLength(26);
     expect([...PHASES]).toEqual([...EXPECTED_PHASES]);
-    expect(new Set(PHASES).size).toBe(16);
+    expect(new Set(PHASES).size).toBe(26);
   });
 
   it('是封闭联合：列表外的取值无法赋给 Phase', () => {
-    // @ts-expect-error 'NIGHT_MOON' 不在 14 个取值里
+    // @ts-expect-error 'NIGHT_MOON' 不在 26 个取值里
     const unknownPhase: Phase = 'NIGHT_MOON';
     expect(unknownPhase).toBe('NIGHT_MOON');
   });
 
-  it('类型集合与运行时数组完全相等（加第 15 个类型成员会编译失败）', () => {
+  it('类型集合与运行时数组完全相等（加第 27 个类型成员会编译失败）', () => {
     // 评审 M1：只加类型成员、不改数组时，运行时断言与上面的夹具都仍然通过。
     // toEqualTypeOf 是双向精确比较，多一个少一个都编译失败。
     expectTypeOf<Phase>().toEqualTypeOf<(typeof EXPECTED_PHASES)[number]>();

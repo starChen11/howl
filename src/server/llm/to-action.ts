@@ -1,5 +1,5 @@
 import type { Action } from '@shared/actions';
-import type { Phase, SeatId } from '@shared/domain';
+import type { Phase, SeatId, SpeechDirection } from '@shared/domain';
 
 import type { Decision } from './schema';
 
@@ -17,6 +17,8 @@ export interface DecisionContext {
   phase: Phase;
   day: number;
   legalTargets: (SeatId | 'abstain')[];
+  /** 警长定序的两个合法选项（RFC-022 §3.2）；不定序时不传。 */
+  orderOptions?: { startSeat: SeatId; direction: SpeechDirection }[];
 }
 
 /** AI 单轮发言上限，与 PRD FR-30 / RFC-006 §2.2 的 300 字一致。 */
@@ -48,18 +50,50 @@ function phaseAllows(action: Decision['action'], ctx: DecisionContext): boolean 
       return ctx.phase === 'NIGHT_WITCH';
     case 'vote':
     case 'abstain':
-      return ctx.phase === 'DAY_VOTE' || ctx.phase === 'DAY_VOTE_RUNOFF';
+      // 白天放逐票 + 警长竞选票 + 警徽移交都复用 vote 语义（RFC-022）。
+      return (
+        ctx.phase === 'DAY_VOTE' ||
+        ctx.phase === 'DAY_VOTE_RUNOFF' ||
+        ctx.phase === 'DAY_SHERIFF_VOTE' ||
+        ctx.phase === 'DAY_SHERIFF_RUNOFF' ||
+        ctx.phase === 'DAY_BADGE_TRANSFER'
+      );
     case 'speak':
     case 'skip':
-      return ctx.phase === 'DAY_SPEECH' || ctx.phase === 'DAY_PK_SPEECH';
+      return (
+        ctx.phase === 'DAY_SPEECH' ||
+        ctx.phase === 'DAY_PK_SPEECH' ||
+        ctx.phase === 'DAY_SHERIFF_SPEECH' ||
+        ctx.phase === 'DAY_SHERIFF_PK' ||
+        ctx.phase === 'DAY_SHERIFF_FINAL_SPEECH'
+      );
     case 'shoot':
       return ctx.phase === 'NIGHT_HUNTER_SHOOT' || ctx.phase === 'DAY_HUNTER_SHOOT';
     case 'expose':
       return (
-        ctx.phase === 'DAY_SPEECH' || ctx.phase === 'DAY_PK_SPEECH' || ctx.phase === 'DAY_VOTE'
+        ctx.phase === 'DAY_SPEECH' ||
+        ctx.phase === 'DAY_PK_SPEECH' ||
+        ctx.phase === 'DAY_VOTE' ||
+        ctx.phase === 'DAY_SHERIFF_SIGNUP' ||
+        ctx.phase === 'DAY_SHERIFF_SPEECH' ||
+        ctx.phase === 'DAY_SHERIFF_WITHDRAW' ||
+        ctx.phase === 'DAY_SHERIFF_VOTE' ||
+        ctx.phase === 'DAY_SHERIFF_PK' ||
+        ctx.phase === 'DAY_SHERIFF_RUNOFF'
       );
     case 'chat':
       return ctx.phase === 'NIGHT_WOLF_CHAT';
+    /* ---- RFC-022 ---- */
+    case 'signup':
+    case 'no-signup':
+      return ctx.phase === 'DAY_SHERIFF_SIGNUP';
+    case 'withdraw':
+    case 'stay':
+      return ctx.phase === 'DAY_SHERIFF_WITHDRAW';
+    case 'order':
+      return ctx.phase === 'DAY_SHERIFF_ORDER';
+    case 'tear':
+      return ctx.phase === 'DAY_BADGE_TRANSFER';
     default:
       return false;
   }
@@ -83,6 +117,42 @@ export function toAction(decision: Decision, ctx: DecisionContext, ts: number): 
     };
   }
 
+  if (decision.action === 'order') {
+    const target = decision.target;
+    if (target === undefined) return { reject: 'order 缺少 target（发言起点）' };
+    if (!ctx.legalTargets.includes(target as SeatId)) {
+      return { reject: `发言起点 ${target} 不在本阶段的合法清单里` };
+    }
+    const options = ctx.orderOptions ?? [];
+    const matched =
+      options.find(
+        (option) =>
+          option.startSeat === target &&
+          (decision.direction === undefined || option.direction === decision.direction),
+      ) ?? options.find((option) => option.startSeat === target);
+    if (matched !== undefined) {
+      return {
+        action: {
+          type: 'SHERIFF_ORDER',
+          ts,
+          seat: ctx.seat,
+          startSeat: matched.startSeat,
+          direction: matched.direction,
+        },
+      };
+    }
+    // 没有提供选项表时（旧调用方/单测）按顺时针兜底；引擎会拒绝非法组合并回喂原因。
+    return {
+      action: {
+        type: 'SHERIFF_ORDER',
+        ts,
+        seat: ctx.seat,
+        startSeat: target as SeatId,
+        direction: decision.direction ?? 'clockwise',
+      },
+    };
+  }
+
   if (REQUIRED_TARGET.has(decision.action)) {
     const target = decision.target;
     if (target === undefined) {
@@ -97,11 +167,16 @@ export function toAction(decision: Decision, ctx: DecisionContext, ts: number): 
   switch (decision.action) {
     case 'abstain':
       // RUL-2：重投阶段不能弃权。引擎会拒绝，但在这里挡掉，AI 才能知道自己「说了个
-      // 不允许的动作」，而不是收到一条笼统的 Rejected。
-      if (ctx.phase === 'DAY_VOTE_RUNOFF') {
-        return { reject: '重投阶段不能弃权（RUL-2）' };
+      // 不允许的动作」，而不是收到一条笼统的 Rejected。警长重投同理（RFC-022 §2.2）。
+      if (ctx.phase === 'DAY_VOTE_RUNOFF' || ctx.phase === 'DAY_SHERIFF_RUNOFF') {
+        return { reject: '重投阶段不能弃权（RUL-2 / RFC-022）' };
       }
-      return { action: { type: 'VOTE', ts, seat: ctx.seat, target: 'abstain' } };
+      if (ctx.phase === 'DAY_BADGE_TRANSFER') {
+        return { reject: '警徽移交不能弃权：要给 target 或输出 tear' };
+      }
+      return ctx.phase === 'DAY_SHERIFF_VOTE'
+        ? { action: { type: 'SHERIFF_VOTE', ts, seat: ctx.seat, target: 'abstain' } }
+        : { action: { type: 'VOTE', ts, seat: ctx.seat, target: 'abstain' } };
     case 'none':
       return { action: { type: 'WITCH_ACT', ts, seat: ctx.seat, potion: 'none' } };
     case 'speak': {
@@ -120,6 +195,17 @@ export function toAction(decision: Decision, ctx: DecisionContext, ts: number): 
       return { action: { type: 'SELF_EXPOSE', ts, seat: ctx.seat } };
     case 'chat':
       return { action: { type: 'WOLF_CHAT', ts, seat: ctx.seat, text: decision.speech ?? '' } };
+    /* ---- RFC-022 的布尔动作 ---- */
+    case 'signup':
+      return { action: { type: 'SHERIFF_SIGNUP', ts, seat: ctx.seat, run: true } };
+    case 'no-signup':
+      return { action: { type: 'SHERIFF_SIGNUP', ts, seat: ctx.seat, run: false } };
+    case 'withdraw':
+      return { action: { type: 'SHERIFF_WITHDRAW', ts, seat: ctx.seat, withdraw: true } };
+    case 'stay':
+      return { action: { type: 'SHERIFF_WITHDRAW', ts, seat: ctx.seat, withdraw: false } };
+    case 'tear':
+      return { action: { type: 'BADGE_TRANSFER', ts, seat: ctx.seat, target: 'tear' } };
     default:
       return { reject: `不支持的动作 ${String(decision.action)}` };
   }
@@ -145,6 +231,13 @@ function buildWithTarget(
     case 'poison':
       return { type: 'WITCH_ACT', ts, seat: ctx.seat, potion: 'poison', target };
     case 'vote':
+      // 三种受众不同的「投票」：警长竞选票、警徽移交、白天放逐票（RFC-022）。
+      if (ctx.phase === 'DAY_SHERIFF_VOTE' || ctx.phase === 'DAY_SHERIFF_RUNOFF') {
+        return { type: 'SHERIFF_VOTE', ts, seat: ctx.seat, target };
+      }
+      if (ctx.phase === 'DAY_BADGE_TRANSFER') {
+        return { type: 'BADGE_TRANSFER', ts, seat: ctx.seat, target };
+      }
       return { type: 'VOTE', ts, seat: ctx.seat, target };
     case 'shoot':
       return { type: 'HUNTER_SHOOT', ts, seat: ctx.seat, target };

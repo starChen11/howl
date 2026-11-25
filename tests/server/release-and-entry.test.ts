@@ -159,8 +159,9 @@ describe('C-72 · AC-8：动作必须真的被引擎接受', () => {
     expect(submitted.statusCode).toBe(200);
     // 关键：没有 REJECTED —— 否则「动作被拒」也会满足「200 + 非空」
     expect(body.events.some((event) => event.type === 'REJECTED')).toBe(false);
-    // 而且真的产出了这一夜该有的公开事件：女巫选 none → 结算 → 天亮
-    expect(body.events.some((event) => event.type === 'DAY_STARTED')).toBe(true);
+    // 而且真的产出了这一夜该有的公开事件：女巫选 none → 结算 → 首日竞选
+    // （RFC-022：死讯公布前先竞选，所以天亮事件要等竞选走完才会出现）。
+    expect(body.events.some((event) => event.type === 'SHERIFF_ELECTION_STARTED')).toBe(true);
     expect(body.version).toBeGreaterThan(version);
   });
 });

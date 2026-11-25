@@ -30,6 +30,8 @@ function leaksOf(events: ReturnType<typeof run>['events']) {
     if (event.type === 'HUNTER_SHOOT') return false;
     // 天亮公布昨夜死者（payload 只有天数、死者、发言起点，没有死因）。
     if (event.type === 'DAY_STARTED') return false;
+    // 竞选开始只是 `{ day }`：既不宣布死者，也不宣布「谁不能行动」。
+    if (event.type === 'SHERIFF_ELECTION_STARTED') return false;
     if (event.type === 'PHASE_CHANGED' && !event.payload.to.startsWith('NIGHT_')) return false;
     return true;
   });
@@ -81,7 +83,9 @@ describe('C-23 · 一整夜没有**泄漏性**公开事件', () => {
 
     // 「天亮了」的相位推进是公开的，但它只含 from/to，不含任何身份或死因。
     expect(leaksOf(all)).toEqual([]);
-    expect(afterWitch.state.phase).toBe('DAY_SPEECH');
+    // RFC-022：首夜结算后先进竞选，死亡尚未落地。
+    expect(afterWitch.state.phase).toBe('DAY_SHERIFF_SIGNUP');
+    expect(afterWitch.state.seats.every((seat) => seat.alive)).toBe(true);
   });
 });
 

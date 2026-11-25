@@ -51,8 +51,9 @@ describe('AC-8 · 术语表', () => {
     }
   });
 
-  it('警长 / 警徽流 的定义注明 v1 不实现', () => {
-    expect(TERMS.sheriff.definition).toContain('v1 不实现');
+  it('警长 / 警徽流 的定义说明 v1 已实现的规则（RFC-022）', () => {
+    expect(TERMS.sheriff.definition).toContain('1.5');
+    expect(TERMS.sheriff.definition).toContain('警徽');
   });
 });
 
