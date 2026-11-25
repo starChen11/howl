@@ -534,3 +534,26 @@ describe('模型输出容错', () => {
     expect(result.decision.reason.length).toBe(200);
   });
 });
+
+describe('无效 claim 不影响行动', () => {
+  it('claim 格式错误时丢弃 claim，仍返回合法动作', async () => {
+    const content = JSON.stringify({
+      action: 'speak',
+      reason: '测试',
+      speech: '你好',
+      claim: { role: 'seer', checks: [{ target: 2, result: 'good' }] },
+    });
+    const fetchImpl = (async () =>
+      chatResponse({
+        id: 'x',
+        choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+      })) as unknown as typeof fetch;
+    const result = await decide(
+      { config: CONFIG, fetchImpl },
+      { gameId: 'g', seq: 1, ctx: CTX, mode: 'slaughter-side' },
+    );
+    if ('duplicate' in result) throw new Error('不应重复');
+    expect(result.decision.action).toBe('speak');
+    expect(result.decision.claim).toBeUndefined();
+  });
+});

@@ -28,14 +28,30 @@ export function phaseTimer(
   const total = Math.max(1, Math.round(timeoutMs / 1000));
 
   let startedAt: number | null = null;
-  for (const event of record.events) {
+  let phaseStartIndex = -1;
+  record.events.forEach((event, index) => {
     if (event.type === 'PHASE_CHANGED') {
-      if ((event.payload as { to?: string }).to === phase) startedAt = event.ts;
+      if ((event.payload as { to?: string }).to === phase) {
+        startedAt = event.ts;
+        phaseStartIndex = index;
+      }
     } else if (event.type === 'GAME_STARTED' && phase === 'NIGHT_WOLF_CHAT') {
       startedAt = event.ts;
+      phaseStartIndex = index;
+    }
+  });
+  if (startedAt === null) return null;
+
+  // 白天发言是「每人 120 秒」：当前发言人的计时从上一句发言/跳过结束时重新开始，
+  // 而不是从整个白天发言阶段开始时一直倒计时。
+  if (phase === 'DAY_SPEECH' || phase === 'DAY_PK_SPEECH') {
+    for (let index = phaseStartIndex + 1; index < record.events.length; index += 1) {
+      const event = record.events[index];
+      if (event !== undefined && (event.type === 'SPEECH' || event.type === 'SPEECH_SKIPPED')) {
+        startedAt = event.ts;
+      }
     }
   }
-  if (startedAt === null) return null;
 
   const elapsed = Math.max(0, (now - startedAt) / 1000);
   return {

@@ -103,3 +103,19 @@ describe('RFC-021 · 环境变量覆盖', () => {
     expect(() => loadPhaseTimers({ HOWL_DAY_VOTE_MS: '0' })).toThrow(/HOWL_DAY_VOTE_MS/);
   });
 });
+
+describe('白天发言按「当前发言人」重新计时', () => {
+  it('同一白天阶段内，上一位说完后剩余时间回到 120 秒', () => {
+    const timer = phaseTimer(
+      record([
+        phaseChanged('DAY_SPEECH', NOW - 100_000),
+        { type: 'SPEECH_SKIPPED', ts: NOW - 5_000, payload: { seat: 3 } },
+      ]),
+      'DAY_SPEECH',
+      {},
+      NOW,
+    );
+    expect(timer?.totalSeconds).toBe(120);
+    expect(timer?.remainingSeconds).toBe(115);
+  });
+});

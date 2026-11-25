@@ -300,3 +300,14 @@ RUL-13 之后，模型在 `NIGHT_WOLVES` 的 `kill` 决策翻译为 `WOLF_VOTE`�
 - `safeJson` 容忍 ```json 代码块与前后解释文字；
 - `reason` 超长只截断到 200 字，不整条作废；
 - 模型失败/连续被拒时打印 `[llm]` 日志；开发服务器写入 `logs/howl-dev.log`。
+
+### 9.x 严格 schema 导致的普通发言降级（2026-11-25）
+
+实际日志显示降级原因是 `INVALID_OUTPUT`，不是超时。模型偶尔给出 `target:null`、
+不规范的 `claim`（例如 `result:"good"`）等；旧实现会让整条决策失败并降级。
+
+现在：
+- `target` / `speech` / `claim` / `reason` 的 `null` 被归一化；
+- 不规范的 `claim` 直接丢弃，不影响 action；
+- 白天发言倒计时按「当前发言人」重新计时，而不是整个发言阶段共用一次；
+- schema 失败会打印具体字段错误，便于定位。

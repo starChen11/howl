@@ -186,13 +186,18 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
         usage = response.usage;
       }
 
-      const parsed = DecisionSchema.safeParse(safeJson(content));
+      const parsed = DecisionSchema.safeParse(normalizeDecision(safeJson(content)));
 
       if (!parsed.success) {
         const detail = parsed.error.issues
           .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
           .join('; ');
         lastError = new LlmError('INVALID_OUTPUT', '模型返回的格式不符合契约');
+        console.warn('[llm] 模型输出不符合契约', {
+          seat: input.ctx.self.seat,
+          phase: input.ctx.phase,
+          detail,
+        });
         deps.metaLog?.record({
           ...baseMeta,
           latencyMs: Date.now() - startedAt,
@@ -307,6 +312,33 @@ export function extractSpeechIncrement(content: string, state: { emitted: number
   const addition = decoded.slice(state.emitted);
   state.emitted = decoded.length;
   return addition;
+}
+
+/** 归一化模型常见的 null / 字符串数字 / 大写动作，避免整条决策作废。 */
+function normalizeDecision(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  const copy: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+
+  if (typeof copy['action'] === 'string') {
+    copy['action'] = copy['action'].trim().toLowerCase();
+  }
+  if (typeof copy['target'] === 'string' && /^\d+$/.test(copy['target'].trim())) {
+    copy['target'] = Number(copy['target']);
+  }
+  for (const key of ['target', 'speech', 'claim', 'reason']) {
+    if (copy[key] === null) delete copy[key];
+  }
+  if (typeof copy['reason'] === 'string') copy['reason'] = copy['reason'].slice(0, 200);
+  if (copy['claim'] !== null && typeof copy['claim'] === 'object') {
+    const claim = { ...(copy['claim'] as Record<string, unknown>) };
+    for (const key of ['role', 'checks', 'accuses']) {
+      if (claim[key] === null) delete claim[key];
+    }
+    // claim 只是展示用的附带信息；格式不对时丢掉它，不让整条行动失败。
+    if (!DecisionSchema.shape.claim.safeParse(claim).success) delete copy['claim'];
+    else copy['claim'] = claim;
+  }
+  return copy;
 }
 
 /** 解析 JSON；容忍模型常见的 ```json 代码块和前后解释文字。 */
