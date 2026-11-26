@@ -412,10 +412,18 @@ const BATCH_VOTE_PHASES = new Set([
   'DAY_VOTE_RUNOFF',
   'DAY_SHERIFF_VOTE',
   'DAY_SHERIFF_RUNOFF',
+  // 狼队投票也一次并发；提交仍按引擎顺序，玩家仍可中途改票/确认。
+  'NIGHT_WOLVES',
+  'NIGHT_WOLF_RUNOFF',
 ]);
 
-/** 同时投票的 AI 席位：投票是暗投，彼此看不到，可以并发调用模型。 */
+/** 同阶段一起投票的 AI 席位：放逐/警长投票是暗投；狼票虽然是公开的，但也是一起表态。 */
 function batchVotersOf(state: GameState, playerSeat: number): number[] {
+  if (state.phase === 'NIGHT_WOLVES' || state.phase === 'NIGHT_WOLF_RUNOFF') {
+    return state.seats
+      .filter((seat) => seat.alive && seat.role === 'wolf' && seat.seat !== playerSeat)
+      .map((seat) => seat.seat);
+  }
   if (state.phase === 'DAY_SHERIFF_VOTE' || state.phase === 'DAY_SHERIFF_RUNOFF') {
     return (state.sheriffVoters ?? []).filter(
       (seat) =>
