@@ -406,6 +406,56 @@ export function isStillTheirTurn(
   return (seatToSpeak(latest) ?? nextActor(latest)) === seat;
 }
 
+const BATCH_VOTE_PHASES = new Set([
+  'DAY_VOTE',
+  'DAY_VOTE_RUNOFF',
+  'DAY_SHERIFF_VOTE',
+  'DAY_SHERIFF_RUNOFF',
+]);
+
+/** 同时投票的 AI 席位：投票是暗投，彼此看不到，可以并发调用模型。 */
+function batchVotersOf(state: GameState, playerSeat: number): number[] {
+  if (state.phase === 'DAY_SHERIFF_VOTE' || state.phase === 'DAY_SHERIFF_RUNOFF') {
+    return (state.sheriffVoters ?? []).filter(
+      (seat) =>
+        seat !== playerSeat && state.seats.some((entry) => entry.seat === seat && entry.alive),
+    );
+  }
+  return state.seats
+    .filter((seat) => seat.alive && seat.seat !== playerSeat)
+    .map((seat) => seat.seat);
+}
+
+async function prefetchVotes(
+  deps: OrchestratorDeps,
+  record: GameRecord,
+  state: GameState,
+): Promise<Record<number, AgentDecision>> {
+  const seats = batchVotersOf(state, record.playerSeat);
+  const pairs = await Promise.all(
+    seats.map(async (seat) => {
+      try {
+        const decision = await deps.decide({
+          seat,
+          ctx: project({
+            state,
+            events: record.events,
+            observer: seat as never,
+            pending: pendingForPhase(state.phase),
+          }),
+          phase: state.phase,
+        });
+        return [seat, decision] as const;
+      } catch {
+        return [seat, { action: undefined }] as const;
+      }
+    }),
+  );
+  const batch: Record<number, AgentDecision> = {};
+  for (const [seat, decision] of pairs) batch[seat] = decision;
+  return batch;
+}
+
 export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResult> {
   const { registry, session, input, decide } = deps;
   const maxSteps = deps.maxSteps ?? 500;
@@ -416,14 +466,31 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
 
   let steps = 0;
   let skipped = 0;
+  let voteBatch: Record<number, AgentDecision> | null = null;
+  let voteBatchKey = '';
 
   while (steps < maxSteps) {
     // 每轮都从存储重读：路由可能刚写入了玩家的发言，用读前的旧记录提交会把它覆盖掉
     // （评审 C-113 的双写丢更新）。
     const fresh = await registry.getGame(record.gameId);
     if (fresh !== undefined) record = fresh;
-    const state = registry.stateOf(record);
+    let state = registry.stateOf(record);
     if (state.phase === 'FINISHED') break;
+
+    // 放逐/警长投票是同时暗投：所有 AI 席位并发调用模型，只把提交串行化。
+    // 否则 8 个席位串行等待，总耗时是单次调用之和，倒计时会先归零。
+    if (BATCH_VOTE_PHASES.has(state.phase)) {
+      const key = `${state.phase}|${state.day}`;
+      if (voteBatchKey !== key) {
+        voteBatch = await prefetchVotes(deps, record, state);
+        voteBatchKey = key;
+        // 并发调用期间玩家可能已经投票并推进了相位；重读后再继续。
+        const latest = await registry.getGame(record.gameId);
+        if (latest !== undefined) record = latest;
+        state = registry.stateOf(record);
+        if (state.phase === 'FINISHED' || !BATCH_VOTE_PHASES.has(state.phase)) continue;
+      }
+    }
 
     /**
      * **每个席位看自己的投影**（SEC-5）。
@@ -497,22 +564,26 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
       action = await playerAction(seat, state.phase, deps, ctxFor(seat), record.gameId);
     } else {
       try {
-        action = await decide({
-          seat,
-          ctx: ctxFor(seat),
-          phase: state.phase,
-          ...(speechPhase
-            ? {
-                onSpeechDelta: (text: string) =>
-                  deps.output.emit({
-                    seat: seat as never,
-                    id: (record.events?.length ?? 0) + 1,
-                    text,
-                    final: false,
-                  }),
-              }
-            : {}),
-        });
+        const cached = voteBatch?.[seat];
+        if (cached !== undefined) delete voteBatch?.[seat];
+        action =
+          cached ??
+          (await decide({
+            seat,
+            ctx: ctxFor(seat),
+            phase: state.phase,
+            ...(speechPhase
+              ? {
+                  onSpeechDelta: (text: string) =>
+                    deps.output.emit({
+                      seat: seat as never,
+                      id: (record.events?.length ?? 0) + 1,
+                      text,
+                      final: false,
+                    }),
+                }
+              : {}),
+          }));
       } catch {
         if (speechPhase) {
           degraded = true;

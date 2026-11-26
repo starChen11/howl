@@ -141,14 +141,6 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
           : AbortSignal.any([AbortSignal.timeout(config.timeoutMs), input.signal]);
       const streamThis = input.onDelta !== undefined && attempt === 1;
       const tokenBudget = maxTokensFor(config, input.personaId ?? null) * (attempt === 1 ? 1 : 2);
-      // 发言要求完整推理；投票/夜间动作降低思考强度，避免空正文和超长等待。
-      const isSpeechPhase =
-        input.ctx.phase === 'DAY_SPEECH' ||
-        input.ctx.phase === 'DAY_PK_SPEECH' ||
-        input.ctx.phase === 'DAY_SHERIFF_SPEECH' ||
-        input.ctx.phase === 'DAY_SHERIFF_PK' ||
-        input.ctx.phase === 'DAY_SHERIFF_FINAL_SPEECH';
-      const reasoningEffort = !isSpeechPhase || attempt > 1 ? ('low' as const) : undefined;
 
       let content = '';
       let usage:
@@ -166,7 +158,6 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
             messages,
             temperature: config.temperature,
             max_tokens: tokenBudget,
-            ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
             stream: true,
             stream_options: { include_usage: true },
           },
@@ -189,7 +180,6 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
             messages,
             temperature: config.temperature,
             max_tokens: tokenBudget,
-            ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
           },
           { signal },
         );
