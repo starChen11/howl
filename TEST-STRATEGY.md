@@ -567,3 +567,17 @@ $ pnpm typecheck   ⇒ 0    $ pnpm lint ⇒ 0    $ pnpm format:check ⇒ 0    $ 
 | 14 | 新相位超时动作（弃权/不竞选/不发言/撕徽） | unit | existing | Must |
 | 15 | 事件流与复盘记录竞选/票权/移交 | integration | existing | Must |
 | 16 | 脚本与真实模型都能走完整流程，不卡死 | e2e/manual | existing | Must |
+
+## RFC-023: 赛后拷问与最大责任投票
+
+| AC | 计划测试 | 层级 | Exists? | 优先级 |
+|---|---|---|---|---|
+| 1 | 9 人按顺序拷问 | client | existing | Must |
+| 2 | 玩家多目标/提前结束 | client | existing | Must |
+| 3 | AI 问题与回答由模型接口返回 | server | existing | Must |
+| 4 | 9 人投票，可投自己 | client | existing | Must |
+| 5 | 最高票/并列共同承担 | client | existing | Must |
+| 6 | 最大责任人感想 | client | existing | Must |
+| 7 | 不影响原对局结果 | integration | existing | Must |
+| 8 | 非终局/无权限错误 | server | planned | Should |
+| 9 | 模型失败不破坏复盘 | client | existing | Must |

@@ -3,11 +3,13 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ProjectedContext } from '@shared/project';
 
 import type { ReplaySnapshot } from '@shared/replay';
+import type { PostmortemRequest, PostmortemResponse } from '@shared/postmortem';
 import { ROLE_LABELS } from '@shared/terms';
 
 import { PerspectiveFilter } from '../components/PerspectiveFilter';
 import { ThoughtCard } from '../components/ThoughtCard';
 import { Timeline } from '../components/Timeline';
+import { PostmortemPanel } from '../components/PostmortemPanel';
 
 /**
  * 复盘主视图（RFC-014 §3）。
@@ -24,6 +26,9 @@ export interface ReplayPageProps {
     seat: number,
     seq: number,
   ) => Promise<{ seat: number; seq: number; view: ProjectedContext } | null>;
+  /** 赛后拷问的模型入口；单测不传时不显示赛后环节。 */
+  postmortem?: (body: PostmortemRequest) => Promise<PostmortemResponse>;
+  playerSeat?: number;
 }
 
 export function ReplayPage({
@@ -31,6 +36,8 @@ export function ReplayPage({
   onRestart,
   restarting = false,
   loadPerspective,
+  postmortem,
+  playerSeat,
 }: ReplayPageProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [highlight, setHighlight] = useState<number | null>(null);
@@ -140,6 +147,9 @@ export function ReplayPage({
           </button>
         ))}
       </section>
+      {postmortem === undefined || playerSeat === undefined ? null : (
+        <PostmortemPanel snapshot={snapshot} playerSeat={playerSeat} ask={postmortem} />
+      )}
     </div>
   );
 }

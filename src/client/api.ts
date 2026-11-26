@@ -4,6 +4,7 @@ import { parseSseData, type StreamMessage } from '@shared/stream';
 import { TruthViewSchema, type TruthView } from '@shared/truth';
 import { ReplaySnapshotSchema } from '@shared/replay-schema';
 import type { ReplaySnapshot } from '@shared/replay';
+import type { PostmortemRequest, PostmortemResponse } from '@shared/postmortem';
 
 /**
  * 浏览器侧的 HTTP 客户端（RFC-011 §3）。
@@ -65,6 +66,18 @@ export class ApiClient {
 
     if (response.ok) return { ok: true };
     return { ok: false, error: (await response.json()) as ApiError };
+  }
+
+  /** 赛后拷问/甩锅（RFC-023）。 */
+  async postmortem(gameId: string, body: PostmortemRequest): Promise<PostmortemResponse> {
+    const response = await this.fetchImpl(`${this.baseUrl}/api/games/${gameId}/postmortem`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`赛后对话失败：${response.status}`);
+    return (await response.json()) as PostmortemResponse;
   }
 
   /** 复盘快照；未终局返回 null（RFC-014 AC-1）。 */

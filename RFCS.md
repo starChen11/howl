@@ -59,6 +59,7 @@
 | [RFC-020](RFCs/RFC-020-tie-pk-speech.md) | 放逐平票的 PK 发言 | F5, F6 | Medium | Implemented |
 | [RFC-021](RFCs/RFC-021-configurable-phase-timers.md) | 可配置的阶段倒计时 | F5, F9 | Small | Spec changed |
 | [RFC-022](RFCs/RFC-022-sheriff-election-and-badge.md) | 完整警长竞选与警徽 | F49, F4, F5 | Large | Implemented |
+| [RFC-023](RFCs/RFC-023-postmortem-interrogation.md) | 赛后拷问与最大责任投票 | F58 | Medium | Implemented |
 
 **复杂度分布**：High 7（002 / 006 / 007 / 009 / 010 / 014 / 022）、Medium 7、Low 3。
 
@@ -90,6 +91,7 @@
 | RFC-020 | 004 | — |
 | RFC-021 | 012, 018, 019, 020 | — |
 | RFC-022 | 002, 003, 004, 006, 007, 012, 014, 020, 021 | — |
+| RFC-023 | 014, 022 | — |
 
 **可并行分支**（顺序实现时无意义，多人协作有用）：
 

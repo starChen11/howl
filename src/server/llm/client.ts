@@ -257,6 +257,23 @@ export async function decide(deps: LlmDeps, input: DecideInput): Promise<DecideO
   throw lastError ?? new LlmError('UNKNOWN', '调用失败且没有错误信息');
 }
 
+/** 赛后复盘用的纯文本调用（不参与对局决策，不写事件流）。 */
+export async function completeText(
+  config: LlmConfig,
+  messages: { role: 'system' | 'user'; content: string }[],
+): Promise<string> {
+  const client = new OpenAI({
+    apiKey: config.apiKey,
+    baseURL: DEEPSEEK_BASE_URL,
+    maxRetries: 0,
+  });
+  const response = await client.chat.completions.create(
+    { model: config.model, messages, temperature: 0.8, max_tokens: 800 },
+    { signal: AbortSignal.timeout(config.timeoutMs) },
+  );
+  return response.choices[0]?.message.content?.trim() ?? '';
+}
+
 /**
  * 输出上限：以配置为基线，按人格的 `verbosity` 缩放。
  *

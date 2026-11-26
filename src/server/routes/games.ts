@@ -18,8 +18,10 @@ import { replay } from '@engine/replay';
 import { buildTruth, canSeeTruth } from '../view/truth';
 import { TruthViewSchema } from '@shared/truth';
 import { ReplaySnapshotSchema } from '@shared/replay-schema';
+import type { ReplaySnapshot } from '@shared/replay';
 import { nextActor, pendingForPhase, seatToSpeak } from '../orchestrator';
 import { isWithinLimit, remainingSeconds } from '../speech';
+import { answerPostmortem, PostmortemRequestSchema } from '../postmortem';
 import { resolveSession } from '../session';
 import type { GameRegistry } from '../store/game-registry';
 import type { ChannelRegistry } from '../channels/session';
@@ -455,6 +457,35 @@ export function registerGameRoutes(app: FastifyInstance, options: GameRoutesOpti
       version: result.version,
       events: registry.visibleEventsOf(result.record, record.playerSeat),
     });
+  });
+
+  // 赛后拷问/甩锅（RFC-023）：身份已公开，只读快照 + 临时模型调用，不改对局状态。
+  app.post<{ Params: { id: string } }>('/api/games/:id/postmortem', async (request, reply) => {
+    const { session } = await resolveSession(registry, request, reply, production);
+    const record = await registry.getGame(request.params.id);
+    if (record === undefined || !session.gameIds.includes(record.gameId)) {
+      return reply.code(404).send({ error: 'GAME_NOT_FOUND', message: '对局不存在' });
+    }
+    if (record.status !== 'finished' || record.snapshot === undefined) {
+      return reply.code(409).send({ error: 'NOT_FINISHED', message: '对局还没有结束' });
+    }
+    const parsed = PostmortemRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send(
+        validationError(
+          '赛后请求不合法',
+          parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+        ),
+      );
+    }
+    try {
+      return reply.send(await answerPostmortem(record.snapshot as ReplaySnapshot, parsed.data));
+    } catch (error) {
+      request.log.error({ err: error }, 'postmortem failed');
+      return reply
+        .code(503)
+        .send({ error: 'POSTMORTEM_UNAVAILABLE', message: '赛后对话暂时不可用' });
+    }
   });
 
   app.get<{ Params: { id: string } }>('/api/games/:id/replay', async (request, reply) => {

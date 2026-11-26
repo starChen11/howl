@@ -241,6 +241,8 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
       <Suspense fallback={<p role="status">正在载入…</p>}>
         <ReplayPage
           snapshot={replay}
+          playerSeat={view.view.self.seat}
+          postmortem={(body) => api.postmortem(gameId, body)}
           loadPerspective={(seat, seq) => api.replayPerspective(gameId, seat, seq)}
           restarting={restarting}
           onRestart={restart}
