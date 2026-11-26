@@ -44,16 +44,24 @@ describe('RFC-023 · 赛后拷问模型调用', () => {
       kind: 'questions',
       questions: [{ target: 2, question: '你为什么投我？' }],
     });
-    expect(calls[0]).toContain('1 号拷问');
+    expect(calls[0]).toContain('你现在是 1 号（村民）');
   });
 
-  it('answer 返回正文', async () => {
+  it('answer 以被问者身份回答，并明确知道双方身份', async () => {
+    const calls: { role: string; content: string }[][] = [];
+    const complete = async (_config: unknown, messages: { role: string; content: string }[]) => {
+      calls.push(messages);
+      return '因为我判断错了。';
+    };
     const result = await answerPostmortem(
       snapshot,
       { kind: 'answer', seat: 1, target: 2, question: '为什么？', history: [] },
       configEnv,
-      (async () => '因为我判断错了。') as never,
+      complete as never,
     );
+    expect(calls[0]?.[0]?.content).toContain('你的座位：2 号（狼人）');
+    expect(calls[0]?.[0]?.content).toContain('1 号（村民）的拷问');
+    expect(calls[0]?.[1]?.content).toContain('你现在是 2 号（狼人）');
     expect(result).toEqual({ kind: 'answer', text: '因为我判断错了。' });
   });
 

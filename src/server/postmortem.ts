@@ -80,6 +80,15 @@ function contextText(snapshot: ReplaySnapshot): string {
   return `对局结果：${snapshot.result === 'wolf' ? `${ROLE_LABELS.wolf}胜` : '好人胜'}（${snapshot.winCondition}）\n身份：${roles}\n\n时间线：\n${timeline}\n\nAI 当时的部分推理：\n${thoughts}`;
 }
 
+function seatLabel(snapshot: ReplaySnapshot, seat: number): string {
+  const info = snapshot.seats.find((entry) => entry.seat === seat);
+  return `${seat} 号（${info?.roleLabel ?? '未知身份'}）`;
+}
+
+function identityText(snapshot: ReplaySnapshot, seat: number): string {
+  return `你的座位：${seatLabel(snapshot, seat)}。你就是这个座位本人，不要以其他座位的身份自称。`;
+}
+
 function historyText(history: History): string {
   if (!Array.isArray(history) || history.length === 0) return '（还没有人拷问）';
   return history
@@ -129,32 +138,45 @@ export async function answerPostmortem(
 ): Promise<PostmortemResponse> {
   const config = loadLlmConfig(env);
   const context = contextText(snapshot);
-  const system = `你是身份推理游戏赛后复盘中的一名玩家。所有身份已经公开，可以自由吐槽、甩锅、拷问，但不能编造对局里没发生的事实，也不能改称自己的身份（身份以给出的列表为准）。用简体中文，口语化，不超过 120 字。\n\n${context}`;
+  const rules =
+    '所有身份已经公开。可以自由吐槽、甩锅、拷问，但不能编造对局里没发生的事实，也不能改称自己的身份（身份以给出的列表为准）。用简体中文，口语化，不超过 120 字。';
+  const systemFor = (seat: number, extra = '') =>
+    `你是身份推理游戏赛后复盘中的一名玩家。\n${identityText(snapshot, seat)}${extra}\n${rules}\n\n${context}`;
 
   if (request.kind === 'questions') {
-    const prompt = `现在轮到 ${request.seat} 号拷问。你可以选择 0～2 个你认为该为失败负责的座位，向每个座位提一个问题；如果觉得没有可问的，返回空数组。只返回 JSON 数组，格式 [{"target":2,"question":"..."}]。\n\n已有问答：\n${historyText(request.history)}`;
+    const others = snapshot.seats
+      .filter((entry) => entry.seat !== request.seat)
+      .map((entry) => seatLabel(snapshot, entry.seat))
+      .join('、');
+    const prompt = `你现在是 ${seatLabel(snapshot, request.seat)}，轮到你拷问。可选座位：${others}。你可以选择 0～2 个你认为该为失败负责的座位，向每个座位提一个问题；如果觉得没有可问的，返回空数组。只返回 JSON 数组，格式 [{"target":2,"question":"..."}]。\n\n已有问答：\n${historyText(request.history)}`;
     const text = await complete(config, [
-      { role: 'system', content: system },
+      { role: 'system', content: systemFor(request.seat) },
       { role: 'user', content: prompt },
     ]);
     return { kind: 'questions', questions: parseQuestions(text, request.seat) };
   }
 
   if (request.kind === 'answer') {
-    const prompt = `${request.seat} 号拷问你（${request.target} 号）：“${request.question}”\n请以 ${request.target} 号的身份回答，可以解释、反击或甩锅。只返回回答正文。\n\n已有问答：\n${historyText(request.history)}`;
+    const prompt = `${seatLabel(snapshot, request.seat)} 正在拷问你（${seatLabel(snapshot, request.target)}）：“${request.question}”\n你现在是 ${seatLabel(snapshot, request.target)}，请从 ${request.target} 号本人的角度回答，可以解释、反击或甩锅；不要以提问者的身份回答。只返回回答正文。\n\n已有问答：\n${historyText(request.history)}`;
     return {
       kind: 'answer',
       text: await complete(config, [
-        { role: 'system', content: system },
+        {
+          role: 'system',
+          content: systemFor(
+            request.target,
+            `\n你正在回答 ${seatLabel(snapshot, request.seat)}的拷问。`,
+          ),
+        },
         { role: 'user', content: prompt },
       ]),
     };
   }
 
   if (request.kind === 'vote') {
-    const prompt = `请以 ${request.seat} 号的身份，从 ${request.candidates.join('、')} 号中选出你认为本局最大责任人（可以选自己）。只返回座位数字，不要解释。\n\n已有问答：\n${historyText(request.history)}`;
+    const prompt = `你现在是 ${seatLabel(snapshot, request.seat)}。请从 ${request.candidates.map((seat) => seatLabel(snapshot, seat)).join('、')} 中选出你认为本局最大责任人（可以选自己）。只返回座位数字，不要解释。\n\n已有问答：\n${historyText(request.history)}`;
     const text = await complete(config, [
-      { role: 'system', content: system },
+      { role: 'system', content: systemFor(request.seat) },
       { role: 'user', content: prompt },
     ]);
     const target = Number(text.match(/\d+/)?.[0]);
@@ -166,11 +188,11 @@ export async function answerPostmortem(
     };
   }
 
-  const prompt = `你（${request.seat} 号）被大家投为“最大责任人”。请发表一句赛后感想，可以认错、辩解或甩锅；不超过 80 字。`;
+  const prompt = `你现在是 ${seatLabel(snapshot, request.seat)}，被大家投为“最大责任人”。请发表一句赛后感想，可以认错、辩解或甩锅；不超过 80 字。`;
   return {
     kind: 'speech',
     text: await complete(config, [
-      { role: 'system', content: system },
+      { role: 'system', content: systemFor(request.seat) },
       { role: 'user', content: prompt },
     ]),
   };
