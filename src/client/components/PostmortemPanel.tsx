@@ -172,7 +172,7 @@ export function PostmortemPanel({
   };
 
   return (
-    <section className="postmortem" aria-label="赛后拷问">
+    <section className="postmortem" aria-label="赛后拷问" aria-busy={busy}>
       <h2>赛后拷问 / 甩锅</h2>
       <p className="postmortem__hint">
         身份已经公开。按 1～9 号轮流拷问：可以问多个席位，也可以直接结束自己的回合。
@@ -200,6 +200,7 @@ export function PostmortemPanel({
               <label className="postmortem__question">
                 拷问内容
                 <textarea
+                  className="postmortem__box"
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   rows={2}
@@ -297,7 +298,10 @@ export function PostmortemPanel({
                 {label(entry.seat)} 问 {label(entry.target)}：
               </strong>
               {entry.question}
-              <p>{entry.answer}</p>
+              <p>
+                <span className="postmortem__answer-tag">答</span>
+                {entry.answer}
+              </p>
             </li>
           ))}
         </ol>
