@@ -119,3 +119,22 @@ describe('白天发言按「当前发言人」重新计时', () => {
     expect(timer?.remainingSeconds).toBe(115);
   });
 });
+
+describe('投票阶段按票重置倒计时', () => {
+  it('上一票投出后，下一位的倒计时回到 120 秒', () => {
+    const timer = phaseTimer(
+      record([
+        phaseChanged('DAY_VOTE', NOW - 90_000),
+        {
+          type: 'VOTE_CAST',
+          ts: NOW - 3_000,
+          payload: { seat: 2, target: 5 },
+        },
+      ]),
+      'DAY_VOTE',
+      {},
+      NOW,
+    );
+    expect(timer?.remainingSeconds).toBe(117);
+  });
+});
