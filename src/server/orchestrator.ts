@@ -9,6 +9,7 @@ import { sheriffOrderOptions } from '@engine/phases/sheriff';
 import { loadPhaseTimers, timeoutForPhase, type PhaseTimers } from './config/phase-timers';
 import { degradeSentence } from './llm/degrade';
 import { project } from './project';
+import { phaseTimer } from './project/timer';
 import type { GameRecord, GameRegistry, SessionRecord } from './store/game-registry';
 
 /**
@@ -864,10 +865,22 @@ async function playerAction(
     return { kind: 'stale', text: '' };
   })();
 
+  // 同步投票（放逐/警长）是全体共用一次截止时间；发言阶段则由 phaseTimer 按当前
+  // 发言人重置。玩家轮到自己时，只能使用阶段/发言人剩余的时间，不能重新拿满。
+  const timerRecord = await deps.registry.getGame(gameId);
+  const liveTimer =
+    timerRecord === undefined
+      ? null
+      : phaseTimer(timerRecord, phase, deps.phaseTimers ?? loadPhaseTimers());
+  const timeoutMs =
+    liveTimer === null
+      ? (timeoutForPhase(phase, deps.phaseTimers ?? loadPhaseTimers()) ?? 120_000)
+      : Math.max(0, liveTimer.remainingSeconds * 1000);
+
   const input = await Promise.race([
     deps.input.read({
       seat: seat as never,
-      timeoutMs: timeoutForPhase(phase, deps.phaseTimers ?? loadPhaseTimers()) ?? 60_000,
+      timeoutMs,
       kind:
         phase === 'DAY_VOTE' ||
         phase === 'DAY_VOTE_RUNOFF' ||

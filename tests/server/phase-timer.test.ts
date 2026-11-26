@@ -120,8 +120,8 @@ describe('白天发言按「当前发言人」重新计时', () => {
   });
 });
 
-describe('投票阶段按票重置倒计时', () => {
-  it('上一票投出后，下一位的倒计时回到 120 秒', () => {
+describe('同时投票共用一次倒计时', () => {
+  it('已过 90 秒时剩余 30 秒，不因前面的人投票而重置', () => {
     const timer = phaseTimer(
       record([
         phaseChanged('DAY_VOTE', NOW - 90_000),
@@ -135,6 +135,6 @@ describe('投票阶段按票重置倒计时', () => {
       {},
       NOW,
     );
-    expect(timer?.remainingSeconds).toBe(117);
+    expect(timer?.remainingSeconds).toBe(30);
   });
 });
