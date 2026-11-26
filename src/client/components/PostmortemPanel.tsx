@@ -29,6 +29,8 @@ export function PostmortemPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const aiTurn = useRef('');
+  const askRef = useRef(ask);
+  askRef.current = ask;
 
   const runAiQuestioning = useCallback(async () => {
     const key = `q:${turnSeat}`;
@@ -36,11 +38,11 @@ export function PostmortemPanel({
     aiTurn.current = key;
     setBusy(true);
     try {
-      const generated = await ask({ kind: 'questions', seat: turnSeat, history });
+      const generated = await askRef.current({ kind: 'questions', seat: turnSeat, history });
       if (generated.kind !== 'questions') return;
       const next: Entry[] = [];
       for (const item of generated.questions) {
-        const answer = await ask({
+        const answer = await askRef.current({
           kind: 'answer',
           seat: turnSeat,
           target: item.target,
@@ -63,7 +65,7 @@ export function PostmortemPanel({
     } finally {
       setBusy(false);
     }
-  }, [ask, history, turnSeat]);
+  }, [history, turnSeat]);
 
   useEffect(() => {
     if (phase !== 'questioning' || turnSeat > 9) return;
@@ -79,7 +81,7 @@ export function PostmortemPanel({
     if (target === null || question.trim() === '') return;
     setBusy(true);
     try {
-      const response = await ask({
+      const response = await askRef.current({
         kind: 'answer',
         seat: turnSeat,
         target,
@@ -115,7 +117,7 @@ export function PostmortemPanel({
         candidates
           .filter((seat) => seat !== playerSeat)
           .map(async (seat) => {
-            const response = await ask({ kind: 'vote', seat, candidates, history });
+            const response = await askRef.current({ kind: 'vote', seat, candidates, history });
             return response.kind === 'vote' ? ([seat, response.target] as const) : null;
           }),
       );
@@ -144,7 +146,7 @@ export function PostmortemPanel({
     let cancelled = false;
     void Promise.all(
       aiWinners.map(async (seat) => {
-        const response = await ask({ kind: 'speech', seat, reason: '被投为最大责任人' });
+        const response = await askRef.current({ kind: 'speech', seat, reason: '被投为最大责任人' });
         return response.kind === 'speech' ? ([seat, response.text] as const) : null;
       }),
     ).then((pairs) => {
@@ -156,7 +158,7 @@ export function PostmortemPanel({
     return () => {
       cancelled = true;
     };
-  }, [ask, phase, playerSeat, winners]);
+  }, [phase, playerSeat, winners]);
 
   const submitSpeech = () => {
     if (speechDraft.trim() === '') return;

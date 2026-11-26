@@ -50,3 +50,25 @@ describe('RFC-023 · 赛后拷问面板', () => {
     );
   });
 });
+
+describe('RFC-023 · 完整责任投票', () => {
+  it('AI 回合自动推进，投票后可发表最大责任人感想', async () => {
+    const ask = async (body: PostmortemRequest): Promise<PostmortemResponse> => {
+      if (body.kind === 'questions') return { kind: 'questions', questions: [] };
+      if (body.kind === 'answer') return { kind: 'answer', text: '答' };
+      if (body.kind === 'vote') return { kind: 'vote', target: 2 };
+      return { kind: 'speech', text: 'AI 感想' };
+    };
+    render(<PostmortemPanel snapshot={snapshot} playerSeat={1} ask={ask} />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: '结束我的拷问' }));
+    await waitFor(() => expect(screen.getByText('投票：本局最大责任人')).toBeTruthy(), {
+      timeout: 5_000,
+    });
+
+    await user.click(screen.getByRole('button', { name: '投 2 号·狼人' }));
+    await waitFor(() => expect(screen.getByText('AI 感想')).toBeTruthy(), { timeout: 5_000 });
+    expect(screen.getByText('最大责任人：2 号·狼人')).toBeTruthy();
+  });
+}, 20_000);

@@ -32,6 +32,7 @@ import type { ReplaySnapshot } from '@shared/replay';
 import { dayLabel } from '@shared/phase-labels';
 import { ROLE_LABELS } from '@shared/terms';
 import type { TruthView } from '@shared/truth';
+import type { PostmortemRequest } from '@shared/postmortem';
 import { SeatGrid } from './components/SeatGrid';
 import { SpeechFeed, type SpeechLine } from './components/SpeechFeed';
 import { SpeechInput } from './components/SpeechInput';
@@ -156,6 +157,11 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
     [safeView],
   );
 
+  const postmortem = useCallback(
+    (body: PostmortemRequest) => api.postmortem(gameId, body),
+    [api, gameId],
+  );
+
   const restart = useCallback(() => {
     setRestarting(true);
     void api.restart().then((nextGameId) => {
@@ -242,7 +248,7 @@ export function App({ gameId, client }: { gameId: string; client?: ApiClient }) 
         <ReplayPage
           snapshot={replay}
           playerSeat={view.view.self.seat}
-          postmortem={(body) => api.postmortem(gameId, body)}
+          postmortem={postmortem}
           loadPerspective={(seat, seq) => api.replayPerspective(gameId, seat, seq)}
           restarting={restarting}
           onRestart={restart}
