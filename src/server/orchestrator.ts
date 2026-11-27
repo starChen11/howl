@@ -415,10 +415,21 @@ const BATCH_VOTE_PHASES = new Set([
   // 狼队投票也一次并发；提交仍按引擎顺序，玩家仍可中途改票/确认。
   'NIGHT_WOLVES',
   'NIGHT_WOLF_RUNOFF',
+  // 上警表态/退水在现实中也是同时举手，不是轮流等一个人说完。
+  'DAY_SHERIFF_SIGNUP',
+  'DAY_SHERIFF_WITHDRAW',
 ]);
 
 /** 同阶段一起投票的 AI 席位：放逐/警长投票是暗投；狼票虽然是公开的，但也是一起表态。 */
 function batchVotersOf(state: GameState, playerSeat: number): number[] {
+  if (state.phase === 'DAY_SHERIFF_SIGNUP') {
+    return state.seats
+      .filter((seat) => seat.alive && seat.seat !== playerSeat)
+      .map((seat) => seat.seat);
+  }
+  if (state.phase === 'DAY_SHERIFF_WITHDRAW') {
+    return [...(state.sheriffCandidates ?? [])].filter((seat) => seat !== playerSeat);
+  }
   if (state.phase === 'NIGHT_WOLVES' || state.phase === 'NIGHT_WOLF_RUNOFF') {
     return state.seats
       .filter((seat) => seat.alive && seat.role === 'wolf' && seat.seat !== playerSeat)
@@ -524,8 +535,17 @@ export async function runGame(deps: OrchestratorDeps): Promise<OrchestratorResul
       continue;
     }
 
-    const seat = seatToSpeak(state) ?? nextActor(state);
+    let seat = seatToSpeak(state) ?? nextActor(state);
     if (seat === undefined) break;
+
+    // 上警/退水是公开的同时表态：先把已经并发拿到的 AI 决策提交掉，
+    // 不要因为玩家座位号在前，就让其他 8 个人的举手一直藏着。
+    if (state.phase === 'DAY_SHERIFF_SIGNUP' || state.phase === 'DAY_SHERIFF_WITHDRAW') {
+      const nextCached = Object.keys(voteBatch ?? {})
+        .map(Number)
+        .sort((a, b) => a - b)[0];
+      if (nextCached !== undefined) seat = nextCached;
+    }
 
     // 玩家触发点：白天发言（AC-11）与白天投票（AC-11 的「发言 → 投票」）。
     // 夜间的目标选择仍是另一套输入，先用注入的 `decide` 代劳。

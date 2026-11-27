@@ -72,3 +72,35 @@ describe('RFC-023 · 完整责任投票', () => {
     expect(screen.getByText('最大责任人：2 号·狼人')).toBeTruthy();
   });
 }, 20_000);
+
+describe('RFC-023 · 真人被 AI 拷问', () => {
+  it('AI 问到玩家时停下来让玩家自己回答，不调用模型替他回答', async () => {
+    const requests: PostmortemRequest[] = [];
+    const ask = async (body: PostmortemRequest): Promise<PostmortemResponse> => {
+      requests.push(body);
+      if (body.kind === 'questions') {
+        return body.seat === 2
+          ? { kind: 'questions', questions: [{ target: 1, question: '你为什么投我？' }] }
+          : { kind: 'questions', questions: [] };
+      }
+      if (body.kind === 'answer') return { kind: 'answer', text: '模型代答' };
+      if (body.kind === 'vote') return { kind: 'vote', target: 1 };
+      return { kind: 'speech', text: '我的。' };
+    };
+    render(<PostmortemPanel snapshot={snapshot} playerSeat={1} ask={ask} />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: '结束我的拷问' }));
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '2 号·狼人 问你' })).toBeTruthy(),
+    );
+    expect(screen.getByLabelText('你的回答')).toBeTruthy();
+
+    await user.type(screen.getByLabelText('你的回答'), '因为你的票型最像狼。');
+    await user.click(screen.getByRole('button', { name: '回答' }));
+    await waitFor(() => expect(screen.getByText('因为你的票型最像狼。')).toBeTruthy());
+    expect(requests.some((request) => request.kind === 'answer' && request.target === 1)).toBe(
+      false,
+    );
+  });
+});

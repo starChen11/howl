@@ -28,9 +28,64 @@ export function PostmortemPanel({
   const [speechDraft, setSpeechDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<{
+    seat: number;
+    target: number;
+    question: string;
+  } | null>(null);
+  const [pendingAi, setPendingAi] = useState<{
+    seat: number;
+    remaining: { target: number; question: string }[];
+  } | null>(null);
+  const [humanAnswer, setHumanAnswer] = useState('');
   const aiTurn = useRef('');
   const askRef = useRef(ask);
   askRef.current = ask;
+  const historyRef = useRef(history);
+  historyRef.current = history;
+
+  const appendEntries = useCallback((entries: Entry[]) => {
+    historyRef.current = [...historyRef.current, ...entries];
+    setHistory(historyRef.current);
+  }, []);
+
+  const continueAiQuestions = useCallback(
+    async (seat: number, questions: { target: number; question: string }[]) => {
+      setBusy(true);
+      try {
+        for (let index = 0; index < questions.length; index += 1) {
+          const item = questions[index];
+          if (item === undefined) continue;
+          // 被问的是真人玩家：停下来等他亲口回答，绝不能替他调用模型。
+          if (item.target === playerSeat) {
+            setPendingAi({ seat, remaining: questions.slice(index + 1) });
+            setPendingQuestion({ seat, target: item.target, question: item.question });
+            setBusy(false);
+            return;
+          }
+          const answer = await askRef.current({
+            kind: 'answer',
+            seat,
+            target: item.target,
+            question: item.question,
+            history: historyRef.current,
+          });
+          if (answer.kind === 'answer') {
+            appendEntries([
+              { seat, target: item.target, question: item.question, answer: answer.text },
+            ]);
+          }
+        }
+        setPendingAi(null);
+        setTurnSeat((value) => value + 1);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : '赛后对话失败');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [appendEntries, playerSeat],
+  );
 
   const runAiQuestioning = useCallback(async () => {
     const key = `q:${turnSeat}`;
@@ -38,35 +93,18 @@ export function PostmortemPanel({
     aiTurn.current = key;
     setBusy(true);
     try {
-      const generated = await askRef.current({ kind: 'questions', seat: turnSeat, history });
+      const generated = await askRef.current({
+        kind: 'questions',
+        seat: turnSeat,
+        history: historyRef.current,
+      });
       if (generated.kind !== 'questions') return;
-      const next: Entry[] = [];
-      for (const item of generated.questions) {
-        const answer = await askRef.current({
-          kind: 'answer',
-          seat: turnSeat,
-          target: item.target,
-          question: item.question,
-          history: [...history, ...next],
-        });
-        if (answer.kind === 'answer') {
-          next.push({
-            seat: turnSeat,
-            target: item.target,
-            question: item.question,
-            answer: answer.text,
-          });
-        }
-      }
-      setHistory((previous) => [...previous, ...next]);
-      setTurnSeat((value) => value + 1);
+      await continueAiQuestions(turnSeat, generated.questions);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '赛后对话失败');
-    } finally {
       setBusy(false);
     }
-  }, [history, turnSeat]);
-
+  }, [continueAiQuestions, turnSeat]);
   useEffect(() => {
     if (phase !== 'questioning' || turnSeat > 9) return;
     if (turnSeat === playerSeat) return;
@@ -89,8 +127,7 @@ export function PostmortemPanel({
         history,
       });
       if (response.kind === 'answer') {
-        setHistory((previous) => [
-          ...previous,
+        appendEntries([
           { seat: turnSeat, target, question: question.trim(), answer: response.text },
         ]);
         setQuestion('');
@@ -109,6 +146,29 @@ export function PostmortemPanel({
     setTurnSeat((value) => value + 1);
   };
 
+  const answerHuman = () => {
+    if (pendingQuestion === null || humanAnswer.trim() === '') return;
+    appendEntries([
+      {
+        seat: pendingQuestion.seat,
+        target: pendingQuestion.target,
+        question: pendingQuestion.question,
+        answer: humanAnswer.trim(),
+      },
+    ]);
+    const seat = pendingQuestion.seat;
+    const remaining = pendingAi?.remaining ?? [];
+    setPendingQuestion(null);
+    setHumanAnswer('');
+    // 回答完这句后，继续 AI 这一轮剩下的拷问；没有剩下就轮到下一位。
+    if (remaining.length > 0) {
+      void continueAiQuestions(seat, remaining);
+    } else {
+      setPendingAi(null);
+      setTurnSeat((value) => value + 1);
+    }
+  };
+
   const castVote = async (mine: number) => {
     setBusy(true);
     try {
@@ -117,7 +177,12 @@ export function PostmortemPanel({
         candidates
           .filter((seat) => seat !== playerSeat)
           .map(async (seat) => {
-            const response = await askRef.current({ kind: 'vote', seat, candidates, history });
+            const response = await askRef.current({
+              kind: 'vote',
+              seat,
+              candidates,
+              history: historyRef.current,
+            });
             return response.kind === 'vote' ? ([seat, response.target] as const) : null;
           }),
       );
@@ -182,8 +247,36 @@ export function PostmortemPanel({
 
       {phase === 'questioning' ? (
         <div className="postmortem__turn">
-          <h3>轮到 {label(turnSeat)}</h3>
-          {turnSeat === playerSeat ? (
+          {pendingQuestion === null ? <h3>轮到 {label(turnSeat)}</h3> : null}
+          {pendingQuestion !== null ? (
+            <>
+              <h3>{label(pendingQuestion.seat)} 问你</h3>
+              <p className="postmortem__directed">
+                <strong>{label(pendingQuestion.target)}：</strong>
+                {pendingQuestion.question}
+              </p>
+              <label className="postmortem__question">
+                你的回答
+                <textarea
+                  className="postmortem__box"
+                  value={humanAnswer}
+                  onChange={(event) => setHumanAnswer(event.target.value)}
+                  rows={3}
+                  maxLength={500}
+                />
+              </label>
+              <div className="postmortem__actions">
+                <button
+                  className="button button--primary"
+                  type="button"
+                  disabled={busy || humanAnswer.trim() === ''}
+                  onClick={answerHuman}
+                >
+                  回答
+                </button>
+              </div>
+            </>
+          ) : turnSeat === playerSeat ? (
             <>
               <div className="postmortem__targets">
                 {SEATS.filter((seat) => seat !== playerSeat).map((seat) => (

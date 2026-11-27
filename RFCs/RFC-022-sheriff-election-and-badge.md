@@ -275,6 +275,7 @@ RFC-022 的前置 RFC-002/004/006/007/012/014/021 仍是 `Spec changed`，RFC-00
 
 - RFC 原写「9 个相位」，实际为 10 个（含 `DAY_SHERIFF_FINAL_SPEECH`）；已全部实现。
 - 额外增加 `SHERIFF_SPEECH` / `SHERIFF_SPEECH_SKIPPED` 事件（竞选发言独立 cursor）。
+- 上警表态/退水按真实场景做**同时表态**：AI 决策并发预取并先提交，玩家可随时表态，不再等前一位。
 - `DAY_SHERIFF_ORDER` 超时默认没有「旧合法默认」时，选第一个合法选项；记录为 deviation。
 - 首夜死亡事件在 `DAY_STARTED` 之后以 server 可见事件落地；公开死讯仍只有 `diedLastNight`。
 - `AI_THOUGHT.detail`、`TruthView.sheriff` 为向后兼容 additive 字段。
